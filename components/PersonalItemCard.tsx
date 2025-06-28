@@ -18,6 +18,7 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [shareDescription, setShareDescription] = useState(item.description);
+  const [postToFeed, setPostToFeed] = useState(true);
   
   const { userProfile } = useAuthStore();
   const { updatePersonalItem, removePersonalItem, addPost } = useAppStore();
@@ -71,26 +72,31 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
     
     setLoading('share');
     try {
-      const postId = await sharePersonalItemAsPost(item, userProfile.name, shareDescription);
+      let postId = null;
       
-      // Update local state
+      // Only create feed post if user chose to post to feed
+      if (postToFeed) {
+        postId = await sharePersonalItemAsPost(item, userProfile.name, shareDescription);
+        
+        // Add to posts feed (optimistic update)
+        const newPost = {
+          id: postId,
+          authorId: item.userId,
+          authorName: userProfile.name,
+          category: item.category,
+          title: item.title,
+          description: shareDescription,
+          createdAt: Timestamp.now(),
+          savedBy: [],
+        };
+        addPost(newPost);
+      }
+      
+      // Update local state - change to shared status
       updatePersonalItem(item.id, { 
         status: 'shared',
-        sharedPostId: postId 
+        ...(postId && { sharedPostId: postId })
       });
-      
-      // Add to posts feed (optimistic update)
-      const newPost = {
-        id: postId,
-        authorId: item.userId,
-        authorName: userProfile.name,
-        category: item.category,
-        title: item.title,
-        description: shareDescription,
-        createdAt: Timestamp.now(),
-        savedBy: [],
-      };
-      addPost(newPost);
       
       setShowShareDialog(false);
     } catch (error) {
@@ -169,15 +175,31 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
               className="flex items-center space-x-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50 text-sm"
             >
               <ShareIcon className="h-4 w-4" />
-              <span>Share as Recommendation</span>
+              <span>Share</span>
             </button>
           )}
 
           {item.status === 'shared' && (
-            <span className="flex items-center space-x-1 px-3 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm">
-              <ShareIcon className="h-4 w-4" />
-              <span>Shared with friends</span>
-            </span>
+            <>
+              {item.sharedPostId ? (
+                <span className="flex items-center space-x-1 px-3 py-2 bg-purple-50 text-purple-700 rounded-lg text-sm">
+                  <ShareIcon className="h-4 w-4" />
+                  <span>Posted to feed</span>
+                </span>
+              ) : (
+                <button
+                  onClick={() => {
+                    setPostToFeed(true); // Default to posting to feed for already shared items
+                    setShowShareDialog(true);
+                  }}
+                  disabled={loading === 'share'}
+                  className="flex items-center space-x-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50 text-sm"
+                >
+                  <ShareIcon className="h-4 w-4" />
+                  <span>Post to feed</span>
+                </button>
+              )}
+            </>
           )}
 
           <button
@@ -202,7 +224,9 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
       {showShareDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Share as Recommendation</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              {item.status === 'shared' && !item.sharedPostId ? 'Post to Feed' : 'Share'}
+            </h3>
             
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -212,9 +236,27 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
                 value={shareDescription}
                 onChange={(e) => setShareDescription(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                 placeholder="Add details about your experience..."
               />
+            </div>
+            
+            {/* Post to Feed Option */}
+            <div className="mb-6">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={postToFeed}
+                  onChange={(e) => setPostToFeed(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="ml-3 text-sm text-gray-700">
+                  📢 Post to feed for friends to discover
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-7">
+                Your friends will see this in their feed and can save it to their Want to Try list
+              </p>
             </div>
             
             <div className="flex space-x-3">

@@ -203,18 +203,91 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     const querySnapshot = await getDocs(usersRef);
     const users: User[] = [];
     
+    console.log(`👥 Searching ${querySnapshot.size} users for: "${searchTerm}"`);
+    
     querySnapshot.forEach((doc) => {
       const user = doc.data() as User;
-      if (user.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-          user.email.toLowerCase().includes(searchTerm.toLowerCase())) {
+      const nameMatch = user.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const emailMatch = user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (nameMatch || emailMatch) {
+        console.log(`✅ User match: ${user.name} (${user.email})`, { nameMatch, emailMatch });
         users.push(user);
       }
     });
     
+    console.log(`🎯 Found ${users.length} matching users`);
     return users;
   } catch (error) {
     console.error('Error searching users:', error);
     return [];
+  }
+};
+
+export const searchPosts = async (searchTerm: string): Promise<Post[]> => {
+  try {
+    const postsRef = collection(db, 'posts');
+    const querySnapshot = await getDocs(postsRef);
+    const posts: Post[] = [];
+    
+    console.log(`🔍 Searching ${querySnapshot.size} posts for: "${searchTerm}"`);
+    
+    querySnapshot.forEach((doc) => {
+      const post = doc.data() as Post;
+      const searchLower = searchTerm.toLowerCase();
+      
+      // Search across title, description, location, tags, recommendedBy, category, and author
+      const titleMatch = post.title.toLowerCase().includes(searchLower);
+      const descMatch = post.description.toLowerCase().includes(searchLower);
+      const locationMatch = post.location && post.location.toLowerCase().includes(searchLower);
+      const tagsMatch = post.tags && post.tags.some(tag => tag.toLowerCase().includes(searchLower));
+      const recommendedByMatch = post.recommendedBy && post.recommendedBy.toLowerCase().includes(searchLower);
+      const categoryMatch = post.category.toLowerCase().includes(searchLower);
+      const authorMatch = post.authorName.toLowerCase().includes(searchLower);
+      
+      const matchesSearch = titleMatch || descMatch || locationMatch || tagsMatch || recommendedByMatch || categoryMatch || authorMatch;
+      
+      if (matchesSearch) {
+        console.log(`✅ Match found: "${post.title}" by ${post.authorName}`, {
+          title: titleMatch ? post.title : null,
+          description: descMatch ? post.description : null,
+          category: categoryMatch ? post.category : null,
+          author: authorMatch ? post.authorName : null,
+          location: locationMatch ? post.location : null,
+          tags: tagsMatch ? post.tags : null,
+          recommendedBy: recommendedByMatch ? post.recommendedBy : null
+        });
+        posts.push({ ...post, id: doc.id } as Post);
+      }
+    });
+    
+    // Sort by creation date, newest first
+    const sortedPosts = posts.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+    console.log(`🎯 Found ${sortedPosts.length} matching posts`);
+    return sortedPosts;
+  } catch (error) {
+    console.error('Error searching posts:', error);
+    return [];
+  }
+};
+
+export const universalSearch = async (searchTerm: string): Promise<{
+  posts: Post[];
+  users: User[];
+}> => {
+  try {
+    const [posts, users] = await Promise.all([
+      searchPosts(searchTerm),
+      searchUsers(searchTerm)
+    ]);
+    
+    return {
+      posts: posts.slice(0, 10), // Limit to top 10 posts
+      users: users.slice(0, 5)   // Limit to top 5 users
+    };
+  } catch (error) {
+    console.error('Error in universal search:', error);
+    return { posts: [], users: [] };
   }
 };
 

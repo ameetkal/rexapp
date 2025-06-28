@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BookmarkIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, PencilSquareIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
 import { Post, PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
@@ -9,6 +9,7 @@ import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId } f
 import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import EditModal from './EditModal';
+import StarRating from './StarRating';
 
 interface PostCardProps {
   post: Post;
@@ -18,11 +19,24 @@ export default function PostCard({ post }: PostCardProps) {
   const [loading, setLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const { user } = useAuthStore();
   const { addPersonalItem, removePersonalItem, personalItems } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === post.category);
   const isSaved = !!savedPersonalItem;
+  
+  // Check if post has enhanced fields worth showing
+  const hasEnhancedFields = !!(
+    (post.rating && post.rating > 0) ||
+    post.location ||
+    post.priceRange ||
+    (post.customPrice && post.customPrice > 0) ||
+    (post.tags && post.tags.length > 0) ||
+    post.experienceDate ||
+    (post.taggedUsers && post.taggedUsers.length > 0) ||
+    (post.taggedNonUsers && post.taggedNonUsers.length > 0)
+  );
 
   // Check if this post is already saved as a personal item
   useEffect(() => {
@@ -156,10 +170,25 @@ export default function PostCard({ post }: PostCardProps) {
       </div>
 
       {/* Content */}
-      <div className="space-y-2">
-        <h3 className="text-lg font-semibold text-gray-900 leading-tight">
-          {post.title}
-        </h3>
+      <div 
+        className={`space-y-2 ${hasEnhancedFields ? 'cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors' : ''}`}
+        onClick={hasEnhancedFields ? () => setIsExpanded(!isExpanded) : undefined}
+      >
+        <div className="flex items-start justify-between">
+          <h3 className="text-lg font-semibold text-gray-900 leading-tight flex-1">
+            {post.title}
+          </h3>
+          {hasEnhancedFields && (
+            <div className="ml-2 flex-shrink-0 flex items-center space-x-1 text-gray-400">
+              <span className="text-xs">{isExpanded ? 'less' : 'more'}</span>
+              {isExpanded ? (
+                <ChevronUpIcon className="h-4 w-4" />
+              ) : (
+                <ChevronDownIcon className="h-4 w-4" />
+              )}
+            </div>
+          )}
+        </div>
         <p className="text-gray-600 leading-relaxed">
           {post.description}
         </p>
@@ -167,6 +196,84 @@ export default function PostCard({ post }: PostCardProps) {
           <p className="text-sm text-gray-500">
             🤝 Recommended by <span className="font-medium">{post.recommendedBy}</span>
           </p>
+        )}
+        
+        {/* Enhanced Details - Only show if expanded and fields exist */}
+        {isExpanded && hasEnhancedFields && (
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+            {/* Rating */}
+            {post.rating && post.rating > 0 && (
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">⭐ Rating:</span>
+                <StarRating rating={post.rating} maxRating={10} size="sm" onRatingChange={() => {}} />
+                <span className="text-sm text-gray-600">({post.rating}/10)</span>
+              </div>
+            )}
+            
+            {/* Location */}
+            {post.location && (
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">📍</span>
+                <span className="text-sm text-gray-600">{post.location}</span>
+              </div>
+            )}
+            
+            {/* Price Range */}
+            {(post.priceRange || (post.customPrice && post.customPrice > 0)) && (
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">💰</span>
+                <span className="text-sm text-gray-600">
+                  {post.priceRange && post.priceRange}
+                  {post.customPrice && post.customPrice > 0 && ` ($${post.customPrice})`}
+                </span>
+              </div>
+            )}
+            
+            {/* Tags */}
+            {post.tags && post.tags.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">🏷️ Tags:</span>
+                <div className="flex flex-wrap gap-2">
+                  {post.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Experience Date */}
+            {post.experienceDate && (
+              <div className="flex items-center space-x-2">
+                <span className="text-sm font-medium text-gray-700">📅</span>
+                <span className="text-sm text-gray-600">
+                  {post.experienceDate.toDate().toLocaleDateString()}
+                </span>
+              </div>
+            )}
+            
+            {/* Tagged Users */}
+            {((post.taggedUsers && post.taggedUsers.length > 0) || (post.taggedNonUsers && post.taggedNonUsers.length > 0)) && (
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-gray-700">👥 Experienced with:</span>
+                <div className="text-sm text-gray-600">
+                  {post.taggedUsers && post.taggedUsers.length > 0 && (
+                    <span>{post.taggedUsers.length} friend{post.taggedUsers.length > 1 ? 's' : ''}</span>
+                  )}
+                  {post.taggedNonUsers && post.taggedNonUsers.length > 0 && (
+                    <span>
+                      {post.taggedUsers && post.taggedUsers.length > 0 && ', '}
+                      {post.taggedNonUsers.map(user => user.name).join(', ')}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

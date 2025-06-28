@@ -2,21 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { searchUsers, followUser, unfollowUser, getPersonalItems } from '@/lib/firestore';
-import { User } from '@/lib/types';
-import { MagnifyingGlassIcon, UserPlusIcon, UserMinusIcon, ListBulletIcon } from '@heroicons/react/24/outline';
+import { getPersonalItems } from '@/lib/firestore';
+import { MagnifyingGlassIcon, ListBulletIcon } from '@heroicons/react/24/outline';
 import PersonalItemCard from './PersonalItemCard';
 
 export default function ProfileScreen() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
+  const [activitySearchTerm, setActivitySearchTerm] = useState('');
   
-
-  
-  const { user, userProfile, setUserProfile } = useAuthStore();
+  const { user, userProfile } = useAuthStore();
   const { personalItems, setPersonalItems } = useAppStore();
 
 
@@ -36,70 +29,25 @@ export default function ProfileScreen() {
     loadPersonalItems();
   }, [loadPersonalItems]);
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim() || !user) return;
-    
-    setSearching(true);
-    try {
-      const results = await searchUsers(searchTerm);
-      // Filter out current user from results
-      setSearchResults(results.filter(u => u.id !== user.uid));
-    } catch (error) {
-      console.error('Error searching users:', error);
-    } finally {
-      setSearching(false);
-    }
-  };
 
-  const handleFollow = async (targetUserId: string) => {
-    if (!user || !userProfile) return;
-    
-    setLoadingFollow(targetUserId);
-    try {
-      await followUser(user.uid, targetUserId);
-      
-      // Update local profile
-      const updatedProfile = {
-        ...userProfile,
-        following: [...userProfile.following, targetUserId],
-      };
-      setUserProfile(updatedProfile);
-    } catch (error) {
-      console.error('Error following user:', error);
-    } finally {
-      setLoadingFollow(null);
-    }
-  };
-
-  const handleUnfollow = async (targetUserId: string) => {
-    if (!user || !userProfile) return;
-    
-    setLoadingFollow(targetUserId);
-    try {
-      await unfollowUser(user.uid, targetUserId);
-      
-      // Update local profile
-      const updatedProfile = {
-        ...userProfile,
-        following: userProfile.following.filter(id => id !== targetUserId),
-      };
-      setUserProfile(updatedProfile);
-    } catch (error) {
-      console.error('Error unfollowing user:', error);
-    } finally {
-      setLoadingFollow(null);
-    }
-  };
-
-  const isFollowing = (userId: string) => {
-    return userProfile?.following.includes(userId) || false;
-  };
 
 
 
   const filteredPersonalItems = personalItems.filter(item => {
     // Show both completed and shared items in Profile (want_to_try items are in Want to Try tab)
-    return item.status === 'completed' || item.status === 'shared';
+    const isCompletedOrShared = item.status === 'completed' || item.status === 'shared';
+    
+    // Apply search filter if search term exists
+    if (activitySearchTerm.trim()) {
+      const searchLower = activitySearchTerm.toLowerCase();
+      const matchesSearch = 
+        item.title.toLowerCase().includes(searchLower) ||
+        item.description.toLowerCase().includes(searchLower) ||
+        (item.recommendedBy && item.recommendedBy.toLowerCase().includes(searchLower));
+      return isCompletedOrShared && matchesSearch;
+    }
+    
+    return isCompletedOrShared;
   });
 
   return (
@@ -131,17 +79,44 @@ export default function ProfileScreen() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Completed Activities</h3>
           </div>
+          
+          {/* Activity Search */}
+          <div className="mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                value={activitySearchTerm}
+                onChange={(e) => setActivitySearchTerm(e.target.value)}
+                placeholder="Search your activities..."
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+              />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            </div>
+          </div>
 
           {/* Activity Items List */}
           {filteredPersonalItems.length === 0 ? (
             <div className="text-center py-8">
               <ListBulletIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">
-                You haven&apos;t completed anything yet
-              </p>
-              <p className="text-sm text-gray-400 mt-1">
-                Complete items from your Want to Try list to see them here
-              </p>
+              {activitySearchTerm.trim() ? (
+                <>
+                  <p className="text-gray-500">
+                    No activities match &quot;{activitySearchTerm}&quot;
+                  </p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Try different keywords or clear the search
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-500">
+                    You haven&apos;t completed anything yet
+                  </p>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Complete items from your Want to Try list to see them here
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -152,68 +127,7 @@ export default function ProfileScreen() {
           )}
         </div>
 
-        {/* Search Section */}
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Find Friends</h3>
-          <div className="flex space-x-2">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder="Search by name or email..."
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
-              />
-              <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            </div>
-            <button
-              onClick={handleSearch}
-              disabled={searching || !searchTerm.trim()}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {searching ? 'Searching...' : 'Search'}
-            </button>
-          </div>
 
-          {/* Search Results */}
-          {searchResults.length > 0 && (
-            <div className="mt-4 space-y-3">
-              <h4 className="font-medium text-gray-900">Search Results</h4>
-              {searchResults.map((searchUser) => (
-                <div key={searchUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {searchUser.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{searchUser.name}</p>
-                      <p className="text-sm text-gray-500">{searchUser.email}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => isFollowing(searchUser.id) ? handleUnfollow(searchUser.id) : handleFollow(searchUser.id)}
-                    disabled={loadingFollow === searchUser.id}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-1 ${
-                      isFollowing(searchUser.id)
-                        ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                        : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                    } disabled:opacity-50`}
-                  >
-                    {loadingFollow === searchUser.id ? (
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    ) : isFollowing(searchUser.id) ? (
-                      <UserMinusIcon className="h-4 w-4" />
-                    ) : (
-                      <UserPlusIcon className="h-4 w-4" />
-                    )}
-                    <span>{isFollowing(searchUser.id) ? 'Unfollow' : 'Follow'}</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
 
 
       </div>
