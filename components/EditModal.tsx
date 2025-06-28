@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { updatePost, updatePersonalItem } from '@/lib/firestore';
-import { CATEGORIES, Category, Post, PersonalItem } from '@/lib/types';
+import { updatePost, updatePersonalItem, getPersonalItemByPostId, createPersonalItem, updatePersonalItemStatus } from '@/lib/firestore';
+import { CATEGORIES, Category, Post, PersonalItem, PersonalItemStatus } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
@@ -31,10 +31,48 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
   );
   const [taggedUsers, setTaggedUsers] = useState<Array<{id: string; name: string; email: string}>>([]);
   const [taggedNonUsers, setTaggedNonUsers] = useState<Array<{name: string; email?: string}>>(item.taggedNonUsers || []);
+  const [status, setStatus] = useState<'want_to_try' | 'completed' | 'shared'>(
+    type === 'personal' ? (item as PersonalItem).status : 'want_to_try'
+  );
+  
+  // New state for managing personal item creation
+  const [hasPersonalItem, setHasPersonalItem] = useState<boolean | null>(null);
+  const [existingPersonalItem, setExistingPersonalItem] = useState<PersonalItem | null>(null);
+  const [shouldCreatePersonalItem, setShouldCreatePersonalItem] = useState(false);
+  const [personalItemStatus, setPersonalItemStatus] = useState<'want_to_try' | 'completed'>('want_to_try');
+  
   const [loading, setLoading] = useState(false);
 
   const { user } = useAuthStore();
-  const { updatePost: updatePostInStore, updatePersonalItem: updatePersonalItemInStore } = useAppStore();
+  const { updatePost: updatePostInStore, updatePersonalItem: updatePersonalItemInStore, addPersonalItem } = useAppStore();
+
+  // Check if personal item exists for this post
+  useEffect(() => {
+    const checkPersonalItem = async () => {
+      if (type === 'post' && user && isOpen) {
+        console.log(`🔍 EditModal: Checking for personal item for post ${item.id}`);
+        try {
+          const existingItem = await getPersonalItemByPostId(user.uid, item.id);
+          console.log(`🔍 EditModal: Found personal item:`, existingItem);
+          setHasPersonalItem(!!existingItem);
+          setExistingPersonalItem(existingItem);
+          // If there's an existing personal item, set its status
+          if (existingItem) {
+            console.log(`✅ EditModal: Setting status to ${existingItem.status}`);
+            setStatus(existingItem.status);
+          } else {
+            console.log(`❌ EditModal: No personal item found for post ${item.id}`);
+          }
+        } catch (error) {
+          console.error('Error checking personal item:', error);
+          setHasPersonalItem(false);
+          setExistingPersonalItem(null);
+        }
+      }
+    };
+
+    checkPersonalItem();
+  }, [type, user, item.id, isOpen]);
 
   // Helper functions
   const addTag = (tag: string) => {
@@ -67,6 +105,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
         title: title.trim(),
         description: description.trim() || '',
         category,
+        ...(type === 'personal' && { status }),
         ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
         ...(rating > 0 && { rating }),
         ...(location.trim() && { location: location.trim() }),
@@ -80,7 +119,82 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
 
       if (type === 'post') {
         await updatePost(item.id, updates);
-        // Create store updates with proper Timestamp conversion
+        
+        // If there's an existing personal item, update its status too
+        if (existingPersonalItem && status !== existingPersonalItem.status) {
+          await updatePersonalItem(existingPersonalItem.id, { 
+            status: status as PersonalItemStatus,
+            ...(status === 'completed' && !existingPersonalItem.completedAt && { completedAt: new Date() })
+          });
+          
+          // Update in store
+          updatePersonalItemInStore(existingPersonalItem.id, { 
+            status: status as PersonalItemStatus,
+            ...(status === 'completed' && !existingPersonalItem.completedAt && { completedAt: Timestamp.now() })
+          });
+        }
+        
+        // If user wants to create a personal item, do it now
+        if (shouldCreatePersonalItem) {
+          const enhancedFields = {
+            ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
+            ...(rating > 0 && { rating }),
+            ...(location.trim() && { location: location.trim() }),
+            ...(priceRange && { priceRange }),
+            ...(customPrice && { customPrice: parseFloat(customPrice) }),
+            ...(tags.length > 0 && { tags }),
+            ...(experienceDate && { experienceDate: new Date(experienceDate) }),
+            ...(taggedUsers.length > 0 && { taggedUsers: taggedUsers.map(u => u.id) }),
+            ...(taggedNonUsers.length > 0 && { taggedNonUsers }),
+          };
+
+          const personalItemId = await createPersonalItem(
+            user.uid,
+            category,
+            title.trim(),
+            description.trim() || undefined,
+            enhancedFields,
+            // Link to the post being edited
+            {
+              postId: item.id,
+              authorId: (item as Post).authorId,
+              authorName: (item as Post).authorName,
+            }
+          );
+
+          // Update the personal item status to the selected one
+          if (personalItemStatus === 'completed') {
+            await updatePersonalItemStatus(personalItemId, 'completed');
+          }
+
+          // Add to store
+          const newPersonalItem: PersonalItem = {
+            id: personalItemId,
+            userId: user.uid,
+            category,
+            title: title.trim(),
+            description: description.trim() || '',
+            status: personalItemStatus,
+            createdAt: Timestamp.now(),
+            source: 'saved_from_post',
+            originalPostId: item.id,
+            originalAuthorId: (item as Post).authorId,
+            originalAuthorName: (item as Post).authorName,
+            ...(personalItemStatus === 'completed' && { completedAt: Timestamp.now() }),
+            ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
+            ...(rating > 0 && { rating }),
+            ...(location.trim() && { location: location.trim() }),
+            ...(priceRange && { priceRange }),
+            ...(customPrice && { customPrice: parseFloat(customPrice) }),
+            ...(tags.length > 0 && { tags }),
+            ...(experienceDate && { experienceDate: Timestamp.fromDate(new Date(experienceDate)) }),
+            ...(taggedUsers.length > 0 && { taggedUsers: taggedUsers.map(u => u.id) }),
+            ...(taggedNonUsers.length > 0 && { taggedNonUsers }),
+          };
+          addPersonalItem(newPersonalItem);
+        }
+        
+        // Update post in store
         const storeUpdates = {
           title: title.trim(),
           description: description.trim() || '',
@@ -103,6 +217,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
           title: title.trim(),
           description: description.trim() || '',
           category,
+          status,
           ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
           ...(rating > 0 && { rating }),
           ...(location.trim() && { location: location.trim() }),
@@ -182,6 +297,93 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
               <ChevronDownIcon className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 pointer-events-none" />
             </div>
           </div>
+
+          {/* Status (for personal items OR posts with personal items) */}
+          {(type === 'personal' || (type === 'post' && hasPersonalItem === true)) && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Status
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStatus('want_to_try')}
+                  className={`p-3 border rounded-lg text-left transition-colors ${
+                    status === 'want_to_try'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="font-medium">📖 Want to try</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatus('completed')}
+                  className={`p-3 border rounded-lg text-left transition-colors ${
+                    status === 'completed' || status === 'shared'
+                      ? 'border-green-500 bg-green-50 text-green-700'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="font-medium">✅ Completed</div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Add to Personal List (for posts without personal items) */}
+          {type === 'post' && hasPersonalItem === false && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="mb-3">
+                <label className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={shouldCreatePersonalItem}
+                    onChange={(e) => setShouldCreatePersonalItem(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-900">
+                    📝 Add to my personal list
+                  </span>
+                </label>
+                <p className="text-xs text-gray-600 mt-1 ml-6">
+                  This will help you track your progress and find it in your profile
+                </p>
+              </div>
+              
+              {shouldCreatePersonalItem && (
+                <div className="ml-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPersonalItemStatus('want_to_try')}
+                      className={`p-2 border rounded text-left text-sm transition-colors ${
+                        personalItemStatus === 'want_to_try'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 hover:border-gray-400'
+                      }`}
+                    >
+                      <div className="font-medium">📖 Want to try</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPersonalItemStatus('completed')}
+                      className={`p-2 border rounded text-left text-sm transition-colors ${
+                        personalItemStatus === 'completed'
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-300 hover:border-gray-400'
+                      }`}
+                    >
+                      <div className="font-medium">✅ Completed</div>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <div>

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BookmarkIcon, PencilSquareIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, PencilSquareIcon, ChevronDownIcon, ChevronUpIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
 import { Post, PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
-import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId } from '@/lib/firestore';
+import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId, unsharePost } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import EditModal from './EditModal';
@@ -17,11 +17,12 @@ interface PostCardProps {
 
 export default function PostCard({ post }: PostCardProps) {
   const [loading, setLoading] = useState(false);
+  const [unshareLoading, setUnshareLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const { user } = useAuthStore();
-  const { addPersonalItem, removePersonalItem, personalItems } = useAppStore();
+  const { addPersonalItem, removePersonalItem, personalItems, updatePersonalItem, removePost } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === post.category);
   const isSaved = !!savedPersonalItem;
@@ -115,6 +116,36 @@ export default function PostCard({ post }: PostCardProps) {
     }
   };
 
+  const handleUnshare = async () => {
+    if (!user || !savedPersonalItem || post.authorId !== user.uid) return;
+
+    // Confirm with user
+    if (!confirm('Remove this post from the feed? You\'ll keep it in your personal list as "Completed".')) {
+      return;
+    }
+
+    setUnshareLoading(true);
+    try {
+      await unsharePost(post.id, savedPersonalItem.id);
+      
+      // Update the personal item status in store
+      updatePersonalItem(savedPersonalItem.id, { 
+        status: 'completed',
+        sharedPostId: undefined 
+      });
+      
+      // Remove the post from the store
+      removePost(post.id);
+      
+      console.log('📤 Successfully unshared post');
+    } catch (error) {
+      console.error('Error unsharing post:', error);
+      alert('Failed to unshare post. Please try again.');
+    } finally {
+      setUnshareLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
       {/* Header */}
@@ -141,6 +172,20 @@ export default function PostCard({ post }: PostCardProps) {
             </button>
           )}
           
+          {/* Unshare button - only show for user's own posts that have a personal item */}
+          {user && post.authorId === user.uid && savedPersonalItem && savedPersonalItem.status === 'shared' && (
+            <button
+              onClick={handleUnshare}
+              disabled={unshareLoading}
+              className={`p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors ${
+                unshareLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="Remove from feed"
+            >
+              <EyeSlashIcon className="h-5 w-5" />
+            </button>
+          )}
+          
           {/* Save button */}
           <button
             onClick={handleSaveToggle}
@@ -161,12 +206,27 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       </div>
 
-      {/* Category Badge */}
+      {/* Category Badge and Status Indicators */}
       <div className="flex items-center space-x-2 mb-3">
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
           <span className="mr-1">{category?.emoji}</span>
           {category?.name}
         </span>
+        
+        {/* Personal Status Indicator */}
+        {savedPersonalItem && (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+            savedPersonalItem.status === 'want_to_try' 
+              ? 'bg-blue-100 text-blue-800' 
+              : savedPersonalItem.status === 'completed'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-purple-100 text-purple-800' // for 'shared' status
+          }`}>
+            {savedPersonalItem.status === 'want_to_try' && '📖 Want to Try'}
+            {savedPersonalItem.status === 'completed' && '✅ Completed'}
+            {savedPersonalItem.status === 'shared' && '✅ Completed'}
+          </span>
+        )}
       </div>
 
       {/* Content */}

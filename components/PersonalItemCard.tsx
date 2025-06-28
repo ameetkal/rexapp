@@ -88,6 +88,7 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           description: shareDescription,
           createdAt: Timestamp.now(),
           savedBy: [],
+          postType: 'manual' as const,
         };
         addPost(newPost);
       }

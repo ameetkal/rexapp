@@ -12,7 +12,7 @@ import {
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -41,6 +41,7 @@ export const createPost = async (
       description: description || '',
       createdAt: Timestamp.now(),
       savedBy: [],
+      postType: 'manual' as const,
       // Include enhanced fields if provided
       ...(enhancedFields && {
         ...(enhancedFields.rating && { rating: enhancedFields.rating }),
@@ -307,6 +308,11 @@ export const createPersonalItem = async (
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
     recommendedBy?: string;
+  },
+  linkToPost?: {
+    postId: string;
+    authorId: string;
+    authorName: string;
   }
 ): Promise<string> => {
   try {
@@ -317,7 +323,13 @@ export const createPersonalItem = async (
       description: description || '',
       status: 'want_to_try' as PersonalItemStatus,
       createdAt: Timestamp.now(),
-      source: 'personal' as const,
+      source: linkToPost ? 'saved_from_post' as const : 'personal' as const,
+      // Link to original post if provided
+      ...(linkToPost && {
+        originalPostId: linkToPost.postId,
+        originalAuthorId: linkToPost.authorId,
+        originalAuthorName: linkToPost.authorName,
+      }),
       // Include enhanced fields if provided
       ...(enhancedFields && {
         ...(enhancedFields.rating && { rating: enhancedFields.rating }),
@@ -476,6 +488,7 @@ export const updatePersonalItem = async (
     title?: string;
     description?: string;
     category?: Category;
+    status?: PersonalItemStatus;
     rating?: number;
     location?: string;
     priceRange?: '$' | '$$' | '$$$' | '$$$$';
@@ -495,6 +508,7 @@ export const updatePersonalItem = async (
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.description !== undefined) updateData.description = updates.description;
     if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.status !== undefined) updateData.status = updates.status;
     if (updates.rating !== undefined) updateData.rating = updates.rating;
     if (updates.location !== undefined) updateData.location = updates.location;
     if (updates.priceRange !== undefined) updateData.priceRange = updates.priceRange;
@@ -508,6 +522,200 @@ export const updatePersonalItem = async (
     await updateDoc(itemRef, updateData);
   } catch (error) {
     console.error('Error updating personal item:', error);
+    throw error;
+  }
+};
+
+// Google Books API Integration
+export const searchGoogleBooks = async (query: string): Promise<UniversalItem[]> => {
+  try {
+    if (!query.trim()) return [];
+    
+    const response = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=5&printType=books`
+    );
+    
+    if (!response.ok) {
+      console.error('Google Books API error:', response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (!data.items) return [];
+    
+    const books: UniversalItem[] = data.items.map((item: {
+      id: string;
+      volumeInfo: {
+        title?: string;
+        authors?: string[];
+        description?: string;
+        publishedDate?: string;
+        pageCount?: number;
+        imageLinks?: { thumbnail?: string };
+        industryIdentifiers?: Array<{ type: string; identifier: string }>;
+      };
+    }) => {
+      const volumeInfo = item.volumeInfo;
+      return {
+        id: item.id,
+        title: volumeInfo.title || 'Unknown Title',
+        category: 'books' as Category,
+        description: volumeInfo.description ? 
+          volumeInfo.description.substring(0, 200) + (volumeInfo.description.length > 200 ? '...' : '') : 
+          undefined,
+        image: volumeInfo.imageLinks?.thumbnail,
+        metadata: {
+          author: volumeInfo.authors ? volumeInfo.authors.join(', ') : undefined,
+          isbn: volumeInfo.industryIdentifiers?.find((id) => id.type === 'ISBN_13')?.identifier,
+          publishedDate: volumeInfo.publishedDate,
+          pageCount: volumeInfo.pageCount,
+        },
+        source: 'google_books' as const,
+      };
+    });
+    
+    console.log(`📚 Found ${books.length} books for "${query}"`);
+    return books;
+  } catch (error) {
+    console.error('Error searching Google Books:', error);
+    return [];
+  }
+};
+
+// Helper function to remove undefined values from objects
+const cleanObject = <T>(obj: T): Partial<T> => {
+  const cleaned: Partial<T> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (value !== undefined) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        // Recursively clean nested objects
+        const cleanedNested = cleanObject(value);
+        if (Object.keys(cleanedNested).length > 0) {
+          (cleaned as Record<string, unknown>)[key] = cleanedNested;
+        }
+      } else {
+        (cleaned as Record<string, unknown>)[key] = value;
+      }
+    }
+  }
+  return cleaned;
+};
+
+// Enhanced post creation with universal items that also creates personal items
+export const createStructuredPost = async (
+  authorId: string,
+  authorName: string,
+  universalItem: UniversalItem,
+  status: 'completed' | 'want_to_try',
+  personalDescription?: string,
+  enhancedFields?: {
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
+  }
+): Promise<{ postId: string; personalItemId: string }> => {
+  try {
+    // Clean the universalItem to remove undefined fields
+    const cleanedUniversalItem = cleanObject(universalItem);
+
+    // Create the post for the feed first
+    const postData = {
+      authorId,
+      authorName,
+      category: universalItem.category,
+      title: universalItem.title,
+      description: personalDescription || universalItem.description || '',
+      createdAt: Timestamp.now(),
+      savedBy: [],
+      universalItem: cleanedUniversalItem,
+      postType: 'structured' as const,
+      // Include enhanced fields if provided
+      ...(enhancedFields && {
+        ...(enhancedFields.rating && { rating: enhancedFields.rating }),
+        ...(enhancedFields.location && { location: enhancedFields.location }),
+        ...(enhancedFields.priceRange && { priceRange: enhancedFields.priceRange }),
+        ...(enhancedFields.customPrice && { customPrice: enhancedFields.customPrice }),
+        ...(enhancedFields.tags && { tags: enhancedFields.tags }),
+        ...(enhancedFields.experienceDate && { experienceDate: Timestamp.fromDate(enhancedFields.experienceDate) }),
+        ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
+        ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
+        ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
+      }),
+    };
+    
+    const docRef = await addDoc(collection(db, 'posts'), postData);
+    const postId = docRef.id;
+
+    // Now create the personal item linked to the post
+    const personalItemId = await createPersonalItem(
+      authorId,
+      universalItem.category,
+      universalItem.title,
+      personalDescription,
+      enhancedFields,
+      // Link to the post we just created
+      {
+        postId,
+        authorId,
+        authorName,
+      }
+    );
+    
+    // If completed, update personal item to shared status
+    if (status === 'completed') {
+      await updatePersonalItemStatus(personalItemId, 'shared', postId);
+    }
+    
+    console.log(`📚 Created structured post and personal item for "${universalItem.title}"`);
+    return { postId, personalItemId };
+  } catch (error) {
+    console.error('Error creating structured post:', error);
+    throw error;
+  }
+};
+
+export const deletePost = async (postId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts', postId);
+    await updateDoc(postRef, {
+      // Mark as deleted instead of actually deleting for data integrity
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      status: 'deleted' as any,
+    });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    throw error;
+  }
+};
+
+export const unsharePost = async (
+  postId: string, 
+  personalItemId: string
+): Promise<void> => {
+  try {
+    // Delete the post
+    await deletePost(postId);
+    
+    // Revert personal item status from 'shared' back to 'completed'
+    await updatePersonalItem(personalItemId, {
+      status: 'completed'
+    });
+    
+    // Remove the sharedPostId reference
+    await updateDoc(doc(db, 'personal_items', personalItemId), {
+      sharedPostId: null,
+    });
+    
+    console.log(`📤 Unshared post ${postId}, reverted personal item ${personalItemId} to completed`);
+  } catch (error) {
+    console.error('Error unsharing post:', error);
     throw error;
   }
 }; 

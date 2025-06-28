@@ -2,6 +2,30 @@ import { Timestamp } from 'firebase/firestore';
 
 export type Category = 'restaurants' | 'movies' | 'books' | 'music' | 'travel' | 'other';
 
+export interface UniversalItem {
+  id: string;
+  title: string;
+  category: Category;
+  description?: string;
+  image?: string;
+  metadata: {
+    // Books
+    author?: string;
+    isbn?: string;
+    publishedDate?: string;
+    pageCount?: number;
+    // Movies (future)
+    director?: string;
+    year?: number;
+    // Restaurants (future)
+    address?: string;
+    // Music (future)
+    artist?: string;
+    album?: string;
+  };
+  source: 'google_books' | 'tmdb' | 'spotify' | 'google_places' | 'manual';
+}
+
 export interface Post {
   id: string;
   authorId: string;
@@ -23,6 +47,10 @@ export interface Post {
   experienceDate?: Timestamp;
   taggedUsers?: string[]; // userIds of tagged people
   taggedNonUsers?: { name: string; email?: string }[]; // for invites
+  
+  // Universal item reference
+  universalItem?: UniversalItem;
+  postType: 'structured' | 'manual'; // Track which creation method was used
 }
 
 export interface User {
