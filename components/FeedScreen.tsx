@@ -70,7 +70,7 @@ export default function FeedScreen() {
               Your feed is empty
             </h3>
             <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-              You haven't posted any recommendations yet, and you're not following anyone. Start by sharing your first recommendation or finding friends to follow!
+              You haven&apos;t posted any recommendations yet, and you&apos;re not following anyone. Start by sharing your first recommendation or finding friends to follow!
             </p>
             <div className="space-y-3">
               <p className="text-sm text-gray-600">

@@ -123,7 +123,7 @@ export default function AuthForm({ mode, onToggle }: AuthFormProps) {
             className="text-blue-600 hover:text-blue-700 font-medium"
           >
             {mode === 'login' 
-              ? "Don't have an account? Sign up" 
+              ? "Don&apos;t have an account? Sign up" 
               : 'Already have an account? Sign in'
             }
           </button>
