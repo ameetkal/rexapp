@@ -2,26 +2,18 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { getPersonalItems, createPersonalItem } from '@/lib/firestore';
-import { Timestamp } from 'firebase/firestore';
+import { getPersonalItems } from '@/lib/firestore';
 import PersonalItemCard from './PersonalItemCard';
 import { CATEGORIES, Category } from '@/lib/types';
-import { ListBulletIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ListBulletIcon } from '@heroicons/react/24/outline';
 
 export default function SavedScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
   
-  // Add Item Form State
-  const [showAddItemForm, setShowAddItemForm] = useState(false);
-  const [newItemCategory, setNewItemCategory] = useState<Category>('restaurants');
-  const [newItemTitle, setNewItemTitle] = useState('');
-  const [newItemDescription, setNewItemDescription] = useState('');
-  const [addingItem, setAddingItem] = useState(false);
-  
   const { user } = useAuthStore();
-  const { setPersonalItems, getSavedItems, addPersonalItem } = useAppStore();
+  const { setPersonalItems, getSavedItems } = useAppStore();
 
   const loadPersonalItems = useCallback(async () => {
     if (!user) return;
@@ -60,41 +52,7 @@ export default function SavedScreen() {
     return savedItems.filter(item => item.category === category).length;
   };
 
-  const handleAddPersonalItem = async () => {
-    if (!user || !newItemTitle.trim() || !newItemDescription.trim()) return;
-    
-    setAddingItem(true);
-    try {
-      const itemId = await createPersonalItem(
-        user.uid,
-        newItemCategory,
-        newItemTitle,
-        newItemDescription
-      );
-      
-      const newItem = {
-        id: itemId,
-        userId: user.uid,
-        category: newItemCategory,
-        title: newItemTitle,
-        description: newItemDescription,
-        status: 'want_to_try' as const,
-        createdAt: Timestamp.now(),
-        source: 'personal' as const,
-      };
-      
-      addPersonalItem(newItem);
-      
-      // Reset form
-      setNewItemTitle('');
-      setNewItemDescription('');
-      setShowAddItemForm(false);
-    } catch (error) {
-      console.error('Error adding personal item:', error);
-    } finally {
-      setAddingItem(false);
-    }
-  };
+
 
   if (loading) {
     return (
@@ -122,13 +80,7 @@ export default function SavedScreen() {
           </button>
         </div>
         
-        <button
-          onClick={() => setShowAddItemForm(true)}
-          className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-        >
-          <PlusIcon className="h-4 w-4" />
-          <span>Add Something to Try</span>
-        </button>
+
       </div>
 
       {/* Category Filter */}
@@ -186,7 +138,7 @@ export default function SavedScreen() {
               </p>
               <div className="space-y-2 text-sm text-gray-500">
                 <p>• Save friend recommendations from your feed</p>
-                <p>• Add personal items in your Profile</p>
+                <p>• Add personal items using the Add tab</p>
                 <p>• Mark items complete when you try them</p>
                 <p>• Share completed items as recommendations</p>
               </div>
@@ -201,79 +153,7 @@ export default function SavedScreen() {
         )}
       </div>
 
-      {/* Add Personal Item Modal */}
-      {showAddItemForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Add Something to Try</h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Category
-                </label>
-                <select
-                  value={newItemCategory}
-                  onChange={(e) => setNewItemCategory(e.target.value as Category)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  {CATEGORIES.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.emoji} {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  What do you want to try?
-                </label>
-                <input
-                  type="text"
-                  value={newItemTitle}
-                  onChange={(e) => setNewItemTitle(e.target.value)}
-                  placeholder="e.g. Tanuki Ramen in Chinatown"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Why do you want to try this?
-                </label>
-                <textarea
-                  value={newItemDescription}
-                  onChange={(e) => setNewItemDescription(e.target.value)}
-                  rows={3}
-                  placeholder="Heard great things about their tonkotsu ramen..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-            
-            <div className="flex space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowAddItemForm(false);
-                  setNewItemTitle('');
-                  setNewItemDescription('');
-                }}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddPersonalItem}
-                disabled={addingItem || !newItemTitle.trim() || !newItemDescription.trim()}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {addingItem ? 'Adding...' : 'Add to List'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 } 

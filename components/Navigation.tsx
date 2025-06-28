@@ -30,7 +30,7 @@ export default function Navigation({ activeTab, onTabChange }: NavigationProps) 
     },
     {
       id: 'post' as const,
-      name: 'Post',
+      name: 'Add',
       icon: PlusIcon,
       activeIcon: PlusIconSolid,
     },

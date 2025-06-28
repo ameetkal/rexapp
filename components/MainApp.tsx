@@ -10,7 +10,7 @@ import SavedScreen from './SavedScreen';
 import ProfileScreen from './ProfileScreen';
 
 export default function MainApp() {
-  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('post');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   
   const { user, loading } = useAuthStore();
