@@ -19,7 +19,17 @@ export const createPost = async (
   authorName: string,
   category: Category,
   title: string,
-  description: string
+  description?: string,
+  enhancedFields?: {
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
 ): Promise<string> => {
   try {
     const postData = {
@@ -27,9 +37,20 @@ export const createPost = async (
       authorName,
       category,
       title,
-      description,
+      description: description || '',
       createdAt: Timestamp.now(),
       savedBy: [],
+      // Include enhanced fields if provided
+      ...(enhancedFields && {
+        ...(enhancedFields.rating && { rating: enhancedFields.rating }),
+        ...(enhancedFields.location && { location: enhancedFields.location }),
+        ...(enhancedFields.priceRange && { priceRange: enhancedFields.priceRange }),
+        ...(enhancedFields.customPrice && { customPrice: enhancedFields.customPrice }),
+        ...(enhancedFields.tags && { tags: enhancedFields.tags }),
+        ...(enhancedFields.experienceDate && { experienceDate: Timestamp.fromDate(enhancedFields.experienceDate) }),
+        ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
+        ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
+      }),
     };
     
     const docRef = await addDoc(collection(db, 'posts'), postData);
@@ -200,17 +221,38 @@ export const createPersonalItem = async (
   userId: string,
   category: Category,
   title: string,
-  description: string
+  description?: string,
+  enhancedFields?: {
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
 ): Promise<string> => {
   try {
     const itemData = {
       userId,
       category,
       title,
-      description,
+      description: description || '',
       status: 'want_to_try' as PersonalItemStatus,
       createdAt: Timestamp.now(),
       source: 'personal' as const,
+      // Include enhanced fields if provided
+      ...(enhancedFields && {
+        ...(enhancedFields.rating && { rating: enhancedFields.rating }),
+        ...(enhancedFields.location && { location: enhancedFields.location }),
+        ...(enhancedFields.priceRange && { priceRange: enhancedFields.priceRange }),
+        ...(enhancedFields.customPrice && { customPrice: enhancedFields.customPrice }),
+        ...(enhancedFields.tags && { tags: enhancedFields.tags }),
+        ...(enhancedFields.experienceDate && { experienceDate: Timestamp.fromDate(enhancedFields.experienceDate) }),
+        ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
+        ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
+      }),
     };
     
     const docRef = await addDoc(collection(db, 'personal_items'), itemData);
@@ -304,6 +346,87 @@ export const sharePersonalItemAsPost = async (
     return postId;
   } catch (error) {
     console.error('Error sharing personal item as post:', error);
+    throw error;
+  }
+};
+
+// Edit Functions
+export const updatePost = async (
+  postId: string,
+  updates: {
+    title?: string;
+    description?: string;
+    category?: Category;
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
+): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts', postId);
+    const updateData: Record<string, string | number | Timestamp | string[] | { name: string; email?: string }[]> = {};
+    
+    // Only include fields that are provided
+    if (updates.title !== undefined) updateData.title = updates.title;
+    if (updates.description !== undefined) updateData.description = updates.description;
+    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.location !== undefined) updateData.location = updates.location;
+    if (updates.priceRange !== undefined) updateData.priceRange = updates.priceRange;
+    if (updates.customPrice !== undefined) updateData.customPrice = updates.customPrice;
+    if (updates.tags !== undefined) updateData.tags = updates.tags;
+    if (updates.experienceDate !== undefined) updateData.experienceDate = Timestamp.fromDate(updates.experienceDate);
+    if (updates.taggedUsers !== undefined) updateData.taggedUsers = updates.taggedUsers;
+    if (updates.taggedNonUsers !== undefined) updateData.taggedNonUsers = updates.taggedNonUsers;
+    
+    await updateDoc(postRef, updateData);
+  } catch (error) {
+    console.error('Error updating post:', error);
+    throw error;
+  }
+};
+
+export const updatePersonalItem = async (
+  itemId: string,
+  updates: {
+    title?: string;
+    description?: string;
+    category?: Category;
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
+): Promise<void> => {
+  try {
+    const itemRef = doc(db, 'personal_items', itemId);
+    const updateData: Record<string, string | number | Timestamp | string[] | { name: string; email?: string }[]> = {};
+    
+    // Only include fields that are provided
+    if (updates.title !== undefined) updateData.title = updates.title;
+    if (updates.description !== undefined) updateData.description = updates.description;
+    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.location !== undefined) updateData.location = updates.location;
+    if (updates.priceRange !== undefined) updateData.priceRange = updates.priceRange;
+    if (updates.customPrice !== undefined) updateData.customPrice = updates.customPrice;
+    if (updates.tags !== undefined) updateData.tags = updates.tags;
+    if (updates.experienceDate !== undefined) updateData.experienceDate = Timestamp.fromDate(updates.experienceDate);
+    if (updates.taggedUsers !== undefined) updateData.taggedUsers = updates.taggedUsers;
+    if (updates.taggedNonUsers !== undefined) updateData.taggedNonUsers = updates.taggedNonUsers;
+    
+    await updateDoc(itemRef, updateData);
+  } catch (error) {
+    console.error('Error updating personal item:', error);
     throw error;
   }
 }; 

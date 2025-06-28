@@ -18,6 +18,7 @@ interface AppState {
   setPersonalItems: (items: PersonalItem[]) => void;
   addPost: (post: Post) => void;
   addPersonalItem: (item: PersonalItem) => void;
+  updatePost: (postId: string, updates: Partial<Post>) => void;
   updatePersonalItem: (itemId: string, updates: Partial<PersonalItem>) => void;
   removePersonalItem: (itemId: string) => void;
   getSavedItems: () => PersonalItem[];
@@ -41,6 +42,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPersonalItems: (personalItems) => set({ personalItems }),
   addPost: (post) => set((state) => ({ posts: [post, ...state.posts] })),
   addPersonalItem: (item) => set((state) => ({ personalItems: [item, ...state.personalItems] })),
+  updatePost: (postId, updates) => set((state) => ({
+    posts: state.posts.map((post) =>
+      post.id === postId ? { ...post, ...updates } : post
+    ),
+  })),
   updatePersonalItem: (itemId, updates) => set((state) => ({
     personalItems: state.personalItems.map((item) =>
       item.id === itemId ? { ...item, ...updates } : item

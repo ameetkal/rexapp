@@ -5,7 +5,9 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { createPost, createPersonalItem } from '@/lib/firestore';
 import { CATEGORIES, Category, PersonalItemStatus, PersonalItem } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
-import { ChevronDownIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import StarRating from './StarRating';
+import UserTagInput from './UserTagInput';
 
 export default function PostScreen() {
   const [category, setCategory] = useState<Category>('restaurants');
@@ -16,6 +18,17 @@ export default function PostScreen() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   
+  // Enhanced optional fields
+  const [showDetails, setShowDetails] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [location, setLocation] = useState('');
+  const [priceRange, setPriceRange] = useState<'$' | '$$' | '$$$' | '$$$$' | ''>('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [experienceDate, setExperienceDate] = useState('');
+  const [taggedUsers, setTaggedUsers] = useState<Array<{id: string; name: string; email: string}>>([]);
+  const [taggedNonUsers, setTaggedNonUsers] = useState<Array<{name: string; email?: string}>>([]);
+  
   const { user, userProfile } = useAuthStore();
   const { addPost, addPersonalItem } = useAppStore();
 
@@ -25,6 +38,27 @@ export default function PostScreen() {
       setPostToFeed(false);
     }
   }, [status]);
+
+  // Helper functions for managing enhanced fields
+  const addTag = (tag: string) => {
+    const trimmedTag = tag.trim().toLowerCase();
+    if (trimmedTag && !tags.includes(trimmedTag)) {
+      setTags([...tags, trimmedTag]);
+    }
+  };
+
+  const removeTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleTagKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = e.target as HTMLInputElement;
+      addTag(target.value);
+      target.value = '';
+    }
+  };
 
   // Dynamic button text
   const getButtonText = () => {
@@ -51,35 +85,58 @@ export default function PostScreen() {
     try {
       let postId: string | null = null;
       
+      // Prepare enhanced fields
+      const enhancedFields = {
+        rating: rating > 0 ? rating : undefined,
+        location: location.trim() || undefined,
+        priceRange: priceRange || undefined,
+        customPrice: customPrice ? parseFloat(customPrice) : undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        experienceDate: experienceDate ? new Date(experienceDate) : undefined,
+        taggedUsers: taggedUsers.length > 0 ? taggedUsers.map(u => u.id) : undefined,
+        taggedNonUsers: taggedNonUsers.length > 0 ? taggedNonUsers : undefined,
+      };
+
       // Always create a personal item
       const personalItemId = await createPersonalItem(
         user.uid,
         category,
         title,
-        description
+        description.trim() || undefined,
+        enhancedFields
       );
       
-      // Create personal item for local store
-      const personalItem: PersonalItem = {
-        id: personalItemId,
-        userId: user.uid,
-        category,
-        title,
-        description,
-        status,
-        createdAt: Timestamp.now(),
-        source: 'personal',
-      };
-      
-      // If user wants to post to feed, create a post too
-      if (postToFeed) {
-        postId = await createPost(
-          user.uid,
-          userProfile.name,
+              // Create personal item for local store
+        const personalItem: PersonalItem = {
+          id: personalItemId,
+          userId: user.uid,
           category,
           title,
-          description
-        );
+          description: description.trim() || '',
+          status,
+          createdAt: Timestamp.now(),
+          source: 'personal',
+          // Include enhanced fields
+          ...(rating > 0 && { rating }),
+          ...(location.trim() && { location: location.trim() }),
+          ...(priceRange && { priceRange }),
+          ...(customPrice && { customPrice: parseFloat(customPrice) }),
+          ...(tags.length > 0 && { tags }),
+          ...(experienceDate && { experienceDate: Timestamp.fromDate(new Date(experienceDate)) }),
+          ...(taggedUsers.length > 0 && { taggedUsers: taggedUsers.map(u => u.id) }),
+          ...(taggedNonUsers.length > 0 && { taggedNonUsers }),
+        };
+      
+              // If user wants to post to feed, create a post too
+        if (postToFeed) {
+          postId = await createPost(
+            user.uid,
+            userProfile.name,
+            category,
+            title,
+            description.trim() || undefined,
+            enhancedFields
+          );
         
         // Add to posts store
         const newPost = {
@@ -88,7 +145,7 @@ export default function PostScreen() {
           authorName: userProfile.name,
           category,
           title,
-          description,
+          description: description.trim() || '',
           createdAt: Timestamp.now(),
           savedBy: [],
         };
@@ -104,13 +161,23 @@ export default function PostScreen() {
       // Add personal item to store
       addPersonalItem(personalItem);
 
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setCategory('restaurants');
-      setStatus('completed');
-      setPostToFeed(true);
-      setSuccess(true);
+              // Reset form
+        setTitle('');
+        setDescription('');
+        setCategory('restaurants');
+        setStatus('completed');
+        setPostToFeed(true);
+        // Reset enhanced fields
+        setRating(0);
+        setLocation('');
+        setPriceRange('');
+        setCustomPrice('');
+        setTags([]);
+        setExperienceDate('');
+        setTaggedUsers([]);
+        setTaggedNonUsers([]);
+        setShowDetails(false);
+        setSuccess(true);
       
       // Hide success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
@@ -143,6 +210,26 @@ export default function PostScreen() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Title */}
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+                Title
+              </label>
+              <input
+                id="title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                maxLength={100}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="What are you recommending?"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {title.length}/100 characters
+              </p>
+            </div>
+
             {/* Category Selector */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -199,6 +286,25 @@ export default function PostScreen() {
               </div>
             </div>
 
+            {/* Description */}
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+                Description <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                maxLength={500}
+                rows={4}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="Tell us more about this... (optional)"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {description.length}/500 characters
+              </p>
+            </div>
+
             {/* Post to Feed Option */}
             <div>
               <label className="flex items-center">
@@ -220,49 +326,150 @@ export default function PostScreen() {
               </label>
             </div>
 
-            {/* Title */}
+            {/* Enhanced Details Toggle */}
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-                Title
-              </label>
-              <input
-                id="title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                required
-                maxLength={100}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="What are you recommending?"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {title.length}/100 characters
-              </p>
-            </div>
+              <button
+                type="button"
+                onClick={() => setShowDetails(!showDetails)}
+                className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <span className="text-sm font-medium text-gray-700">
+                  ✨ Add Details (Optional)
+                </span>
+                {showDetails ? (
+                  <ChevronUpIcon className="h-5 w-5 text-gray-400" />
+                ) : (
+                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                )}
+              </button>
 
-            {/* Description */}
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                Description
-              </label>
-              <textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                required
-                maxLength={500}
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="Tell your friends why they should try this..."
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                {description.length}/500 characters
-              </p>
+              {showDetails && (
+                <div className="mt-4 space-y-4 p-4 bg-gray-50 rounded-lg">
+                  {/* Rating */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      ⭐ Rating
+                    </label>
+                    <StarRating 
+                      rating={rating} 
+                      onRatingChange={setRating}
+                      maxRating={10}
+                      size="md"
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      📍 Location
+                    </label>
+                    <input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="e.g. Chinatown, NYC"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Price Range */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      💰 Price Range
+                    </label>
+                    <div className="flex space-x-2">
+                      {['$', '$$', '$$$', '$$$$'].map((price) => (
+                        <button
+                          key={price}
+                          type="button"
+                          onClick={() => setPriceRange(price as '$' | '$$' | '$$$' | '$$$$')}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                            priceRange === price
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {price}
+                        </button>
+                      ))}
+                      <input
+                        type="number"
+                        value={customPrice}
+                        onChange={(e) => setCustomPrice(e.target.value)}
+                        placeholder="$25"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      🏷️ Tags
+                    </label>
+                    <div className="space-y-2">
+                      {tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {tags.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            >
+                              #{tag}
+                              <button
+                                type="button"
+                                onClick={() => removeTag(tag)}
+                                className="ml-1 text-blue-600 hover:text-blue-800"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        onKeyPress={handleTagKeyPress}
+                        placeholder="Add tags (press Enter) e.g. romantic, spicy, hidden-gem"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Experience Date */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      📅 When did you experience this?
+                    </label>
+                    <input
+                      type="date"
+                      value={experienceDate}
+                      onChange={(e) => setExperienceDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* Tagged Users */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      👥 Who did you experience this with?
+                    </label>
+                    <UserTagInput
+                      taggedUsers={taggedUsers}
+                      taggedNonUsers={taggedNonUsers}
+                      onAddUser={(user) => setTaggedUsers([...taggedUsers, user])}
+                      onRemoveUser={(userId) => setTaggedUsers(taggedUsers.filter(u => u.id !== userId))}
+                      onAddNonUser={(nonUser) => setTaggedNonUsers([...taggedNonUsers, nonUser])}
+                      onRemoveNonUser={(index) => setTaggedNonUsers(taggedNonUsers.filter((_, i) => i !== index))}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <button
               type="submit"
-              disabled={loading || !title.trim() || !description.trim()}
+              disabled={loading || !title.trim()}
               className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {getButtonText()}
@@ -272,13 +479,13 @@ export default function PostScreen() {
           {/* Tips */}
           <div className="mt-8 p-4 bg-blue-50 rounded-lg">
             <h3 className="text-sm font-medium text-blue-900 mb-2">
-              💡 Tips for adding items:
+              💡 Quick posting tips:
             </h3>
             <ul className="text-xs text-blue-800 space-y-1">
-              <li>• Be specific about what makes it interesting</li>
-              <li>• Include details like location, genre, or style</li>
-              <li>• Share what you loved or what you&apos;re excited about</li>
-              <li>• Keep it clear and helpful for future you</li>
+              <li>• <strong>Title</strong> is all you need to get started</li>
+              <li>• Add details like rating, location, and tags for richer posts</li>
+              <li>• Tag friends to invite them to Rex</li>
+              <li>• Use &quot;Other&quot; category for anything that doesn&apos;t fit elsewhere</li>
             </ul>
           </div>
         </div>

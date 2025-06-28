@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckIcon, ShareIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ShareIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
 import { updatePersonalItemStatus, deletePersonalItem, sharePersonalItemAsPost } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
+import EditModal from './EditModal';
 
 interface PersonalItemCardProps {
   item: PersonalItem;
@@ -15,6 +16,7 @@ interface PersonalItemCardProps {
 export default function PersonalItemCard({ item }: PersonalItemCardProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [shareDescription, setShareDescription] = useState(item.description);
   
   const { userProfile } = useAuthStore();
@@ -173,6 +175,14 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           )}
 
           <button
+            onClick={() => setShowEditModal(true)}
+            className="flex items-center space-x-1 px-3 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 text-sm"
+            title="Edit item"
+          >
+            <PencilSquareIcon className="h-4 w-4" />
+          </button>
+
+          <button
             onClick={handleDelete}
             disabled={loading === 'delete'}
             className="flex items-center space-x-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50 text-sm ml-auto"
@@ -219,6 +229,14 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           </div>
         </div>
       )}
+
+      {/* Edit Modal */}
+      <EditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        item={item}
+        type="personal"
+      />
     </>
   );
 } 

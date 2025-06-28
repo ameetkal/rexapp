@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type Category = 'restaurants' | 'movies' | 'books' | 'music' | 'travel';
+export type Category = 'restaurants' | 'movies' | 'books' | 'music' | 'travel' | 'other';
 
 export interface Post {
   id: string;
@@ -11,6 +11,17 @@ export interface Post {
   description: string;
   createdAt: Timestamp;
   savedBy: string[]; // userIds who saved this
+  
+  // Enhanced optional fields
+  rating?: number; // 1-10
+  photos?: string[]; // image URLs
+  location?: string;
+  priceRange?: '$' | '$$' | '$$$' | '$$$$';
+  customPrice?: number;
+  tags?: string[];
+  experienceDate?: Timestamp;
+  taggedUsers?: string[]; // userIds of tagged people
+  taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
 
 export interface User {
@@ -42,6 +53,17 @@ export interface PersonalItem {
   originalPostId?: string;
   originalAuthorId?: string;
   originalAuthorName?: string;
+  
+  // Enhanced optional fields (same as Post)
+  rating?: number; // 1-10
+  photos?: string[]; // image URLs
+  location?: string;
+  priceRange?: '$' | '$$' | '$$$' | '$$$$';
+  customPrice?: number;
+  tags?: string[];
+  experienceDate?: Timestamp;
+  taggedUsers?: string[]; // userIds of tagged people
+  taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
 
 export const CATEGORIES: CategoryInfo[] = [
@@ -50,4 +72,5 @@ export const CATEGORIES: CategoryInfo[] = [
   { id: 'books', name: 'Books', emoji: '📚' },
   { id: 'music', name: 'Music/Podcasts', emoji: '🎵' },
   { id: 'travel', name: 'Travel/Places', emoji: '✈️' },
+  { id: 'other', name: 'Other', emoji: '✨' },
 ]; 

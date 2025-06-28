@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BookmarkIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
 import { Post, PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
 import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
+import EditModal from './EditModal';
 
 interface PostCardProps {
   post: Post;
@@ -16,6 +17,7 @@ interface PostCardProps {
 export default function PostCard({ post }: PostCardProps) {
   const [loading, setLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const { user } = useAuthStore();
   const { addPersonalItem, removePersonalItem, personalItems } = useAppStore();
   
@@ -113,21 +115,36 @@ export default function PostCard({ post }: PostCardProps) {
           </div>
         </div>
         
-        <button
-          onClick={handleSaveToggle}
-          disabled={loading}
-          className={`p-2 rounded-full transition-colors ${
-            isSaved 
-              ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
-              : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-          } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          {isSaved ? (
-            <BookmarkSolid className="h-5 w-5" />
-          ) : (
-            <BookmarkIcon className="h-5 w-5" />
+        <div className="flex items-center space-x-2">
+          {/* Edit button - only show for posts authored by current user */}
+          {user && post.authorId === user.uid && (
+            <button
+              onClick={() => setShowEditModal(true)}
+              className="p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
+              title="Edit post"
+            >
+              <PencilSquareIcon className="h-5 w-5" />
+            </button>
           )}
-        </button>
+          
+          {/* Save button */}
+          <button
+            onClick={handleSaveToggle}
+            disabled={loading}
+            className={`p-2 rounded-full transition-colors ${
+              isSaved 
+                ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
+                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title={isSaved ? 'Remove from Want to Try' : 'Add to Want to Try'}
+          >
+            {isSaved ? (
+              <BookmarkSolid className="h-5 w-5" />
+            ) : (
+              <BookmarkIcon className="h-5 w-5" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Category Badge */}
@@ -149,6 +166,14 @@ export default function PostCard({ post }: PostCardProps) {
       </div>
 
       {/* Footer - removed savedBy count since we're using personal items now */}
+      
+      {/* Edit Modal */}
+      <EditModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        item={post}
+        type="post"
+      />
     </div>
   );
 } 
