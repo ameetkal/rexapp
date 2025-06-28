@@ -12,7 +12,7 @@ import {
   arrayRemove,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -89,15 +89,64 @@ export const getSavedPosts = async (userId: string): Promise<Post[]> => {
   }
 };
 
-export const toggleSavePost = async (postId: string, userId: string, shouldSave: boolean) => {
+export const savePostAsPersonalItem = async (
+  post: Post,
+  userId: string
+): Promise<string> => {
   try {
-    const postRef = doc(db, 'posts', postId);
-    await updateDoc(postRef, {
-      savedBy: shouldSave ? arrayUnion(userId) : arrayRemove(userId),
+    const personalItemData = {
+      userId,
+      category: post.category,
+      title: post.title,
+      description: post.description,
+      status: 'want_to_try' as PersonalItemStatus,
+      createdAt: Timestamp.now(),
+      source: 'saved_from_post',
+      originalPostId: post.id,
+      originalAuthorId: post.authorId,
+      originalAuthorName: post.authorName,
+    };
+    
+    const docRef = await addDoc(collection(db, 'personal_items'), personalItemData);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error saving post as personal item:', error);
+    throw error;
+  }
+};
+
+export const unsavePersonalItem = async (personalItemId: string): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'personal_items', personalItemId), {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      status: 'deleted' as any,
     });
   } catch (error) {
-    console.error('Error toggling save post:', error);
+    console.error('Error unsaving personal item:', error);
     throw error;
+  }
+};
+
+export const getPersonalItemByPostId = async (
+  userId: string,
+  postId: string
+): Promise<PersonalItem | null> => {
+  try {
+    const q = query(
+      collection(db, 'personal_items'),
+      where('userId', '==', userId),
+      where('originalPostId', '==', postId),
+      where('status', '!=', 'deleted')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.empty) return null;
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as PersonalItem;
+  } catch (error) {
+    console.error('Error getting personal item by post ID:', error);
+    return null;
   }
 };
 
@@ -143,5 +192,118 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
   } catch (error) {
     console.error('Error searching users:', error);
     return [];
+  }
+};
+
+// Personal Items Functions
+export const createPersonalItem = async (
+  userId: string,
+  category: Category,
+  title: string,
+  description: string
+): Promise<string> => {
+  try {
+    const itemData = {
+      userId,
+      category,
+      title,
+      description,
+      status: 'want_to_try' as PersonalItemStatus,
+      createdAt: Timestamp.now(),
+      source: 'personal' as const,
+    };
+    
+    const docRef = await addDoc(collection(db, 'personal_items'), itemData);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating personal item:', error);
+    throw error;
+  }
+};
+
+export const getPersonalItems = async (userId: string): Promise<PersonalItem[]> => {
+  try {
+    const q = query(
+      collection(db, 'personal_items'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const items: PersonalItem[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      items.push({ id: doc.id, ...doc.data() } as PersonalItem);
+    });
+    
+    return items;
+  } catch (error) {
+    console.error('Error getting personal items:', error);
+    return [];
+  }
+};
+
+export const updatePersonalItemStatus = async (
+  itemId: string,
+  status: PersonalItemStatus,
+  sharedPostId?: string
+): Promise<void> => {
+  try {
+    const itemRef = doc(db, 'personal_items', itemId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: { [key: string]: any } = {
+      status,
+    };
+    
+    if (status === 'completed') {
+      updateData.completedAt = Timestamp.now();
+    }
+    
+    if (sharedPostId) {
+      updateData.sharedPostId = sharedPostId;
+    }
+    
+    await updateDoc(itemRef, updateData);
+  } catch (error) {
+    console.error('Error updating personal item status:', error);
+    throw error;
+  }
+};
+
+export const deletePersonalItem = async (itemId: string): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'personal_items', itemId), {
+      // Mark as deleted instead of actually deleting for data integrity
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      status: 'deleted' as any,
+    });
+  } catch (error) {
+    console.error('Error deleting personal item:', error);
+    throw error;
+  }
+};
+
+export const sharePersonalItemAsPost = async (
+  personalItem: PersonalItem,
+  authorName: string,
+  updatedDescription?: string
+): Promise<string> => {
+  try {
+    // Create the post
+    const postId = await createPost(
+      personalItem.userId,
+      authorName,
+      personalItem.category,
+      personalItem.title,
+      updatedDescription || personalItem.description
+    );
+    
+    // Update the personal item status
+    await updatePersonalItemStatus(personalItem.id, 'shared', postId);
+    
+    return postId;
+  } catch (error) {
+    console.error('Error sharing personal item as post:', error);
+    throw error;
   }
 }; 

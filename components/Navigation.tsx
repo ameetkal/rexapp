@@ -36,7 +36,7 @@ export default function Navigation({ activeTab, onTabChange }: NavigationProps) 
     },
     {
       id: 'saved' as const,
-      name: 'Saved',
+      name: 'Want to Try',
       icon: BookmarkIcon,
       activeIcon: BookmarkIconSolid,
     },

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { User as FirebaseUser } from 'firebase/auth';
-import { User, Post } from './types';
+import { User, Post, PersonalItem } from './types';
 
 interface AuthState {
   user: FirebaseUser | null;
@@ -13,11 +13,16 @@ interface AuthState {
 
 interface AppState {
   posts: Post[];
-  savedPosts: Post[];
+  personalItems: PersonalItem[];
   setPosts: (posts: Post[]) => void;
-  setSavedPosts: (posts: Post[]) => void;
+  setPersonalItems: (items: PersonalItem[]) => void;
   addPost: (post: Post) => void;
-  toggleSavePost: (postId: string, userId: string) => void;
+  addPersonalItem: (item: PersonalItem) => void;
+  updatePersonalItem: (itemId: string, updates: Partial<PersonalItem>) => void;
+  removePersonalItem: (itemId: string) => void;
+  getSavedItems: () => PersonalItem[];
+  getCompletedItems: () => PersonalItem[];
+  getSharedItems: () => PersonalItem[];
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -29,21 +34,31 @@ export const useAuthStore = create<AuthState>((set) => ({
   setLoading: (loading) => set({ loading }),
 }));
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   posts: [],
-  savedPosts: [],
+  personalItems: [],
   setPosts: (posts) => set({ posts }),
-  setSavedPosts: (savedPosts) => set({ savedPosts }),
+  setPersonalItems: (personalItems) => set({ personalItems }),
   addPost: (post) => set((state) => ({ posts: [post, ...state.posts] })),
-  toggleSavePost: (postId, userId) => set((state) => ({
-    posts: state.posts.map((post) => {
-      if (post.id === postId) {
-        const savedBy = post.savedBy.includes(userId)
-          ? post.savedBy.filter((id) => id !== userId)
-          : [...post.savedBy, userId];
-        return { ...post, savedBy };
-      }
-      return post;
-    }),
+  addPersonalItem: (item) => set((state) => ({ personalItems: [item, ...state.personalItems] })),
+  updatePersonalItem: (itemId, updates) => set((state) => ({
+    personalItems: state.personalItems.map((item) =>
+      item.id === itemId ? { ...item, ...updates } : item
+    ),
   })),
+  removePersonalItem: (itemId) => set((state) => ({
+    personalItems: state.personalItems.filter((item) => item.id !== itemId),
+  })),
+  getSavedItems: () => {
+    const state = get();
+    return state.personalItems.filter(item => item.status === 'want_to_try');
+  },
+  getCompletedItems: () => {
+    const state = get();
+    return state.personalItems.filter(item => item.status === 'completed');
+  },
+  getSharedItems: () => {
+    const state = get();
+    return state.personalItems.filter(item => item.status === 'shared');
+  },
 })); 

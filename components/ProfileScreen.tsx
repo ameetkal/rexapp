@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuthStore } from '@/lib/store';
-import { searchUsers, followUser, unfollowUser } from '@/lib/firestore';
+import { useAuthStore, useAppStore } from '@/lib/store';
+import { searchUsers, followUser, unfollowUser, getPersonalItems } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { User } from '@/lib/types';
-import { MagnifyingGlassIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, UserPlusIcon, UserMinusIcon, ListBulletIcon } from '@heroicons/react/24/outline';
+import PersonalItemCard from './PersonalItemCard';
 
 export default function ProfileScreen() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -14,7 +15,10 @@ export default function ProfileScreen() {
   const [followingUsers, setFollowingUsers] = useState<User[]>([]);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
+  const [activeTab, setActiveTab] = useState<'all' | 'want_to_try' | 'completed' | 'shared'>('completed');
+  
   const { user, userProfile, setUserProfile } = useAuthStore();
+  const { personalItems, setPersonalItems } = useAppStore();
 
   const loadFollowingUsers = useCallback(async () => {
     if (!userProfile) return;
@@ -32,9 +36,21 @@ export default function ProfileScreen() {
     }
   }, [userProfile]);
 
+  const loadPersonalItems = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const items = await getPersonalItems(user.uid);
+      setPersonalItems(items);
+    } catch (error) {
+      console.error('Error loading personal items:', error);
+    }
+  }, [user, setPersonalItems]);
+
   useEffect(() => {
     loadFollowingUsers();
-  }, [loadFollowingUsers]);
+    loadPersonalItems();
+  }, [loadFollowingUsers, loadPersonalItems]);
 
   const handleSearch = async () => {
     if (!searchTerm.trim() || !user) return;
@@ -101,6 +117,15 @@ export default function ProfileScreen() {
     return userProfile?.following.includes(userId) || false;
   };
 
+
+
+  const filteredPersonalItems = personalItems.filter(item => {
+    // Only show completed and shared items in Profile (want_to_try items are in Saved tab now)
+    if (activeTab === 'completed') return item.status === 'completed';
+    if (activeTab === 'shared') return item.status === 'shared';
+    return false;
+  });
+
   return (
     <div className="flex-1 overflow-y-auto pb-20">
       <div className="px-4 py-6">
@@ -116,7 +141,65 @@ export default function ProfileScreen() {
               <div className="text-xl font-bold text-gray-900">{userProfile?.following.length || 0}</div>
               <div className="text-sm text-gray-500">Following</div>
             </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-gray-900">
+                {personalItems.filter(item => item.status === 'completed' || item.status === 'shared').length || 0}
+              </div>
+              <div className="text-sm text-gray-500">Experiences</div>
+            </div>
           </div>
+        </div>
+
+        {/* My Activity Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">My Activity</h3>
+          </div>
+
+          {/* Tab Navigation */}
+          <div className="flex space-x-1 mb-4 bg-gray-100 rounded-lg p-1">
+            {[
+              { key: 'completed', label: 'Completed' },
+              { key: 'shared', label: 'Shared' },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as 'all' | 'want_to_try' | 'completed' | 'shared')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Activity Items List */}
+          {filteredPersonalItems.length === 0 ? (
+            <div className="text-center py-8">
+              <ListBulletIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500">
+                {activeTab === 'completed' 
+                  ? "You haven't completed anything yet"
+                  : "You haven't shared any recommendations yet"
+                }
+              </p>
+              <p className="text-sm text-gray-400 mt-1">
+                {activeTab === 'completed'
+                  ? "Complete items from your Want to Try list to see them here"
+                  : "Share completed experiences as recommendations to your friends"
+                }
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredPersonalItems.map((item) => (
+                <PersonalItemCard key={item.id} item={item} />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Search Section */}

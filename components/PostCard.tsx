@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BookmarkIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
-import { Post } from '@/lib/types';
+import { Post, PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
-import { toggleSavePost } from '@/lib/firestore';
+import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId } from '@/lib/firestore';
+import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 
 interface PostCardProps {
@@ -14,11 +15,34 @@ interface PostCardProps {
 
 export default function PostCard({ post }: PostCardProps) {
   const [loading, setLoading] = useState(false);
+  const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
   const { user } = useAuthStore();
-  const { toggleSavePost: toggleSaveInStore } = useAppStore();
+  const { addPersonalItem, removePersonalItem, personalItems } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === post.category);
-  const isSaved = user ? post.savedBy.includes(user.uid) : false;
+  const isSaved = !!savedPersonalItem;
+
+  // Check if this post is already saved as a personal item
+  useEffect(() => {
+    const checkSaveStatus = async () => {
+      if (!user) return;
+      
+      // First check local store
+      const existingItem = personalItems.find(
+        item => item.originalPostId === post.id
+      );
+      
+      if (existingItem) {
+        setSavedPersonalItem(existingItem);
+      } else {
+        // Check database as fallback
+        const savedItem = await getPersonalItemByPostId(user.uid, post.id);
+        setSavedPersonalItem(savedItem);
+      }
+    };
+    
+    checkSaveStatus();
+  }, [user, post.id, personalItems]);
   
   const formatDate = (timestamp: { toDate: () => Date }) => {
     const date = timestamp.toDate();
@@ -42,8 +66,32 @@ export default function PostCard({ post }: PostCardProps) {
     
     setLoading(true);
     try {
-      await toggleSavePost(post.id, user.uid, !isSaved);
-      toggleSaveInStore(post.id, user.uid);
+      if (isSaved && savedPersonalItem) {
+        // Unsave - remove personal item
+        await unsavePersonalItem(savedPersonalItem.id);
+        removePersonalItem(savedPersonalItem.id);
+        setSavedPersonalItem(null);
+      } else {
+        // Save - create personal item
+        const personalItemId = await savePostAsPersonalItem(post, user.uid);
+        
+        const newPersonalItem: PersonalItem = {
+          id: personalItemId,
+          userId: user.uid,
+          category: post.category,
+          title: post.title,
+          description: post.description,
+          status: 'want_to_try',
+          createdAt: Timestamp.now(),
+          source: 'saved_from_post',
+          originalPostId: post.id,
+          originalAuthorId: post.authorId,
+          originalAuthorName: post.authorName,
+        };
+        
+        addPersonalItem(newPersonalItem);
+        setSavedPersonalItem(newPersonalItem);
+      }
     } catch (error) {
       console.error('Error toggling save:', error);
     } finally {
@@ -100,14 +148,7 @@ export default function PostCard({ post }: PostCardProps) {
         </p>
       </div>
 
-      {/* Footer */}
-      {post.savedBy.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-gray-100">
-          <p className="text-xs text-gray-500">
-            {post.savedBy.length} {post.savedBy.length === 1 ? 'person has' : 'people have'} saved this
-          </p>
-        </div>
-      )}
+      {/* Footer - removed savedBy count since we're using personal items now */}
     </div>
   );
 } 

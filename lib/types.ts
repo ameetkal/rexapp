@@ -26,6 +26,24 @@ export interface CategoryInfo {
   emoji: string;
 }
 
+export type PersonalItemStatus = 'want_to_try' | 'completed' | 'shared';
+
+export interface PersonalItem {
+  id: string;
+  userId: string;
+  category: Category;
+  title: string;
+  description: string;
+  status: PersonalItemStatus;
+  createdAt: Timestamp;
+  completedAt?: Timestamp;
+  sharedPostId?: string;
+  source: 'personal' | 'saved_from_post';
+  originalPostId?: string;
+  originalAuthorId?: string;
+  originalAuthorName?: string;
+}
+
 export const CATEGORIES: CategoryInfo[] = [
   { id: 'restaurants', name: 'Restaurants', emoji: '🍕' },
   { id: 'movies', name: 'Movies/TV', emoji: '🎬' },
