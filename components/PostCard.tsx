@@ -163,6 +163,11 @@ export default function PostCard({ post }: PostCardProps) {
         <p className="text-gray-600 leading-relaxed">
           {post.description}
         </p>
+        {post.recommendedBy && (
+          <p className="text-sm text-gray-500">
+            🤝 Recommended by <span className="font-medium">{post.recommendedBy}</span>
+          </p>
+        )}
       </div>
 
       {/* Footer - removed savedBy count since we're using personal items now */}

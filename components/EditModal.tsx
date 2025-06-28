@@ -20,6 +20,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
   const [category, setCategory] = useState<Category>(item.category);
   const [title, setTitle] = useState(item.title);
   const [description, setDescription] = useState(item.description || '');
+  const [recommendedBy, setRecommendedBy] = useState(item.recommendedBy || '');
   const [rating, setRating] = useState(item.rating || 0);
   const [location, setLocation] = useState(item.location || '');
   const [priceRange, setPriceRange] = useState<'$' | '$$' | '$$$' | '$$$$' | ''>(item.priceRange || '');
@@ -66,6 +67,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
         title: title.trim(),
         description: description.trim() || '',
         category,
+        ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
         ...(rating > 0 && { rating }),
         ...(location.trim() && { location: location.trim() }),
         ...(priceRange && { priceRange }),
@@ -83,6 +85,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
           title: title.trim(),
           description: description.trim() || '',
           category,
+          ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
           ...(rating > 0 && { rating }),
           ...(location.trim() && { location: location.trim() }),
           ...(priceRange && { priceRange }),
@@ -100,6 +103,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
           title: title.trim(),
           description: description.trim() || '',
           category,
+          ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
           ...(rating > 0 && { rating }),
           ...(location.trim() && { location: location.trim() }),
           ...(priceRange && { priceRange }),
@@ -195,6 +199,25 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
             />
             <p className="text-xs text-gray-500 mt-1">
               {description.length}/500 characters
+            </p>
+          </div>
+
+          {/* Recommended By */}
+          <div>
+            <label htmlFor="edit-recommendedBy" className="block text-sm font-medium text-gray-700 mb-2">
+              🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              id="edit-recommendedBy"
+              type="text"
+              value={recommendedBy}
+              onChange={(e) => setRecommendedBy(e.target.value)}
+              maxLength={100}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g. Sarah, my coworker, TikTok, my mom..."
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Who suggested this to you?
             </p>
           </div>
 

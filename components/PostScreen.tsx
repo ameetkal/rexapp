@@ -14,6 +14,7 @@ export default function PostScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<PersonalItemStatus>('completed');
+  const [recommendedBy, setRecommendedBy] = useState('');
   const [postToFeed, setPostToFeed] = useState(true);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -95,6 +96,7 @@ export default function PostScreen() {
         experienceDate: experienceDate ? new Date(experienceDate) : undefined,
         taggedUsers: taggedUsers.length > 0 ? taggedUsers.map(u => u.id) : undefined,
         taggedNonUsers: taggedNonUsers.length > 0 ? taggedNonUsers : undefined,
+        recommendedBy: recommendedBy.trim() || undefined,
       };
 
       // Always create a personal item
@@ -117,6 +119,7 @@ export default function PostScreen() {
           createdAt: Timestamp.now(),
           source: 'personal',
           // Include enhanced fields
+          ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
           ...(rating > 0 && { rating }),
           ...(location.trim() && { location: location.trim() }),
           ...(priceRange && { priceRange }),
@@ -148,6 +151,7 @@ export default function PostScreen() {
           description: description.trim() || '',
           createdAt: Timestamp.now(),
           savedBy: [],
+          ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
         };
         addPost(newPost);
         
@@ -166,6 +170,7 @@ export default function PostScreen() {
         setDescription('');
         setCategory('restaurants');
         setStatus('completed');
+        setRecommendedBy('');
         setPostToFeed(true);
         // Reset enhanced fields
         setRating(0);
@@ -305,6 +310,25 @@ export default function PostScreen() {
               </p>
             </div>
 
+            {/* Recommended By */}
+            <div>
+              <label htmlFor="recommendedBy" className="block text-sm font-medium text-gray-700 mb-2">
+                🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                id="recommendedBy"
+                type="text"
+                value={recommendedBy}
+                onChange={(e) => setRecommendedBy(e.target.value)}
+                maxLength={100}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g. Sarah, my coworker, TikTok, my mom..."
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Who suggested this to you?
+              </p>
+            </div>
+
             {/* Post to Feed Option */}
             <div>
               <label className="flex items-center">
@@ -326,22 +350,23 @@ export default function PostScreen() {
               </label>
             </div>
 
-            {/* Enhanced Details Toggle */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowDetails(!showDetails)}
-                className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <span className="text-sm font-medium text-gray-700">
-                  ✨ Add Details (Optional)
-                </span>
-                {showDetails ? (
-                  <ChevronUpIcon className="h-5 w-5 text-gray-400" />
-                ) : (
-                  <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-                )}
-              </button>
+            {/* Enhanced Details Toggle - Only show for completed items */}
+            {status === 'completed' && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowDetails(!showDetails)}
+                  className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <span className="text-sm font-medium text-gray-700">
+                    ✨ Add Experience Details (Optional)
+                  </span>
+                  {showDetails ? (
+                    <ChevronUpIcon className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+                  )}
+                </button>
 
               {showDetails && (
                 <div className="mt-4 space-y-4 p-4 bg-gray-50 rounded-lg">
@@ -465,7 +490,8 @@ export default function PostScreen() {
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
 
             <button
               type="submit"

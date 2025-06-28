@@ -29,6 +29,7 @@ export const createPost = async (
     experienceDate?: Date;
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
   }
 ): Promise<string> => {
   try {
@@ -50,6 +51,7 @@ export const createPost = async (
         ...(enhancedFields.experienceDate && { experienceDate: Timestamp.fromDate(enhancedFields.experienceDate) }),
         ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
         ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
+        ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
       }),
     };
     
@@ -231,6 +233,7 @@ export const createPersonalItem = async (
     experienceDate?: Date;
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
   }
 ): Promise<string> => {
   try {
@@ -252,6 +255,7 @@ export const createPersonalItem = async (
         ...(enhancedFields.experienceDate && { experienceDate: Timestamp.fromDate(enhancedFields.experienceDate) }),
         ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
         ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
+        ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
       }),
     };
     
@@ -365,6 +369,7 @@ export const updatePost = async (
     experienceDate?: Date;
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
   }
 ): Promise<void> => {
   try {
@@ -383,6 +388,7 @@ export const updatePost = async (
     if (updates.experienceDate !== undefined) updateData.experienceDate = Timestamp.fromDate(updates.experienceDate);
     if (updates.taggedUsers !== undefined) updateData.taggedUsers = updates.taggedUsers;
     if (updates.taggedNonUsers !== undefined) updateData.taggedNonUsers = updates.taggedNonUsers;
+    if (updates.recommendedBy !== undefined) updateData.recommendedBy = updates.recommendedBy;
     
     await updateDoc(postRef, updateData);
   } catch (error) {
@@ -405,6 +411,7 @@ export const updatePersonalItem = async (
     experienceDate?: Date;
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
   }
 ): Promise<void> => {
   try {
@@ -423,6 +430,7 @@ export const updatePersonalItem = async (
     if (updates.experienceDate !== undefined) updateData.experienceDate = Timestamp.fromDate(updates.experienceDate);
     if (updates.taggedUsers !== undefined) updateData.taggedUsers = updates.taggedUsers;
     if (updates.taggedNonUsers !== undefined) updateData.taggedNonUsers = updates.taggedNonUsers;
+    if (updates.recommendedBy !== undefined) updateData.recommendedBy = updates.recommendedBy;
     
     await updateDoc(itemRef, updateData);
   } catch (error) {

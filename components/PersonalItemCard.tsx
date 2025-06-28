@@ -139,7 +139,13 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
 
         {/* Content */}
         <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
-        <p className="text-gray-600 text-sm mb-4">{item.description}</p>
+        <p className="text-gray-600 text-sm mb-2">{item.description}</p>
+        {item.recommendedBy && (
+          <p className="text-xs text-gray-500 mb-4">
+            🤝 Recommended by <span className="font-medium">{item.recommendedBy}</span>
+          </p>
+        )}
+        {!item.recommendedBy && <div className="mb-4" />}
 
         {/* Actions */}
         <div className="flex items-center space-x-2">
