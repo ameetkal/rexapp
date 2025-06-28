@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createPost, createPersonalItem } from '@/lib/firestore';
 import { CATEGORIES, Category, PersonalItemStatus, PersonalItem } from '@/lib/types';
@@ -13,7 +13,7 @@ export default function PostScreen() {
   const [category, setCategory] = useState<Category>('restaurants');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<PersonalItemStatus>('completed');
+  const [status, setStatus] = useState<PersonalItemStatus>('want_to_try');
   const [recommendedBy, setRecommendedBy] = useState('');
   const [postToFeed, setPostToFeed] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -33,12 +33,7 @@ export default function PostScreen() {
   const { user, userProfile } = useAuthStore();
   const { addPost, addPersonalItem } = useAppStore();
 
-  // Auto-disable post to feed when want_to_try is selected
-  useEffect(() => {
-    if (status === 'want_to_try') {
-      setPostToFeed(false);
-    }
-  }, [status]);
+
 
   // Helper functions for managing enhanced fields
   const addTag = (tag: string) => {
@@ -169,7 +164,7 @@ export default function PostScreen() {
         setTitle('');
         setDescription('');
         setCategory('restaurants');
-        setStatus('completed');
+        setStatus('want_to_try');
         setRecommendedBy('');
         setPostToFeed(true);
         // Reset enhanced fields
@@ -227,7 +222,7 @@ export default function PostScreen() {
                 onChange={(e) => setTitle(e.target.value)}
                 required
                 maxLength={100}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                 placeholder="What are you recommending?"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -302,7 +297,7 @@ export default function PostScreen() {
                 onChange={(e) => setDescription(e.target.value)}
                 maxLength={500}
                 rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-gray-500"
                 placeholder="Tell us more about this... (optional)"
               />
               <p className="text-xs text-gray-500 mt-1">
@@ -336,23 +331,16 @@ export default function PostScreen() {
                   type="checkbox"
                   checked={postToFeed}
                   onChange={(e) => setPostToFeed(e.target.checked)}
-                  disabled={status === 'want_to_try'}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <span className="ml-3 text-sm text-gray-700">
                   📢 Share with friends on the feed
-                  {status === 'want_to_try' && (
-                    <span className="block text-xs text-gray-500 mt-1">
-                      Only available for things you&apos;ve already tried
-                    </span>
-                  )}
                 </span>
               </label>
             </div>
 
-            {/* Enhanced Details Toggle - Only show for completed items */}
-            {status === 'completed' && (
-              <div>
+            {/* Enhanced Details Toggle */}
+            <div>
                 <button
                   type="button"
                   onClick={() => setShowDetails(!showDetails)}
@@ -393,7 +381,7 @@ export default function PostScreen() {
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       placeholder="e.g. Chinatown, NYC"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                     />
                   </div>
 
@@ -422,7 +410,7 @@ export default function PostScreen() {
                         value={customPrice}
                         onChange={(e) => setCustomPrice(e.target.value)}
                         placeholder="$25"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                       />
                     </div>
                   </div>
@@ -456,7 +444,7 @@ export default function PostScreen() {
                         type="text"
                         onKeyPress={handleTagKeyPress}
                         placeholder="Add tags (press Enter) e.g. romantic, spicy, hidden-gem"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                       />
                     </div>
                   </div>
@@ -491,7 +479,6 @@ export default function PostScreen() {
                 </div>
               )}
               </div>
-            )}
 
             <button
               type="submit"

@@ -181,7 +181,7 @@ export default function UserTagInput({
             onKeyPress={handleKeyPress}
             onFocus={() => inputValue.length >= 2 && setShowDropdown(true)}
             placeholder={taggedUsers.length === 0 && taggedNonUsers.length === 0 ? placeholder : ""}
-            className="flex-1 min-w-[120px] outline-none text-sm"
+            className="flex-1 min-w-[120px] outline-none text-sm placeholder:text-gray-500"
           />
         </div>
       </div>

@@ -65,7 +65,7 @@ export default function AuthForm({ mode, onToggle }: AuthFormProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-gray-500"
                 placeholder="Enter your full name"
               />
             </div>
@@ -81,7 +81,7 @@ export default function AuthForm({ mode, onToggle }: AuthFormProps) {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-gray-500"
               placeholder="Enter your email"
             />
           </div>
@@ -97,7 +97,7 @@ export default function AuthForm({ mode, onToggle }: AuthFormProps) {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all placeholder:text-gray-500"
               placeholder="Enter your password"
             />
           </div>
@@ -123,7 +123,7 @@ export default function AuthForm({ mode, onToggle }: AuthFormProps) {
             className="text-blue-600 hover:text-blue-700 font-medium"
           >
             {mode === 'login' 
-              ? "Don&apos;t have an account? Sign up" 
+              ? "Don't have an account? Sign up" 
               : 'Already have an account? Sign in'
             }
           </button>

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { searchUsers, followUser, unfollowUser, getPersonalItems } from '@/lib/firestore';
-import { getUserProfile } from '@/lib/auth';
 import { User } from '@/lib/types';
 import { MagnifyingGlassIcon, UserPlusIcon, UserMinusIcon, ListBulletIcon } from '@heroicons/react/24/outline';
 import PersonalItemCard from './PersonalItemCard';
@@ -12,29 +11,15 @@ export default function ProfileScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
-  const [followingUsers, setFollowingUsers] = useState<User[]>([]);
+
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'all' | 'want_to_try' | 'completed' | 'shared'>('completed');
+
   
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { personalItems, setPersonalItems } = useAppStore();
 
-  const loadFollowingUsers = useCallback(async () => {
-    if (!userProfile) return;
-    
-    try {
-      const users = await Promise.all(
-        userProfile.following.map(async (userId) => {
-          const user = await getUserProfile(userId);
-          return user;
-        })
-      );
-      setFollowingUsers(users.filter(Boolean) as User[]);
-    } catch (error) {
-      console.error('Error loading following users:', error);
-    }
-  }, [userProfile]);
+
 
   const loadPersonalItems = useCallback(async () => {
     if (!user) return;
@@ -48,9 +33,8 @@ export default function ProfileScreen() {
   }, [user, setPersonalItems]);
 
   useEffect(() => {
-    loadFollowingUsers();
     loadPersonalItems();
-  }, [loadFollowingUsers, loadPersonalItems]);
+  }, [loadPersonalItems]);
 
   const handleSearch = async () => {
     if (!searchTerm.trim() || !user) return;
@@ -80,9 +64,6 @@ export default function ProfileScreen() {
         following: [...userProfile.following, targetUserId],
       };
       setUserProfile(updatedProfile);
-      
-      // Refresh following users list
-      loadFollowingUsers();
     } catch (error) {
       console.error('Error following user:', error);
     } finally {
@@ -103,9 +84,6 @@ export default function ProfileScreen() {
         following: userProfile.following.filter(id => id !== targetUserId),
       };
       setUserProfile(updatedProfile);
-      
-      // Refresh following users list
-      loadFollowingUsers();
     } catch (error) {
       console.error('Error unfollowing user:', error);
     } finally {
@@ -120,10 +98,8 @@ export default function ProfileScreen() {
 
 
   const filteredPersonalItems = personalItems.filter(item => {
-    // Only show completed and shared items in Profile (want_to_try items are in Saved tab now)
-    if (activeTab === 'completed') return item.status === 'completed';
-    if (activeTab === 'shared') return item.status === 'shared';
-    return false;
+    // Show both completed and shared items in Profile (want_to_try items are in Want to Try tab)
+    return item.status === 'completed' || item.status === 'shared';
   });
 
   return (
@@ -150,30 +126,10 @@ export default function ProfileScreen() {
           </div>
         </div>
 
-        {/* My Activity Section */}
+        {/* Completed Activities Section */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">My Activity</h3>
-          </div>
-
-          {/* Tab Navigation */}
-          <div className="flex space-x-1 mb-4 bg-gray-100 rounded-lg p-1">
-            {[
-              { key: 'completed', label: 'Completed' },
-              { key: 'shared', label: 'Shared' },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key as 'all' | 'want_to_try' | 'completed' | 'shared')}
-                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  activeTab === tab.key
-                    ? 'bg-white text-blue-600 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            <h3 className="text-lg font-semibold text-gray-900">Completed Activities</h3>
           </div>
 
           {/* Activity Items List */}
@@ -181,16 +137,10 @@ export default function ProfileScreen() {
             <div className="text-center py-8">
               <ListBulletIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500">
-                {activeTab === 'completed' 
-                  ? "You haven't completed anything yet"
-                  : "You haven't shared any recommendations yet"
-                }
+                You haven&apos;t completed anything yet
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                {activeTab === 'completed'
-                  ? "Complete items from your Want to Try list to see them here"
-                  : "Share completed experiences as recommendations to your friends"
-                }
+                Complete items from your Want to Try list to see them here
               </p>
             </div>
           ) : (
@@ -213,7 +163,7 @@ export default function ProfileScreen() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="Search by name or email..."
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
               />
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             </div>
@@ -265,45 +215,7 @@ export default function ProfileScreen() {
           )}
         </div>
 
-        {/* Following Section */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Following ({followingUsers.length})</h3>
-          {followingUsers.length === 0 ? (
-            <div className="text-center py-8">
-              <UserPlusIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                             <p className="text-gray-500">You&apos;re not following anyone yet</p>
-              <p className="text-sm text-gray-400 mt-1">Search for friends to start seeing their recommendations</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {followingUsers.map((followedUser) => (
-                <div key={followedUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {followedUser.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{followedUser.name}</p>
-                      <p className="text-sm text-gray-500">{followedUser.email}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleUnfollow(followedUser.id)}
-                    disabled={loadingFollow === followedUser.id}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 flex items-center space-x-1 disabled:opacity-50"
-                  >
-                    {loadingFollow === followedUser.id ? (
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <UserMinusIcon className="h-4 w-4" />
-                    )}
-                    <span>Unfollow</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+
       </div>
     </div>
   );

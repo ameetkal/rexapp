@@ -154,7 +154,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
               onChange={(e) => setTitle(e.target.value)}
               required
               maxLength={100}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
               placeholder="What are you recommending?"
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -194,7 +194,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
               onChange={(e) => setDescription(e.target.value)}
               maxLength={500}
               rows={4}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-gray-500"
               placeholder="Tell us more about this... (optional)"
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -213,7 +213,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
               value={recommendedBy}
               onChange={(e) => setRecommendedBy(e.target.value)}
               maxLength={100}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
               placeholder="e.g. Sarah, my coworker, TikTok, my mom..."
             />
             <p className="text-xs text-gray-500 mt-1">
@@ -248,7 +248,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="e.g. Chinatown, NYC"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
               />
             </div>
 
@@ -277,7 +277,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                   value={customPrice}
                   onChange={(e) => setCustomPrice(e.target.value)}
                   placeholder="$25"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                 />
               </div>
             </div>
@@ -311,7 +311,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                   type="text"
                   onKeyPress={handleTagKeyPress}
                   placeholder="Add tags (press Enter) e.g. romantic, spicy, hidden-gem"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
                 />
               </div>
             </div>
