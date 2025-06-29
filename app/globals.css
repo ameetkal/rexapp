@@ -5,6 +5,7 @@
   --foreground: #171717;
   --placeholder-text: #4b5563;
   --muted-text: #6b7280;
+  --input-text: #1f2937;
 }
 
 @theme inline {
@@ -20,6 +21,7 @@
     --foreground: #ededed;
     --placeholder-text: #9ca3af;
     --muted-text: #9ca3af;
+    --input-text: #f9fafb;
   }
 }
 
@@ -41,7 +43,16 @@ textarea::placeholder {
   opacity: 1 !important;
 }
 
-/* PWA specific placeholder fixes for better visibility */
+/* Fix typed text contrast in inputs */
+input[type="text"],
+input[type="email"], 
+input[type="password"],
+input[type="search"],
+textarea {
+  color: var(--input-text) !important;
+}
+
+/* PWA specific fixes for better visibility */
 @media (display-mode: standalone) {
   ::placeholder {
     color: var(--placeholder-text) !important;
@@ -52,5 +63,14 @@ textarea::placeholder {
   textarea::placeholder {
     color: var(--placeholder-text) !important;
     opacity: 0.9 !important;
+  }
+  
+  /* Ensure typed text is very readable in PWA mode */
+  input[type="text"],
+  input[type="email"], 
+  input[type="password"],
+  input[type="search"],
+  textarea {
+    color: var(--input-text) !important;
   }
 }
