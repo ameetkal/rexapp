@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase/firestore';
 
-export type Category = 'restaurants' | 'movies' | 'books' | 'music' | 'travel' | 'other';
+export type Category = 'places' | 'movies' | 'books' | 'music' | 'other';
 
 export interface UniversalItem {
   id: string;
@@ -19,13 +19,18 @@ export interface UniversalItem {
     year?: number;
     tmdbRating?: number;
     type?: 'movie' | 'tv';
-    // Restaurants (future)
+    // Places
     address?: string;
+    rating?: number;
+    priceLevel?: 1 | 2 | 3 | 4;
+    phoneNumber?: string;
+    website?: string;
+    placeType?: 'restaurant' | 'tourist_attraction' | 'lodging' | 'cafe' | 'bar' | 'store' | 'museum' | 'park' | 'other';
     // Music (future)
     artist?: string;
     album?: string;
   };
-  source: 'google_books' | 'tmdb' | 'spotify' | 'google_places' | 'manual';
+  source: 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual';
 }
 
 export interface Post {
@@ -99,10 +104,9 @@ export interface PersonalItem {
 }
 
 export const CATEGORIES: CategoryInfo[] = [
-  { id: 'restaurants', name: 'Restaurants', emoji: '🍕' },
+  { id: 'places', name: 'Places', emoji: '📍' },
   { id: 'movies', name: 'Movies/TV', emoji: '🎬' },
   { id: 'books', name: 'Books', emoji: '📚' },
   { id: 'music', name: 'Music/Podcasts', emoji: '🎵' },
-  { id: 'travel', name: 'Travel/Places', emoji: '✈️' },
   { id: 'other', name: 'Other', emoji: '✨' },
 ]; 

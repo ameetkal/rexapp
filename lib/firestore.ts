@@ -583,6 +583,79 @@ export const searchGoogleBooks = async (query: string): Promise<UniversalItem[]>
   }
 };
 
+// Google Places API Integration
+export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]> => {
+  try {
+    if (!query.trim()) return [];
+    
+    // Call our Next.js API route instead of Google Places directly
+    const response = await fetch(`/api/places?query=${encodeURIComponent(query)}`);
+    
+    if (!response.ok) {
+      console.error('Places API route error:', response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    if (!data.results) {
+      console.error('No results from Places API');
+      return [];
+    }
+    
+    const places: UniversalItem[] = data.results.slice(0, 8).map((place: {
+      place_id: string;
+      name: string;
+      formatted_address?: string;
+      rating?: number;
+      price_level?: number;
+      photos?: Array<{ photo_reference: string }>;
+      types?: string[];
+      website?: string;
+      formatted_phone_number?: string;
+    }) => {
+      // Determine place type from Google's types array
+      const getPlaceType = (types: string[] = []): string => {
+        if (types.includes('restaurant') || types.includes('food') || types.includes('meal_takeaway')) return 'restaurant';
+        if (types.includes('tourist_attraction') || types.includes('point_of_interest')) return 'tourist_attraction';
+        if (types.includes('lodging')) return 'lodging';
+        if (types.includes('cafe')) return 'cafe';
+        if (types.includes('bar') || types.includes('night_club')) return 'bar';
+        if (types.includes('store') || types.includes('shopping_mall')) return 'store';
+        if (types.includes('museum')) return 'museum';
+        if (types.includes('park')) return 'park';
+        return 'other';
+      };
+      
+      // Photos are disabled for now to avoid exposing API keys
+      // TODO: Create a photo proxy API route to handle this securely
+      
+      return {
+        id: place.place_id,
+        title: place.name,
+        category: 'places' as Category,
+        description: place.formatted_address,
+        image: undefined, // Photos disabled for now - TODO: Create photo proxy API route
+        metadata: {
+          address: place.formatted_address,
+          rating: place.rating ? Math.round(place.rating * 10) / 10 : undefined,
+          priceLevel: place.price_level ? (place.price_level as 1 | 2 | 3 | 4) : undefined,
+          phoneNumber: place.formatted_phone_number,
+          website: place.website,
+          placeType: getPlaceType(place.types) as 'restaurant' | 'tourist_attraction' | 'lodging' | 'cafe' | 'bar' | 'store' | 'museum' | 'park' | 'other',
+        },
+        source: 'google_places' as const,
+      };
+    });
+    
+    console.log(`📍 Found ${places.length} places for "${query}"`);
+    return places;
+  } catch (error) {
+    console.error('Error searching Google Places:', error);
+    return [];
+  }
+};
+
 // TMDb API Integration
 export const searchTMDb = async (query: string): Promise<UniversalItem[]> => {
   try {

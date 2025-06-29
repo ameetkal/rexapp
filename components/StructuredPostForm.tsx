@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createStructuredPost, createPersonalItem } from '@/lib/firestore';
 import { UniversalItem, PersonalItem, Post } from '@/lib/types';
-import { BookOpenIcon, FilmIcon } from '@heroicons/react/24/outline';
+import { BookOpenIcon, FilmIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { Timestamp } from 'firebase/firestore';
 import StarRating from './StarRating';
 
@@ -146,8 +146,10 @@ export default function StructuredPostForm({
                 <div className="w-16 h-20 bg-gray-200 rounded flex items-center justify-center">
                   {universalItem.category === 'books' ? (
                     <BookOpenIcon className="h-8 w-8 text-gray-400" />
-                  ) : (
+                  ) : universalItem.category === 'movies' ? (
                     <FilmIcon className="h-8 w-8 text-gray-400" />
+                  ) : (
+                    <MapPinIcon className="h-8 w-8 text-gray-400" />
                   )}
                 </div>
               )}
@@ -171,8 +173,27 @@ export default function StructuredPostForm({
                   )}
                 </p>
               )}
+              {universalItem.metadata.address && (
+                <p className="text-sm text-gray-600 mb-1">
+                  📍 {universalItem.metadata.address}
+                </p>
+              )}
+              {(universalItem.metadata.rating || universalItem.metadata.priceLevel) && (
+                <div className="flex items-center space-x-3 text-sm text-gray-600 mb-1">
+                  {universalItem.metadata.rating && (
+                    <span>⭐ {universalItem.metadata.rating}/5</span>
+                  )}
+                  {universalItem.metadata.priceLevel && (
+                    <span className="text-green-600 font-medium">
+                      {'$'.repeat(universalItem.metadata.priceLevel)}
+                    </span>
+                  )}
+                </div>
+              )}
               <div className="text-xs text-gray-500">
-                {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : '🎬 Movies/TV • Auto-filled from TMDb'}
+                {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : 
+                 universalItem.category === 'movies' ? '🎬 Movies/TV • Auto-filled from TMDb' : 
+                 '📍 Places • Auto-filled from Google Places'}
               </div>
             </div>
           </div>
@@ -185,17 +206,6 @@ export default function StructuredPostForm({
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setStatus('completed')}
-                className={`p-4 border rounded-lg text-left transition-colors ${
-                  status === 'completed'
-                    ? 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-300 hover:border-gray-400'
-                }`}
-              >
-                <div className="font-medium">✅ Completed</div>
-              </button>
-              <button
-                type="button"
                 onClick={() => setStatus('want_to_try')}
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   status === 'want_to_try'
@@ -204,6 +214,17 @@ export default function StructuredPostForm({
                 }`}
               >
                 <div className="font-medium">📝 To Do</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatus('completed')}
+                className={`p-4 border rounded-lg text-left transition-colors ${
+                  status === 'completed'
+                    ? 'border-green-500 bg-green-50 text-green-700'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                <div className="font-medium">✅ Completed</div>
               </button>
             </div>
           </div>
