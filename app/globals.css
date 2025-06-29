@@ -5,14 +5,7 @@
   --foreground: #171717;
   --placeholder-text: #4b5563;
   --muted-text: #6b7280;
-  --input-text: #1f2937;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --input-text: #111827;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,7 +14,7 @@
     --foreground: #ededed;
     --placeholder-text: #9ca3af;
     --muted-text: #9ca3af;
-    --input-text: #f9fafb;
+    --input-text: #ffffff;
   }
 }
 
@@ -62,10 +55,7 @@ form textarea {
   color: var(--input-text) !important;
 }
 
-/* TEMPORARY DEBUG - if you see red border, CSS is loading */
-input {
-  border: 2px solid red !important;
-}
+
 
 /* PWA specific fixes for better visibility */
 @media (display-mode: standalone) {
