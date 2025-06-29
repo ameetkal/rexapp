@@ -8,7 +8,11 @@ import PersonalItemCard from './PersonalItemCard';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
 
-export default function ProfileScreen() {
+interface ProfileScreenProps {
+  onShowFollowingList?: () => void;
+}
+
+export default function ProfileScreen({ onShowFollowingList }: ProfileScreenProps = {}) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   
@@ -66,8 +70,20 @@ export default function ProfileScreen() {
           <p className="text-gray-600 text-sm">{userProfile?.email}</p>
           <div className="flex justify-center space-x-6 mt-4">
             <div className="text-center">
-              <div className="text-xl font-bold text-gray-900">{userProfile?.following.length || 0}</div>
-              <div className="text-sm text-gray-500">Following</div>
+              {(userProfile?.following.length || 0) > 0 ? (
+                <button
+                  onClick={onShowFollowingList}
+                  className="text-center hover:opacity-75 transition-opacity"
+                >
+                  <div className="text-xl font-bold text-blue-600">{userProfile?.following.length || 0}</div>
+                  <div className="text-sm text-gray-500">Following</div>
+                </button>
+              ) : (
+                <div className="text-center">
+                  <div className="text-xl font-bold text-gray-900">{userProfile?.following.length || 0}</div>
+                  <div className="text-sm text-gray-500">Following</div>
+                </div>
+              )}
             </div>
             <div className="text-center">
               <div className="text-xl font-bold text-gray-900">

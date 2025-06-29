@@ -7,7 +7,11 @@ import { Post, User } from '@/lib/types';
 import PostCard from './PostCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
-export default function FeedScreen() {
+interface FeedScreenProps {
+  onUserProfileClick?: (authorId: string) => void;
+}
+
+export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {}) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -245,7 +249,7 @@ export default function FeedScreen() {
                 </h4>
                 <div className="space-y-4">
                   {searchResults.posts.map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} />
                   ))}
                 </div>
               </div>
@@ -302,7 +306,7 @@ export default function FeedScreen() {
             ) : (
               <div className="space-y-4">
                 {posts.map((post) => (
-                  <PostCard key={post.id} post={post} />
+                  <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} />
                 ))}
               </div>
             )}

@@ -13,9 +13,10 @@ import StarRating from './StarRating';
 
 interface PostCardProps {
   post: Post;
+  onAuthorClick?: (authorId: string) => void;
 }
 
-export default function PostCard({ post }: PostCardProps) {
+export default function PostCard({ post, onAuthorClick }: PostCardProps) {
   const [loading, setLoading] = useState(false);
   const [unshareLoading, setUnshareLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
@@ -150,15 +151,31 @@ export default function PostCard({ post }: PostCardProps) {
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-            {post.authorName.charAt(0).toUpperCase()}
+        {/* Author Info - Clickable for other users */}
+        {onAuthorClick && user && post.authorId !== user.uid ? (
+          <button
+            onClick={() => onAuthorClick(post.authorId)}
+            className="flex items-center space-x-3 hover:opacity-75 transition-opacity text-left"
+          >
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+              {post.authorName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">{post.authorName}</p>
+              <p className="text-sm text-gray-500">{formatDate(post.createdAt)}</p>
+            </div>
+          </button>
+        ) : (
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+              {post.authorName.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">{post.authorName}</p>
+              <p className="text-sm text-gray-500">{formatDate(post.createdAt)}</p>
+            </div>
           </div>
-          <div>
-            <p className="font-medium text-gray-900">{post.authorName}</p>
-            <p className="text-sm text-gray-500">{formatDate(post.createdAt)}</p>
-          </div>
-        </div>
+        )}
         
         <div className="flex items-center space-x-2">
           {/* Edit button - only show for posts authored by current user */}

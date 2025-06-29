@@ -215,6 +215,36 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
   }
 };
 
+export const getUsersByIds = async (userIds: string[]): Promise<User[]> => {
+  try {
+    if (userIds.length === 0) return [];
+    
+    // Firestore has a limit of 10 items for 'in' queries, so we batch if needed
+    const batchSize = 10;
+    const batches: Promise<User[]>[] = [];
+    
+    for (let i = 0; i < userIds.length; i += batchSize) {
+      const batchIds = userIds.slice(i, i + batchSize);
+      const batchPromise = getDocs(
+        query(collection(db, 'users'), where('id', 'in', batchIds))
+      ).then(querySnapshot => {
+        const users: User[] = [];
+        querySnapshot.forEach((doc) => {
+          users.push(doc.data() as User);
+        });
+        return users;
+      });
+      batches.push(batchPromise);
+    }
+    
+    const batchResults = await Promise.all(batches);
+    return batchResults.flat();
+  } catch (error) {
+    console.error('Error getting users by IDs:', error);
+    return [];
+  }
+};
+
 export const searchUsers = async (searchTerm: string): Promise<User[]> => {
   try {
     const usersRef = collection(db, 'users');

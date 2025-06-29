@@ -1,35 +1,44 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useAuthStore } from '@/lib/store';
 import { onAuthStateChange, getUserProfile } from '@/lib/auth';
+import { useAuthStore } from '@/lib/store';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
 
-export default function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { setUser, setUserProfile, setLoading } = useAuthStore();
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
+
+export default function AuthProvider({ children }: AuthProviderProps) {
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const { isInstalled, isLoading: installStatusLoading } = usePWAInstallStatus();
+  const { setUser, setUserProfile, setLoading } = useAuthStore();
+  const { isInstalled, isLoading: pwaLoading } = usePWAInstallStatus();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (user) => {
-      setUser(user);
+      setLoading(true);
       
       if (user) {
-        const userProfile = await getUserProfile(user.uid);
-        setUserProfile(userProfile);
-        
-        // Check if we should show the PWA install prompt
-        const hasSeenInstallPrompt = localStorage.getItem('rex-pwa-prompt-shown');
-        const isNewUser = !hasSeenInstallPrompt;
-        
-        if (isNewUser && !isInstalled && !installStatusLoading) {
-          // Show the install prompt after a short delay to let the app load
-          setTimeout(() => {
-            setShowInstallPrompt(true);
-          }, 2000);
+        try {
+          const userProfile = await getUserProfile(user.uid);
+          setUser(user);
+          setUserProfile(userProfile);
+          
+          // Show PWA install prompt for new users (if not already installed)
+          if (userProfile && !isInstalled && !pwaLoading) {
+            const hasSeenPrompt = localStorage.getItem('rex-pwa-prompt-seen');
+            if (!hasSeenPrompt) {
+              setTimeout(() => setShowInstallPrompt(true), 2000); // Show after 2 seconds
+            }
+          }
+        } catch (error) {
+          console.error('Error loading user profile:', error);
+          setUser(user);
+          setUserProfile(null);
         }
       } else {
+        setUser(null);
         setUserProfile(null);
       }
       
@@ -37,19 +46,18 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     });
 
     return () => unsubscribe();
-  }, [setUser, setUserProfile, setLoading, isInstalled, installStatusLoading]);
+  }, [setUser, setUserProfile, setLoading, isInstalled, pwaLoading]);
 
-  const handleDismissInstallPrompt = () => {
+  const handleInstallPromptDismiss = () => {
     setShowInstallPrompt(false);
-    // Remember that we've shown the prompt to this user
-    localStorage.setItem('rex-pwa-prompt-shown', 'true');
+    localStorage.setItem('rex-pwa-prompt-seen', 'true');
   };
 
   return (
     <>
       {children}
       {showInstallPrompt && (
-        <PWAInstallPrompt onDismiss={handleDismissInstallPrompt} />
+        <PWAInstallPrompt onDismiss={handleInstallPromptDismiss} />
       )}
     </>
   );
