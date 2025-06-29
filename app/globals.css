@@ -43,13 +43,28 @@ textarea::placeholder {
   opacity: 1 !important;
 }
 
-/* Fix typed text contrast in inputs */
+/* Fix typed text contrast - broader selectors with higher specificity */
+input, textarea {
+  color: var(--input-text) !important;
+}
+
 input[type="text"],
 input[type="email"], 
 input[type="password"],
 input[type="search"],
 textarea {
   color: var(--input-text) !important;
+}
+
+/* Target form inputs specifically */
+form input,
+form textarea {
+  color: var(--input-text) !important;
+}
+
+/* TEMPORARY DEBUG - if you see red border, CSS is loading */
+input {
+  border: 2px solid red !important;
 }
 
 /* PWA specific fixes for better visibility */
@@ -66,11 +81,20 @@ textarea {
   }
   
   /* Ensure typed text is very readable in PWA mode */
+  input, textarea {
+    color: var(--input-text) !important;
+  }
+  
   input[type="text"],
   input[type="email"], 
   input[type="password"],
   input[type="search"],
   textarea {
+    color: var(--input-text) !important;
+  }
+  
+  form input,
+  form textarea {
     color: var(--input-text) !important;
   }
 }
