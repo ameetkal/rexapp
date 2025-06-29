@@ -5,18 +5,20 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { createPost, createPersonalItem } from '@/lib/firestore';
 import { CATEGORIES, Category, PersonalItemStatus, PersonalItem, UniversalItem } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
-import { ChevronDownIcon, ChevronUpIcon, BookOpenIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon, BookOpenIcon, FilmIcon, PlusIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
 import UserTagInput from './UserTagInput';
 import BookSearch from './BookSearch';
+import MovieSearch from './MovieSearch';
 import StructuredPostForm from './StructuredPostForm';
 
-type PostMode = 'selection' | 'book-search' | 'book-form' | 'custom-form';
+type PostMode = 'selection' | 'book-search' | 'book-form' | 'movie-search' | 'movie-form' | 'custom-form';
 
 export default function PostScreen() {
   // Post creation mode state
   const [mode, setMode] = useState<PostMode>('selection');
   const [selectedBook, setSelectedBook] = useState<UniversalItem | null>(null);
+  const [selectedMovie, setSelectedMovie] = useState<UniversalItem | null>(null);
   
   // Existing form state
   const [category, setCategory] = useState<Category>('restaurants');
@@ -44,10 +46,12 @@ export default function PostScreen() {
 
   // Mode handlers
   const handleBookSearch = () => setMode('book-search');
+  const handleMovieSearch = () => setMode('movie-search');
   const handleCustomForm = () => setMode('custom-form');
   const handleBackToSelection = () => {
     setMode('selection');
     setSelectedBook(null);
+    setSelectedMovie(null);
   };
   
   const handleBookSelect = (book: UniversalItem) => {
@@ -55,9 +59,15 @@ export default function PostScreen() {
     setMode('book-form');
   };
   
+  const handleMovieSelect = (movie: UniversalItem) => {
+    setSelectedMovie(movie);
+    setMode('movie-form');
+  };
+  
   const handleStructuredSuccess = () => {
     setMode('selection');
     setSelectedBook(null);
+    setSelectedMovie(null);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 3000);
   };
@@ -236,6 +246,25 @@ export default function PostScreen() {
       />
     );
   }
+  
+  if (mode === 'movie-search') {
+    return (
+      <MovieSearch 
+        onMovieSelect={handleMovieSelect}
+        onBack={handleBackToSelection}
+      />
+    );
+  }
+  
+  if (mode === 'movie-form' && selectedMovie) {
+    return (
+      <StructuredPostForm
+        universalItem={selectedMovie}
+        onBack={handleBackToSelection}
+        onSuccess={handleStructuredSuccess}
+      />
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -248,9 +277,6 @@ export default function PostScreen() {
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
                   Add Something New
                 </h2>
-                <p className="text-gray-600">
-                  Choose how you&apos;d like to create your post
-                </p>
               </div>
 
               <div className="space-y-4 mb-8">
@@ -264,15 +290,26 @@ export default function PostScreen() {
                       <BookOpenIcon className="h-6 w-6 text-blue-600" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-1">
+                      <h3 className="font-semibold text-gray-900">
                         📚 Find a Book
                       </h3>
-                      <p className="text-sm text-gray-600">
-                        Search our book database • Auto-filled details • Quick setup
-                      </p>
                     </div>
-                    <div className="text-blue-600">
-                      <span className="text-xs bg-blue-100 px-2 py-1 rounded-full">Recommended</span>
+                  </div>
+                </button>
+
+                {/* Movie Search Option */}
+                <button
+                  onClick={handleMovieSearch}
+                  className="w-full p-6 border-2 border-purple-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors text-left"
+                >
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                      <FilmIcon className="h-6 w-6 text-purple-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900">
+                        🎬 Find a Movie or TV Show
+                      </h3>
                     </div>
                   </div>
                 </button>
@@ -287,12 +324,9 @@ export default function PostScreen() {
                       <PlusIcon className="h-6 w-6 text-gray-600" />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-1">
+                      <h3 className="font-semibold text-gray-900">
                         ✨ Create Custom Post
                       </h3>
-                      <p className="text-sm text-gray-600">
-                        For restaurants, movies, music, or anything else
-                      </p>
                     </div>
                   </div>
                 </button>

@@ -583,6 +583,96 @@ export const searchGoogleBooks = async (query: string): Promise<UniversalItem[]>
   }
 };
 
+// TMDb API Integration
+export const searchTMDb = async (query: string): Promise<UniversalItem[]> => {
+  try {
+    if (!query.trim()) return [];
+    
+    // Get API key from environment variables
+    const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+    const BASE_URL = 'https://api.themoviedb.org/3';
+    
+    if (!API_KEY) {
+      console.error('TMDb API key not configured. Please add NEXT_PUBLIC_TMDB_API_KEY to your .env.local file');
+      return [];
+    }
+    
+    // Search both movies and TV shows
+    const [movieResponse, tvResponse] = await Promise.all([
+      fetch(`${BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(query)}&page=1`),
+      fetch(`${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(query)}&page=1`)
+    ]);
+    
+    if (!movieResponse.ok || !tvResponse.ok) {
+      console.error('TMDb API error:', movieResponse.status, tvResponse.status);
+      return [];
+    }
+    
+    const [movieData, tvData] = await Promise.all([
+      movieResponse.json(),
+      tvResponse.json()
+    ]);
+    
+    const movies = (movieData.results || []).slice(0, 5).map((movie: {
+      id: number;
+      title: string;
+      overview?: string;
+      release_date?: string;
+      poster_path?: string;
+      vote_average?: number;
+      genre_ids?: number[];
+    }) => ({
+      id: `movie-${movie.id}`,
+      title: movie.title,
+      category: 'movies' as Category,
+      description: movie.overview ? 
+        movie.overview.substring(0, 200) + (movie.overview.length > 200 ? '...' : '') : 
+        undefined,
+      image: movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : undefined,
+      metadata: {
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : undefined,
+        tmdbRating: movie.vote_average ? Math.round(movie.vote_average * 10) / 10 : undefined,
+        type: 'movie',
+      },
+      source: 'tmdb' as const,
+    }));
+    
+    const tvShows = (tvData.results || []).slice(0, 5).map((show: {
+      id: number;
+      name: string;
+      overview?: string;
+      first_air_date?: string;
+      poster_path?: string;
+      vote_average?: number;
+    }) => ({
+      id: `tv-${show.id}`,
+      title: show.name,
+      category: 'movies' as Category,
+      description: show.overview ? 
+        show.overview.substring(0, 200) + (show.overview.length > 200 ? '...' : '') : 
+        undefined,
+      image: show.poster_path ? `https://image.tmdb.org/t/p/w200${show.poster_path}` : undefined,
+      metadata: {
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : undefined,
+        tmdbRating: show.vote_average ? Math.round(show.vote_average * 10) / 10 : undefined,
+        type: 'tv',
+      },
+      source: 'tmdb' as const,
+    }));
+    
+    // Combine and sort by rating/popularity
+    const allResults = [...movies, ...tvShows]
+      .sort((a, b) => (b.metadata.tmdbRating || 0) - (a.metadata.tmdbRating || 0))
+      .slice(0, 8); // Limit to top 8 results
+    
+    console.log(`🎬 Found ${allResults.length} movies/TV shows for "${query}"`);
+    return allResults;
+  } catch (error) {
+    console.error('Error searching TMDb:', error);
+    return [];
+  }
+};
+
 // Helper function to remove undefined values from objects
 const cleanObject = <T>(obj: T): Partial<T> => {
   const cleaned: Partial<T> = {};

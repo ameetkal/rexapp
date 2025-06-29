@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createStructuredPost, createPersonalItem } from '@/lib/firestore';
 import { UniversalItem, PersonalItem, Post } from '@/lib/types';
-import { BookOpenIcon } from '@heroicons/react/24/outline';
+import { BookOpenIcon, FilmIcon } from '@heroicons/react/24/outline';
 import { Timestamp } from 'firebase/firestore';
 import StarRating from './StarRating';
 
@@ -107,7 +107,7 @@ export default function StructuredPostForm({
         addPersonalItem(personalItem);
       }
       
-      console.log(`📚 Successfully ${postToFeed ? 'posted and added' : 'added'} "${universalItem.title}" to list`);
+      console.log(`✅ Successfully ${postToFeed ? 'posted and added' : 'added'} "${universalItem.title}" to list`);
       onSuccess();
     } catch (error) {
       console.error('Error creating structured post:', error);
@@ -127,10 +127,10 @@ export default function StructuredPostForm({
           >
             ← Back
           </button>
-          <h2 className="text-xl font-bold text-gray-900">Share Your Experience</h2>
+          <h2 className="text-xl font-bold text-gray-900">Add to Your List</h2>
         </div>
 
-        {/* Selected Book Preview */}
+        {/* Selected Item Preview */}
         <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <div className="flex space-x-4">
             <div className="flex-shrink-0">
@@ -144,7 +144,11 @@ export default function StructuredPostForm({
                 />
               ) : (
                 <div className="w-16 h-20 bg-gray-200 rounded flex items-center justify-center">
-                  <BookOpenIcon className="h-8 w-8 text-gray-400" />
+                  {universalItem.category === 'books' ? (
+                    <BookOpenIcon className="h-8 w-8 text-gray-400" />
+                  ) : (
+                    <FilmIcon className="h-8 w-8 text-gray-400" />
+                  )}
                 </div>
               )}
             </div>
@@ -157,8 +161,18 @@ export default function StructuredPostForm({
                   by {universalItem.metadata.author}
                 </p>
               )}
+              {universalItem.metadata.year && (
+                <p className="text-sm text-gray-600 mb-1">
+                  {universalItem.metadata.year}
+                  {universalItem.metadata.type && (
+                    <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded-full">
+                      {universalItem.metadata.type === 'tv' ? '📺 TV Show' : '🎬 Movie'}
+                    </span>
+                  )}
+                </p>
+              )}
               <div className="text-xs text-gray-500">
-                📚 Books • Auto-filled from Google Books
+                {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : '🎬 Movies/TV • Auto-filled from TMDb'}
               </div>
             </div>
           </div>
@@ -168,9 +182,6 @@ export default function StructuredPostForm({
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Status Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
-              What&apos;s your experience?
-            </label>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -181,8 +192,7 @@ export default function StructuredPostForm({
                     : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
-                <div className="font-medium">✅ I&apos;ve read this</div>
-                <div className="text-sm text-gray-500">Share your review</div>
+                <div className="font-medium">✅ Completed</div>
               </button>
               <button
                 type="button"
@@ -193,8 +203,7 @@ export default function StructuredPostForm({
                     : 'border-gray-300 hover:border-gray-400'
                 }`}
               >
-                <div className="font-medium">📖 Want to read this</div>
-                <div className="text-sm text-gray-500">Add to your list</div>
+                <div className="font-medium">📝 To Do</div>
               </button>
             </div>
           </div>
@@ -254,7 +263,7 @@ export default function StructuredPostForm({
               className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {submitting ? 'Adding...' : 
-               postToFeed ? (status === 'completed' ? 'Share Review' : 'Add & Share') : 'Add to List'}
+               postToFeed ? (status === 'completed' ? 'Add & Share' : 'Add & Share') : 'Add to List'}
             </button>
           </div>
         </form>

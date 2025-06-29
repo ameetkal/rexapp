@@ -14,9 +14,11 @@ export interface UniversalItem {
     isbn?: string;
     publishedDate?: string;
     pageCount?: number;
-    // Movies (future)
+    // Movies/TV
     director?: string;
     year?: number;
+    tmdbRating?: number;
+    type?: 'movie' | 'tv';
     // Restaurants (future)
     address?: string;
     // Music (future)
