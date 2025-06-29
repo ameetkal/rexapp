@@ -1,0 +1,46 @@
+{
+  "name": "Rex - Share & Save Recommendations",
+  "short_name": "Rex",
+  "description": "The social platform where friends share and save trusted recommendations for movies, restaurants, books, music, and travel.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": ["social", "lifestyle", "productivity"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/rexlogo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/rexlogo.png", 
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/rexlogo.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Create Post", 
+      "short_name": "Post",
+      "description": "Share a new recommendation",
+      "url": "/?action=post",
+      "icons": [
+        {
+          "src": "/rexlogo.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+} 

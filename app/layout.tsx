@@ -30,12 +30,24 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        
+        {/* PWA Manifest */}
+        <link rel="manifest" href="/manifest.json" />
+        
+        {/* iOS PWA Meta Tags */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Rex" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
-        <meta name="color-scheme" content="light dark" />
+        <link rel="apple-touch-icon" href="/rexlogo.png" />
+        
+        {/* Theme Colors */}
+        <meta name="theme-color" content="#2563eb" />
+        <meta name="msapplication-TileColor" content="#2563eb" />
+        
+        {/* Standard Favicons */}
+        <link rel="icon" type="image/png" sizes="192x192" href="/rexlogo.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/rexlogo.png" />
+        <link rel="shortcut icon" href="/rexlogo.png" />
       </head>
       <body
         className={`${inter.variable} font-sans antialiased`}

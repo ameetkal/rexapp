@@ -4,6 +4,7 @@ import {
   addDoc,
   updateDoc,
   getDocs,
+  getDoc,
   query,
   where,
   orderBy,
@@ -61,6 +62,22 @@ export const createPost = async (
   } catch (error) {
     console.error('Error creating post:', error);
     throw error;
+  }
+};
+
+export const getPost = async (postId: string): Promise<Post | null> => {
+  try {
+    const docRef = doc(db, 'posts', postId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Post;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error getting post:', error);
+    return null;
   }
 };
 
@@ -371,6 +388,22 @@ export const getPersonalItems = async (userId: string): Promise<PersonalItem[]> 
   } catch (error) {
     console.error('Error getting personal items:', error);
     return [];
+  }
+};
+
+export const getPersonalItem = async (itemId: string): Promise<PersonalItem | null> => {
+  try {
+    const docRef = doc(db, 'personal_items', itemId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as PersonalItem;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error getting personal item:', error);
+    return null;
   }
 };
 

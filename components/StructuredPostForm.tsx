@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createStructuredPost, createPersonalItem } from '@/lib/firestore';
 import { UniversalItem, PersonalItem, Post } from '@/lib/types';
+import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { Timestamp } from 'firebase/firestore';
 import StarRating from './StarRating';
@@ -25,6 +26,13 @@ export default function StructuredPostForm({
   const [postToFeed, setPostToFeed] = useState(true);
   const [recommendedBy, setRecommendedBy] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteData, setInviteData] = useState<{
+    recommenderName: string;
+    postTitle: string;
+    postId: string;
+    isPost: boolean;
+  } | null>(null);
   
   const { user, userProfile } = useAuthStore();
   const { addPost, addPersonalItem } = useAppStore();
@@ -40,6 +48,8 @@ export default function StructuredPostForm({
         recommendedBy: recommendedBy.trim() || undefined,
       };
 
+      let createdPostId: string | null = null;
+
       if (postToFeed) {
         // Create both post and personal item
         const { postId, personalItemId } = await createStructuredPost(
@@ -50,6 +60,8 @@ export default function StructuredPostForm({
           undefined, // No description in simplified flow
           enhancedFields
         );
+        
+        createdPostId = postId;
 
         // Add post to store
         const newPost: Post = {
@@ -83,7 +95,7 @@ export default function StructuredPostForm({
         addPersonalItem(personalItem);
       } else {
         // Only create personal item
-        const personalItemId = await createPersonalItem(
+        createdPostId = await createPersonalItem(
           user.uid,
           universalItem.category,
           universalItem.title,
@@ -93,7 +105,7 @@ export default function StructuredPostForm({
         );
 
         const personalItem: PersonalItem = {
-          id: personalItemId,
+          id: createdPostId,
           userId: user.uid,
           category: universalItem.category,
           title: universalItem.title,
@@ -108,12 +120,74 @@ export default function StructuredPostForm({
       }
       
       console.log(`✅ Successfully ${postToFeed ? 'posted and added' : 'added'} "${universalItem.title}" to list`);
+      
+      // Check if we should offer SMS invite for non-user recommender
+      console.log(`🔍 SMS Invite Debug:`, {
+        recommendedBy: recommendedBy.trim(),
+        shouldOffer: shouldOfferSMSInvite(recommendedBy.trim()),
+        createdPostId,
+        postToFeed
+      });
+      
+      if (recommendedBy.trim() && shouldOfferSMSInvite(recommendedBy.trim())) {
+        if (postToFeed && createdPostId) {
+          // For shared posts, use the post ID
+          console.log(`✅ Setting up SMS invite for shared post: ${createdPostId}`);
+          setInviteData({
+            recommenderName: recommendedBy.trim(),
+            postTitle: universalItem.title,
+            postId: createdPostId,
+            isPost: true
+          });
+          setShowInviteDialog(true);
+          // Don't call onSuccess() yet - wait for invite dialog to be handled
+          return;
+        } else if (!postToFeed) {
+          // For private items, use the personal item ID
+          console.log(`✅ Setting up SMS invite for private item: ${createdPostId}`);
+          setInviteData({
+            recommenderName: recommendedBy.trim(),
+            postTitle: universalItem.title,
+            postId: createdPostId,
+            isPost: false
+          });
+          setShowInviteDialog(true);
+          // Don't call onSuccess() yet - wait for invite dialog to be handled
+          return;
+        } else {
+          console.log(`❌ SMS Invite: postToFeed=true but no createdPostId`);
+        }
+      }
+      
+      // Only call onSuccess if no invite dialog was shown
       onSuccess();
     } catch (error) {
       console.error('Error creating structured post:', error);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // SMS invite handlers
+  const handleSendInvite = () => {
+    if (inviteData && userProfile) {
+      sendSMSInvite(
+        inviteData.recommenderName,
+        userProfile.name,
+        inviteData.postTitle,
+        inviteData.postId,
+        inviteData.isPost
+      );
+      setShowInviteDialog(false);
+      setInviteData(null);
+      onSuccess(); // Complete the flow after sending invite
+    }
+  };
+
+  const handleSkipInvite = () => {
+    setShowInviteDialog(false);
+    setInviteData(null);
+    onSuccess(); // Complete the flow after skipping invite
   };
 
   return (
@@ -289,6 +363,40 @@ export default function StructuredPostForm({
           </div>
         </form>
       </div>
+
+      {/* SMS Invite Dialog */}
+      {showInviteDialog && inviteData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">📱</span>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                Invite {inviteData.recommenderName}?
+              </h3>
+                             <p className="text-gray-600 text-sm">
+                 Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
+               </p>
+            </div>
+            
+            <div className="space-y-3">
+              <button
+                onClick={handleSendInvite}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                Send Text Invite
+              </button>
+              <button
+                onClick={handleSkipInvite}
+                className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                Skip for Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

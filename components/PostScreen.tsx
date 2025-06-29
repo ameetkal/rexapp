@@ -5,6 +5,7 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { createPost, createPersonalItem } from '@/lib/firestore';
 import { Category, PersonalItemStatus, PersonalItem, UniversalItem } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
+import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon, PlusIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
 import BookSearch from './BookSearch';
@@ -36,6 +37,15 @@ export default function PostScreen() {
   
   const { user, userProfile } = useAuthStore();
   const { addPost, addPersonalItem } = useAppStore();
+
+  // SMS invite state
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteData, setInviteData] = useState<{
+    recommenderName: string;
+    postTitle: string;
+    postId: string;
+    isPost: boolean;
+  } | null>(null);
 
   // Mode handlers
   const handleBookSearch = () => setMode('book-search');
@@ -76,7 +86,47 @@ export default function PostScreen() {
     setTimeout(() => setSuccess(false), 3000);
   };
 
+  // SMS invite handlers
+  const handleSendInvite = () => {
+    if (inviteData && userProfile) {
+      sendSMSInvite(
+        inviteData.recommenderName,
+        userProfile.name,
+        inviteData.postTitle,
+        inviteData.postId,
+        inviteData.isPost
+      );
+      setShowInviteDialog(false);
+      setInviteData(null);
+      
+      // Reset form and show success after sending invite
+      setTitle('');
+      setDescription('');
+      setCategory('places');
+      setStatus('want_to_try');
+      setRecommendedBy('');
+      setPostToFeed(true);
+      setRating(0);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    }
+  };
 
+  const handleSkipInvite = () => {
+    setShowInviteDialog(false);
+    setInviteData(null);
+    
+    // Reset form and show success after skipping invite
+    setTitle('');
+    setDescription('');
+    setCategory('places');
+    setStatus('want_to_try');
+    setRecommendedBy('');
+    setPostToFeed(true);
+    setRating(0);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,6 +203,46 @@ export default function PostScreen() {
       // Add personal item to store
       addPersonalItem(personalItem);
 
+      // Check if we should offer SMS invite for non-user recommender
+      console.log(`🔍 SMS Invite Debug:`, {
+        recommendedBy: recommendedBy.trim(),
+        shouldOffer: shouldOfferSMSInvite(recommendedBy.trim()),
+        postId,
+        postToFeed,
+        personalItemId
+      });
+      
+      if (recommendedBy.trim() && shouldOfferSMSInvite(recommendedBy.trim())) {
+        if (postToFeed && postId) {
+          // For shared posts, use the post ID
+          console.log(`✅ Setting up SMS invite for shared post: ${postId}`);
+          setInviteData({
+            recommenderName: recommendedBy.trim(),
+            postTitle: title,
+            postId: postId,
+            isPost: true
+          });
+          setShowInviteDialog(true);
+          // Don't reset form yet - wait for invite dialog to be handled
+          return;
+        } else if (!postToFeed) {
+          // For private items, use the personal item ID
+          console.log(`✅ Setting up SMS invite for private item: ${personalItemId}`);
+          setInviteData({
+            recommenderName: recommendedBy.trim(),
+            postTitle: title,
+            postId: personalItemId,
+            isPost: false
+          });
+          setShowInviteDialog(true);
+          // Don't reset form yet - wait for invite dialog to be handled
+          return;
+        } else {
+          console.log(`❌ SMS Invite: postToFeed=true but no postId`);
+        }
+      }
+
+      // Only reset form and show success if no invite dialog was shown
       // Reset form
       setTitle('');
       setDescription('');
@@ -472,6 +562,40 @@ export default function PostScreen() {
           )}
         </div>
       </div>
+
+      {/* SMS Invite Dialog */}
+      {showInviteDialog && inviteData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">📱</span>
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">
+                Invite {inviteData.recommenderName}?
+              </h3>
+              <p className="text-gray-600 text-sm">
+                Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <button
+                onClick={handleSendInvite}
+                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                Send Text Invite
+              </button>
+              <button
+                onClick={handleSkipInvite}
+                className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                Skip for Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 
