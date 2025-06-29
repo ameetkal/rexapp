@@ -36,9 +36,9 @@ textarea::placeholder {
   opacity: 1 !important;
 }
 
-/* Fix typed text contrast - broader selectors with higher specificity */
+/* Fix typed text contrast - use pure black for maximum visibility */
 input, textarea {
-  color: var(--input-text) !important;
+  color: #000000 !important;
 }
 
 input[type="text"],
@@ -46,16 +46,30 @@ input[type="email"],
 input[type="password"],
 input[type="search"],
 textarea {
-  color: var(--input-text) !important;
+  color: #000000 !important;
 }
 
 /* Target form inputs specifically */
 form input,
 form textarea {
-  color: var(--input-text) !important;
+  color: #000000 !important;
 }
 
+/* Target specific Tailwind styled inputs */
+.w-full input,
+.w-full textarea,
+input.w-full,
+textarea.w-full {
+  color: #000000 !important;
+}
 
+/* Even more specific - target by common classes */
+input[class*="px-"],
+textarea[class*="px-"],
+input[class*="py-"],
+textarea[class*="py-"] {
+  color: #000000 !important;
+}
 
 /* PWA specific fixes for better visibility */
 @media (display-mode: standalone) {
@@ -72,7 +86,7 @@ form textarea {
   
   /* Ensure typed text is very readable in PWA mode */
   input, textarea {
-    color: var(--input-text) !important;
+    color: #000000 !important;
   }
   
   input[type="text"],
@@ -80,11 +94,26 @@ form textarea {
   input[type="password"],
   input[type="search"],
   textarea {
-    color: var(--input-text) !important;
+    color: #000000 !important;
   }
   
   form input,
   form textarea {
-    color: var(--input-text) !important;
+    color: #000000 !important;
+  }
+  
+  /* PWA specific Tailwind overrides */
+  .w-full input,
+  .w-full textarea,
+  input.w-full,
+  textarea.w-full {
+    color: #000000 !important;
+  }
+  
+  input[class*="px-"],
+  textarea[class*="px-"],
+  input[class*="py-"],
+  textarea[class*="py-"] {
+    color: #000000 !important;
   }
 }
