@@ -67,37 +67,16 @@ export const createPost = async (
 
 export const getPost = async (postId: string): Promise<Post | null> => {
   try {
-    console.log('🔍 getPost called with ID:', postId);
-    console.log('🔥 Firebase app config:', {
-      projectId: db.app.options.projectId,
-      authDomain: db.app.options.authDomain,
-      appName: db.app.name
-    });
-    
     const docRef = doc(db, 'posts', postId);
-    console.log('📄 Document reference path:', docRef.path);
-    
     const docSnap = await getDoc(docRef);
-    console.log('📋 Document snapshot exists:', docSnap.exists());
     
     if (docSnap.exists()) {
-      const data = { id: docSnap.id, ...docSnap.data() } as Post;
-      console.log('✅ Post found:', data.title);
-      return data;
+      return { id: docSnap.id, ...docSnap.data() } as Post;
     } else {
-      console.log('❌ Document does not exist in collection');
-      // Mobile debugging
-      if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        alert(`DEBUG: Document ${postId} does not exist in Firebase project ${db.app.options.projectId}`);
-      }
       return null;
     }
   } catch (error) {
     console.error('Error getting post:', error);
-    // Mobile debugging  
-    if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      alert(`DEBUG: Firebase error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
     return null;
   }
 };

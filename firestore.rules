@@ -8,10 +8,10 @@ service cloud.firestore {
       allow read: if request.auth != null;
     }
     
-    // Posts - anyone authenticated can read, authors can write
+    // Posts - anyone can read (for invite pages), authors can write
     match /posts/{postId} {
-      // Anyone authenticated can read posts (for feed)
-      allow read: if request.auth != null;
+      // Anyone can read posts (including unauthenticated users for invite pages)
+      allow read: if true;
       
       // Only the author can create their posts
       allow create: if request.auth != null && 
@@ -26,9 +26,12 @@ service cloud.firestore {
         request.auth.uid == resource.data.authorId;
     }
     
-    // Personal items - users can only access their own
+    // Personal items - anyone can read (for invite pages), users can only write their own
     match /personal_items/{itemId} {
-      allow read, write: if request.auth != null && 
+      // Anyone can read personal items (for personal invite pages)
+      allow read: if true;
+      // Users can only write their own personal items
+      allow write: if request.auth != null && 
         request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && 
         request.auth.uid == request.resource.data.userId;

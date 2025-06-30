@@ -13,17 +13,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Debug Firebase configuration
-console.log('🔥 Firebase Config Debug:', {
-  hasApiKey: !!firebaseConfig.apiKey,
-  hasAuthDomain: !!firebaseConfig.authDomain,
-  projectId: firebaseConfig.projectId,
-  hasStorageBucket: !!firebaseConfig.storageBucket,
-  hasMessagingSenderId: !!firebaseConfig.messagingSenderId,
-  hasAppId: !!firebaseConfig.appId,
-  userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'SSR',
-  url: typeof window !== 'undefined' ? window.location.href : 'SSR'
-});
+
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
