@@ -93,13 +93,18 @@ export default function PWAInstallPrompt({ onDismiss }: PWAInstallPromptProps) {
     }
   };
 
-  const getInstructions = () => {
+  const getInstructions = (): {
+    title: string;
+    steps: (string | React.ReactElement)[];
+    icon: React.ReactElement;
+    buttonText: string;
+  } => {
     switch (platform) {
       case 'ios-safari':
         return {
           title: 'Add Rex to Your Home Screen',
           steps: [
-            'Tap the Share button (𝗔𝗮) at the bottom of Safari',
+            <>Tap the Share button <span className="inline-flex items-center justify-center w-6 h-6 bg-blue-600 rounded-md mx-1"><ArrowUpTrayIcon className="h-4 w-4 text-white" /></span> at the bottom of Safari</>,
             'Scroll down and tap "Add to Home Screen"',
             'Tap "Add" to confirm'
           ],
