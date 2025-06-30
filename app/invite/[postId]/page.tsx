@@ -33,18 +33,32 @@ export default function InvitePage() {
         // Mobile debugging - remove after testing
         if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
           alert(`DEBUG: Fetching post ${postId} on mobile`);
+          // Quick Firebase connection test
+          const { db } = await import('@/lib/firebase');
+          alert(`DEBUG: Firebase db object: ${db ? 'Connected' : 'Not connected'}`);
         }
         
         const postData = await getPost(postId);
         console.log('📄 Post data received:', postData ? 'Found' : 'Not found');
+        
+        // Mobile debugging - remove after testing
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+          alert(`DEBUG: Post fetch result: ${postData ? 'SUCCESS - Found post' : 'FAILED - No post found'}`);
+        }
+        
         setPost(postData);
-      } catch (error) {
-        console.error('❌ Error fetching post:', error);
-        console.error('🔧 Error details:', {
-          postId,
-          url: window.location.href,
-          timestamp: new Date().toISOString()
-        });
+              } catch (error) {
+          console.error('❌ Error fetching post:', error);
+          console.error('🔧 Error details:', {
+            postId,
+            url: window.location.href,
+            timestamp: new Date().toISOString()
+          });
+          
+          // Mobile debugging - remove after testing
+          if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+            alert(`DEBUG: Error fetching post: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
       } finally {
         setLoading(false);
       }
