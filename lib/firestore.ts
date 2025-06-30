@@ -88,8 +88,7 @@ export const getPost = async (postId: string): Promise<Post | null> => {
       console.log('❌ Document does not exist in collection');
       // Mobile debugging
       if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-        // @ts-ignore - window.alert exists in browser
-        window.alert(`DEBUG: Document ${postId} does not exist in Firebase project ${db.app.options.projectId}`);
+        alert(`DEBUG: Document ${postId} does not exist in Firebase project ${db.app.options.projectId}`);
       }
       return null;
     }
@@ -97,8 +96,7 @@ export const getPost = async (postId: string): Promise<Post | null> => {
     console.error('Error getting post:', error);
     // Mobile debugging  
     if (typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-      // @ts-ignore - window.alert exists in browser
-      window.alert(`DEBUG: Firebase error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`DEBUG: Firebase error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
     return null;
   }
