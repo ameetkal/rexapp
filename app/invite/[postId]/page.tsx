@@ -16,6 +16,7 @@ export default function InvitePage() {
   
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
   const [signupMode, setSignupMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,10 +27,20 @@ export default function InvitePage() {
   useEffect(() => {
     const fetchPost = async () => {
       try {
+        console.log('🔍 Fetching post with ID:', postId);
+        console.log('🌐 Current URL:', window.location.href);
+        console.log('📱 User Agent:', navigator.userAgent);
+        
         const postData = await getPost(postId);
+        console.log('📄 Post data received:', postData ? 'Found' : 'Not found');
         setPost(postData);
       } catch (error) {
-        console.error('Error fetching post:', error);
+        console.error('❌ Error fetching post:', error);
+        console.error('🔧 Error details:', {
+          postId,
+          url: window.location.href,
+          timestamp: new Date().toISOString()
+        });
       } finally {
         setLoading(false);
       }
@@ -37,6 +48,9 @@ export default function InvitePage() {
 
     if (postId) {
       fetchPost();
+    } else {
+      console.warn('⚠️ No postId provided');
+      setLoading(false);
     }
   }, [postId]);
 

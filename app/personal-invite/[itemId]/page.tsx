@@ -24,10 +24,20 @@ export default function PersonalInvitePage() {
   useEffect(() => {
     const fetchItem = async () => {
       try {
+        console.log('🔍 Fetching personal item with ID:', itemId);
+        console.log('🌐 Current URL:', window.location.href);
+        console.log('📱 User Agent:', navigator.userAgent);
+        
         const itemData = await getPersonalItem(itemId);
+        console.log('📄 Personal item data received:', itemData ? 'Found' : 'Not found');
         setItem(itemData);
       } catch (error) {
-        console.error('Error fetching personal item:', error);
+        console.error('❌ Error fetching personal item:', error);
+        console.error('🔧 Error details:', {
+          itemId,
+          url: window.location.href,
+          timestamp: new Date().toISOString()
+        });
       } finally {
         setLoading(false);
       }
@@ -35,6 +45,9 @@ export default function PersonalInvitePage() {
 
     if (itemId) {
       fetchItem();
+    } else {
+      console.warn('⚠️ No itemId provided');
+      setLoading(false);
     }
   }, [itemId]);
 
