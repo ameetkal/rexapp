@@ -16,7 +16,6 @@ export default function InvitePage() {
   
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
-  const [retryCount, setRetryCount] = useState(0);
   const [signupMode, setSignupMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,6 +29,11 @@ export default function InvitePage() {
         console.log('🔍 Fetching post with ID:', postId);
         console.log('🌐 Current URL:', window.location.href);
         console.log('📱 User Agent:', navigator.userAgent);
+        
+        // Mobile debugging - remove after testing
+        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+          alert(`DEBUG: Fetching post ${postId} on mobile`);
+        }
         
         const postData = await getPost(postId);
         console.log('📄 Post data received:', postData ? 'Found' : 'Not found');
