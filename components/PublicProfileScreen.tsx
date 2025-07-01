@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { getFeedPosts, followUser, unfollowUser } from '@/lib/firestore';
@@ -13,6 +14,7 @@ interface PublicProfileScreenProps {
 }
 
 export default function PublicProfileScreen({ user: profileUser, onBack }: PublicProfileScreenProps) {
+  const router = useRouter();
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
@@ -63,6 +65,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     } finally {
       setFollowLoading(false);
     }
+  };
+
+  const handlePostClick = (postId: string) => {
+    router.push(`/post/${postId}?from=profile&userId=${profileUser.id}&userName=${encodeURIComponent(profileUser.name)}`);
   };
 
   return (
@@ -167,7 +173,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
           ) : (
             <div className="space-y-4">
               {userPosts.map((post) => (
-                <PostCard key={post.id} post={post} />
+                <PostCard key={post.id} post={post} onPostClick={handlePostClick} />
               ))}
             </div>
           )}

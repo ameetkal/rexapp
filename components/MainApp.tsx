@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import AuthForm from './AuthForm';
 import Navigation from './Navigation';
@@ -16,12 +17,45 @@ import { getUserProfile } from '@/lib/auth';
 type ProfileScreenType = 'main' | 'following' | 'public';
 
 export default function MainApp() {
-  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('post');
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('feed');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
   
   const { user, loading } = useAuthStore();
+
+  // Handle URL parameters for profile navigation
+  useEffect(() => {
+    const viewProfileId = searchParams.get('viewProfile');
+    const viewProfileName = searchParams.get('userName');
+    
+    if (viewProfileId && viewProfileName && user) {
+      // Load the profile and switch to profile view
+      const loadProfile = async () => {
+        try {
+          const userProfile = await getUserProfile(viewProfileId);
+          if (userProfile) {
+            setSelectedUser(userProfile);
+            setProfileScreen('public');
+            setActiveTab('profile');
+            setProfileNavigationSource('direct');
+          }
+        } catch (error) {
+          console.error('Error loading profile from URL:', error);
+        }
+      };
+      
+      loadProfile();
+      
+      // Clear the URL parameters after processing
+      if (typeof window !== 'undefined') {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, [searchParams, user]);
 
   if (loading) {
     return (
@@ -48,6 +82,7 @@ export default function MainApp() {
     if (tab !== 'profile') {
       setProfileScreen('main');
       setSelectedUser(null);
+      setProfileNavigationSource('feed');
     }
     setActiveTab(tab);
   };
@@ -60,16 +95,28 @@ export default function MainApp() {
   const handleShowPublicProfile = (user: User) => {
     setSelectedUser(user);
     setProfileScreen('public');
+    setProfileNavigationSource('following');
   };
 
   const handleBackToProfile = () => {
     setProfileScreen('main');
     setSelectedUser(null);
+    setProfileNavigationSource('feed');
   };
 
-  const handleBackToFollowing = () => {
-    setProfileScreen('following');
-    setSelectedUser(null);
+  const handleBackFromPublicProfile = () => {
+    // Use the navigation source to determine where to go back to
+    if (profileNavigationSource === 'following') {
+      // Go back to following list
+      setProfileScreen('following');
+      setSelectedUser(null);
+    } else {
+      // Go back to feed (for 'feed' or 'direct' sources)
+      setActiveTab('feed');
+      setProfileScreen('main');
+      setSelectedUser(null);
+    }
+    setProfileNavigationSource('feed'); // Reset for next time
   };
 
   // Handler for clicking on user profiles from feed
@@ -80,6 +127,7 @@ export default function MainApp() {
         setSelectedUser(userProfile);
         setProfileScreen('public');
         setActiveTab('profile');
+        setProfileNavigationSource('feed');
       }
     } catch (error) {
       console.error('Error loading user profile:', error);
@@ -107,7 +155,7 @@ export default function MainApp() {
             return selectedUser ? (
               <PublicProfileScreen 
                 user={selectedUser}
-                onBack={handleBackToFollowing}
+                onBack={handleBackFromPublicProfile}
               />
             ) : <ProfileScreen onShowFollowingList={handleShowFollowingList} />;
           default:

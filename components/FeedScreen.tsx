@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { getFeedPosts, universalSearch, followUser, unfollowUser } from '@/lib/firestore';
 import { Post, User } from '@/lib/types';
@@ -12,6 +13,7 @@ interface FeedScreenProps {
 }
 
 export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {}) {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,6 +121,10 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
     return userProfile?.following.includes(userId) || false;
   };
 
+  const handlePostClick = (postId: string) => {
+    router.push(`/post/${postId}?from=feed`);
+  };
+
   useEffect(() => {
     if (userProfile && user) {
       loadFeedPosts();
@@ -182,9 +188,9 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
         
         {showingSearchResults && (
           <div className="mt-3 flex items-center justify-between">
-                         <h3 className="text-sm font-medium text-gray-700">
-               Search results for &quot;{searchTerm}&quot;
-             </h3>
+            <h3 className="text-sm font-medium text-gray-700">
+              Search results for &quot;{searchTerm}&quot;
+            </h3>
             <button
               onClick={clearSearch}
               className="text-sm text-gray-500 hover:text-gray-700"
@@ -207,34 +213,46 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
                 </h4>
                 <div className="space-y-3">
                   {searchResults.users.map((searchUser) => (
-                    <div key={searchUser.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-                          {searchUser.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{searchUser.name}</p>
-                          <p className="text-sm text-gray-500">{searchUser.email}</p>
-                        </div>
+                    <div key={searchUser.id} className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between p-3">
+                        <button
+                          onClick={() => onUserProfileClick?.(searchUser.id)}
+                          className="flex items-center space-x-3 flex-1 text-left hover:opacity-75 transition-opacity"
+                        >
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            {searchUser.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{searchUser.name}</p>
+                            <p className="text-sm text-gray-500">{searchUser.email}</p>
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isFollowing(searchUser.id)) {
+                              handleUnfollow(searchUser.id);
+                            } else {
+                              handleFollow(searchUser.id);
+                            }
+                          }}
+                          disabled={loadingFollow === searchUser.id}
+                          className={`ml-3 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-1 ${
+                            isFollowing(searchUser.id)
+                              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                          } disabled:opacity-50`}
+                        >
+                          {loadingFollow === searchUser.id ? (
+                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : isFollowing(searchUser.id) ? (
+                            <UserMinusIcon className="h-4 w-4" />
+                          ) : (
+                            <UserPlusIcon className="h-4 w-4" />
+                          )}
+                          <span>{isFollowing(searchUser.id) ? 'Unfollow' : 'Follow'}</span>
+                        </button>
                       </div>
-                      <button
-                        onClick={() => isFollowing(searchUser.id) ? handleUnfollow(searchUser.id) : handleFollow(searchUser.id)}
-                        disabled={loadingFollow === searchUser.id}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-1 ${
-                          isFollowing(searchUser.id)
-                            ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                            : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                        } disabled:opacity-50`}
-                      >
-                        {loadingFollow === searchUser.id ? (
-                          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        ) : isFollowing(searchUser.id) ? (
-                          <UserMinusIcon className="h-4 w-4" />
-                        ) : (
-                          <UserPlusIcon className="h-4 w-4" />
-                        )}
-                        <span>{isFollowing(searchUser.id) ? 'Unfollow' : 'Follow'}</span>
-                      </button>
                     </div>
                   ))}
                 </div>
@@ -249,7 +267,7 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
                 </h4>
                 <div className="space-y-4">
                   {searchResults.posts.map((post) => (
-                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} />
+                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
                   ))}
                 </div>
               </div>
@@ -306,7 +324,7 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
             ) : (
               <div className="space-y-4">
                 {posts.map((post) => (
-                  <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} />
+                  <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
                 ))}
               </div>
             )}

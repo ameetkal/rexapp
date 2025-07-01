@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BookmarkIcon, PencilSquareIcon, ChevronDownIcon, ChevronUpIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, PencilSquareIcon, ChevronDownIcon, EyeSlashIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
 import { Post, PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
@@ -9,19 +9,19 @@ import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId, un
 import { Timestamp } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import EditModal from './EditModal';
-import StarRating from './StarRating';
 
 interface PostCardProps {
   post: Post;
   onAuthorClick?: (authorId: string) => void;
+  onPostClick?: (postId: string) => void;
 }
 
-export default function PostCard({ post, onAuthorClick }: PostCardProps) {
+export default function PostCard({ post, onAuthorClick, onPostClick }: PostCardProps) {
   const [loading, setLoading] = useState(false);
   const [unshareLoading, setUnshareLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+
   const { user } = useAuthStore();
   const { addPersonalItem, removePersonalItem, personalItems, updatePersonalItem, removePost } = useAppStore();
   
@@ -248,23 +248,17 @@ export default function PostCard({ post, onAuthorClick }: PostCardProps) {
 
       {/* Content */}
       <div 
-        className={`space-y-2 ${hasEnhancedFields ? 'cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors' : ''}`}
-        onClick={hasEnhancedFields ? () => setIsExpanded(!isExpanded) : undefined}
+        className="space-y-2 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+        onClick={() => onPostClick?.(post.id)}
       >
         <div className="flex items-start justify-between">
           <h3 className="text-lg font-semibold text-gray-900 leading-tight flex-1">
             {post.title}
           </h3>
-          {hasEnhancedFields && (
-            <div className="ml-2 flex-shrink-0 flex items-center space-x-1 text-gray-400">
-              <span className="text-xs">{isExpanded ? 'less' : 'more'}</span>
-              {isExpanded ? (
-                <ChevronUpIcon className="h-4 w-4" />
-              ) : (
-                <ChevronDownIcon className="h-4 w-4" />
-              )}
-            </div>
-          )}
+          <div className="ml-2 flex-shrink-0 flex items-center space-x-1 text-gray-400">
+            <span className="text-xs">view details</span>
+            <ChevronDownIcon className="h-4 w-4 rotate-[-90deg]" />
+          </div>
         </div>
         <p className="text-gray-600 leading-relaxed">
           {post.description}
@@ -275,81 +269,47 @@ export default function PostCard({ post, onAuthorClick }: PostCardProps) {
           </p>
         )}
         
-        {/* Enhanced Details - Only show if expanded and fields exist */}
-        {isExpanded && hasEnhancedFields && (
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-            {/* Rating */}
-            {post.rating && post.rating > 0 && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-700">⭐ Rating:</span>
-                <StarRating rating={post.rating} maxRating={10} size="sm" onRatingChange={() => {}} />
-                <span className="text-sm text-gray-600">({post.rating}/10)</span>
-              </div>
-            )}
-            
-            {/* Location */}
-            {post.location && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-700">📍</span>
-                <span className="text-sm text-gray-600">{post.location}</span>
-              </div>
-            )}
-            
-            {/* Price Range */}
-            {(post.priceRange || (post.customPrice && post.customPrice > 0)) && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-700">💰</span>
-                <span className="text-sm text-gray-600">
-                  {post.priceRange && post.priceRange}
-                  {post.customPrice && post.customPrice > 0 && ` ($${post.customPrice})`}
-                </span>
-              </div>
-            )}
-            
-            {/* Tags */}
-            {post.tags && post.tags.length > 0 && (
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-gray-700">🏷️ Tags:</span>
-                <div className="flex flex-wrap gap-2">
-                  {post.tags.map((tag, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
+        {/* Quick preview of enhanced details */}
+        {hasEnhancedFields && (
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+              {/* Rating */}
+              {post.rating && post.rating > 0 && (
+                <div className="flex items-center space-x-1">
+                  <span>⭐</span>
+                  <span>{post.rating}/10</span>
                 </div>
-              </div>
-            )}
-            
-            {/* Experience Date */}
-            {post.experienceDate && (
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium text-gray-700">📅</span>
-                <span className="text-sm text-gray-600">
-                  {post.experienceDate.toDate().toLocaleDateString()}
-                </span>
-              </div>
-            )}
-            
-            {/* Tagged Users */}
-            {((post.taggedUsers && post.taggedUsers.length > 0) || (post.taggedNonUsers && post.taggedNonUsers.length > 0)) && (
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-gray-700">👥 Experienced with:</span>
-                <div className="text-sm text-gray-600">
-                  {post.taggedUsers && post.taggedUsers.length > 0 && (
-                    <span>{post.taggedUsers.length} friend{post.taggedUsers.length > 1 ? 's' : ''}</span>
-                  )}
-                  {post.taggedNonUsers && post.taggedNonUsers.length > 0 && (
-                    <span>
-                      {post.taggedUsers && post.taggedUsers.length > 0 && ', '}
-                      {post.taggedNonUsers.map(user => user.name).join(', ')}
-                    </span>
-                  )}
+              )}
+              
+              {/* Location */}
+              {post.location && (
+                <div className="flex items-center space-x-1">
+                  <span>📍</span>
+                  <span className="truncate max-w-[120px]">{post.location}</span>
                 </div>
-              </div>
-            )}
+              )}
+              
+              {/* Price */}
+              {(post.priceRange || (post.customPrice && post.customPrice > 0)) && (
+                <div className="flex items-center space-x-1">
+                  <span>💰</span>
+                  <span>
+                    {post.priceRange && post.priceRange}
+                    {post.customPrice && post.customPrice > 0 && ` ($${post.customPrice})`}
+                  </span>
+                </div>
+              )}
+              
+              {/* Tags count */}
+              {post.tags && post.tags.length > 0 && (
+                <div className="flex items-center space-x-1">
+                  <span>🏷️</span>
+                  <span>{post.tags.length} tag{post.tags.length > 1 ? 's' : ''}</span>
+                </div>
+              )}
+            </div>
+            
+            <p className="text-xs text-gray-500 italic">Click to view full details →</p>
           </div>
         )}
       </div>

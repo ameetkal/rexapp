@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { CheckIcon, ShareIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
+import { CheckIcon, ShareIcon, TrashIcon, PencilSquareIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
 import { updatePersonalItemStatus, deletePersonalItem, sharePersonalItemAsPost } from '@/lib/firestore';
@@ -14,6 +15,7 @@ interface PersonalItemCardProps {
 }
 
 export default function PersonalItemCard({ item }: PersonalItemCardProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -125,9 +127,21 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
     }
   };
 
+  const handleCardClick = () => {
+    // Only navigate if this item was shared as a post
+    if (item.sharedPostId) {
+      router.push(`/post/${item.sharedPostId}?from=profile`);
+    }
+  };
+
   return (
     <>
-      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
+      <div 
+        className={`bg-white rounded-lg border border-gray-200 p-4 mb-3 ${
+          item.sharedPostId ? 'cursor-pointer hover:shadow-md hover:border-gray-300 transition-all' : ''
+        }`}
+        onClick={handleCardClick}
+      >
         {/* Header */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center space-x-2">
@@ -135,13 +149,23 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
             <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor()}`}>
               {getStatusText()}
             </span>
-          </div>
-          <span className="text-xs text-gray-500">
-            {formatDate(item.createdAt)}
-            {item.completedAt && item.status === 'completed' && (
-              <span className="ml-1">• Completed {formatDate(item.completedAt)}</span>
+            {item.sharedPostId && (
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-200">
+                View post →
+              </span>
             )}
-          </span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <span className="text-xs text-gray-500">
+              {formatDate(item.createdAt)}
+              {item.completedAt && item.status === 'completed' && (
+                <span className="ml-1">• Completed {formatDate(item.completedAt)}</span>
+              )}
+            </span>
+            {item.sharedPostId && (
+              <ChevronRightIcon className="h-3 w-3 text-gray-400" />
+            )}
+          </div>
         </div>
 
         {/* Content */}
@@ -159,7 +183,10 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           {item.status === 'want_to_try' && (
             <>
               <button
-                onClick={handleMarkComplete}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMarkComplete();
+                }}
                 disabled={loading === 'complete'}
                 className="flex items-center space-x-1 px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 disabled:opacity-50 text-sm"
               >
@@ -171,7 +198,10 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           
           {item.status === 'completed' && (
             <button
-              onClick={() => setShowShareDialog(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowShareDialog(true);
+              }}
               disabled={loading === 'share'}
               className="flex items-center space-x-1 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 disabled:opacity-50 text-sm"
             >
@@ -189,7 +219,8 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
                 </span>
               ) : (
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setPostToFeed(true); // Default to posting to feed for already shared items
                     setShowShareDialog(true);
                   }}
@@ -204,7 +235,10 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           )}
 
           <button
-            onClick={() => setShowEditModal(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowEditModal(true);
+            }}
             className="flex items-center space-x-1 px-3 py-2 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 text-sm"
             title="Edit item"
           >
@@ -212,7 +246,10 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
           </button>
 
           <button
-            onClick={handleDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete();
+            }}
             disabled={loading === 'delete'}
             className="flex items-center space-x-1 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50 text-sm ml-auto"
           >
