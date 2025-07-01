@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { Post, PersonalItem, CATEGORIES } from '@/lib/types';
-import { ArrowLeftIcon, BookmarkIcon, PencilSquareIcon, EyeSlashIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, BookmarkIcon, PencilSquareIcon, EyeSlashIcon, ShareIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolid } from '@heroicons/react/24/solid';
-import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId, unsharePost } from '@/lib/firestore';
+import { savePostAsPersonalItem, unsavePersonalItem, getPersonalItemByPostId, unsharePost, fullyDeletePost } from '@/lib/firestore';
 import { Timestamp } from 'firebase/firestore';
 import StarRating from './StarRating';
 import EditModal from './EditModal';
@@ -20,6 +20,7 @@ interface PostDetailScreenProps {
 export default function PostDetailScreen({ post, onBack, onUserProfileClick, backButtonText = "Back to Feed" }: PostDetailScreenProps) {
   const [loading, setLoading] = useState(false);
   const [unshareLoading, setUnshareLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [savedPersonalItem, setSavedPersonalItem] = useState<PersonalItem | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const { user } = useAuthStore();
@@ -161,6 +162,36 @@ export default function PostDetailScreen({ post, onBack, onUserProfileClick, bac
     }
   };
 
+  const handleDelete = async () => {
+    if (!user || post.authorId !== user.uid) return;
+
+    // Confirm with user
+    if (!confirm('Are you sure you want to permanently delete this post? This action cannot be undone and will remove it from everyone\'s lists.')) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      await fullyDeletePost(post.id);
+      
+      // Remove from local store
+      removePost(post.id);
+      
+      // Also remove any associated personal items from local store
+      if (savedPersonalItem) {
+        removePersonalItem(savedPersonalItem.id);
+      }
+      
+      console.log('🗑️ Successfully deleted post');
+      onBack(); // Navigate back since post is deleted
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      alert('Failed to delete post. Please try again.');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto bg-white min-h-screen">
       {/* Header */}
@@ -207,24 +238,40 @@ export default function PostDetailScreen({ post, onBack, onUserProfileClick, bac
                 <EyeSlashIcon className="h-5 w-5" />
               </button>
             )}
+
+            {/* Delete button - only show for posts authored by current user */}
+            {user && post.authorId === user.uid && (
+              <button
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                className={`p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors ${
+                  deleteLoading ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title="Delete post permanently"
+              >
+                <TrashIcon className="h-5 w-5" />
+              </button>
+            )}
             
-            {/* Save button */}
-            <button
-              onClick={handleSaveToggle}
-              disabled={loading}
-              className={`p-2 rounded-full transition-colors ${
-                isSaved 
-                  ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
-              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              title={isSaved ? 'Remove from Want to Try' : 'Add to Want to Try'}
-            >
-              {isSaved ? (
-                <BookmarkSolid className="h-5 w-5" />
-              ) : (
-                <BookmarkIcon className="h-5 w-5" />
-              )}
-            </button>
+            {/* Save button - only show for posts not authored by current user */}
+            {user && post.authorId !== user.uid && (
+              <button
+                onClick={handleSaveToggle}
+                disabled={loading}
+                className={`p-2 rounded-full transition-colors ${
+                  isSaved 
+                    ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                title={isSaved ? 'Remove from Want to Try' : 'Add to Want to Try'}
+              >
+                {isSaved ? (
+                  <BookmarkSolid className="h-5 w-5" />
+                ) : (
+                  <BookmarkIcon className="h-5 w-5" />
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -286,12 +333,24 @@ export default function PostDetailScreen({ post, onBack, onUserProfileClick, bac
           <h1 className="text-3xl font-bold text-gray-900 leading-tight">
             {post.title}
           </h1>
-          <p className="text-lg text-gray-700 leading-relaxed">
-            {post.description}
-          </p>
+          {/* Description */}
+          {post.description && (
+            <p className="text-lg text-gray-700 leading-relaxed">
+              {post.description}
+            </p>
+          )}
           {post.recommendedBy && (
             <p className="text-gray-600">
-              🤝 Recommended by <span className="font-medium">{post.recommendedBy}</span>
+              🤝 Recommended by {post.recommendedByUserId ? (
+                <button
+                  onClick={() => onUserProfileClick?.(post.recommendedByUserId!)}
+                  className="font-medium text-blue-600 hover:text-blue-700 underline"
+                >
+                  {post.recommendedBy}
+                </button>
+              ) : (
+                <span className="font-medium">{post.recommendedBy}</span>
+              )}
             </p>
           )}
         </div>

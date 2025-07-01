@@ -121,39 +121,18 @@ export default function PersonalInvitePage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="text-4xl mb-4">🎯</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">
             Your recommendation was saved!
           </h1>
-          <p className="text-gray-600">
-            {referrerName} saved your recommendation on Rex
-          </p>
         </div>
 
         {/* Item Preview */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
           <div className="text-center">
-            <div className="flex items-center justify-center space-x-2 mb-4">
-              <span className="text-2xl">{getCategoryEmoji(item.category)}</span>
-              <span className="text-sm bg-gray-100 px-3 py-1 rounded-full font-medium text-gray-600">
-                {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
-              </span>
-            </div>
-            <h2 className="font-bold text-gray-900 mb-3 text-xl">
+            <div className="text-3xl mb-3">{getCategoryEmoji(item.category)}</div>
+            <h2 className="font-bold text-gray-900 mb-4 text-xl">
               {item.title}
             </h2>
-            {item.description && (
-              <p className="text-gray-600 text-sm mb-4">
-                {item.description}
-              </p>
-            )}
-            {item.rating && (
-              <div className="flex items-center justify-center space-x-1 mb-4">
-                <span className="text-yellow-500">⭐</span>
-                <span className="text-sm font-medium text-gray-700">
-                  {item.rating}/10
-                </span>
-              </div>
-            )}
             <div className="inline-flex items-center space-x-1 text-xs bg-green-50 text-green-700 px-3 py-2 rounded-full">
               <span>💾</span>
               <span>Saved to their list</span>
@@ -164,23 +143,14 @@ export default function PersonalInvitePage() {
         {/* Signup Form */}
         {!signupMode ? (
           <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">
-              Join Rex to share recommendations
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">
+              Join Rex to save & share recommendations
             </h3>
-            <p className="text-gray-600 text-sm text-center mb-6">
-              Connect with friends, save recommendations, and never forget what to try next.
-            </p>
             <button
               onClick={() => setSignupMode(true)}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors mb-3"
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Create Free Account
-            </button>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-            >
-              Sign In Instead
+              Join Rex
             </button>
           </div>
         ) : (
@@ -250,24 +220,28 @@ export default function PersonalInvitePage() {
                 >
                   {signupLoading ? 'Creating Account...' : 'Create Account'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSignupMode(false)}
-                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                >
-                  Back
-                </button>
+                <div className="flex items-center justify-center space-x-4 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setSignupMode(false)}
+                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <span className="text-gray-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => window.location.href = '/'}
+                    className="text-blue-600 hover:text-blue-700 transition-colors"
+                  >
+                    Sign In Instead
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         )}
-        
-        {/* Footer */}
-        <div className="text-center mt-6">
-          <p className="text-xs text-gray-500">
-            Rex helps you save and share trusted recommendations
-          </p>
-        </div>
+
       </div>
     </div>
   );

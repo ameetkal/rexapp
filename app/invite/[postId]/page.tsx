@@ -2,11 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import { Post } from '@/lib/types';
 import { getPost } from '@/lib/firestore';
 import { signUp } from '@/lib/auth';
-import { BookOpenIcon, FilmIcon, MapPinIcon, SparklesIcon } from '@heroicons/react/24/outline';
 
 export default function InvitePage() {
   const params = useParams();
@@ -82,18 +80,7 @@ export default function InvitePage() {
     }
   };
 
-  const getCategoryIcon = (category: string) => {
-    switch (category) {
-      case 'books':
-        return <BookOpenIcon className="h-6 w-6" />;
-      case 'movies':
-        return <FilmIcon className="h-6 w-6" />;
-      case 'places':
-        return <MapPinIcon className="h-6 w-6" />;
-      default:
-        return <SparklesIcon className="h-6 w-6" />;
-    }
-  };
+
 
   const getCategoryEmoji = (category: string) => {
     switch (category) {
@@ -150,57 +137,20 @@ export default function InvitePage() {
         <div className="text-center mb-8">
           <div className="text-4xl mb-4">🎯</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            {post.authorName} is sharing your recommendation!
+            {post.authorName} shared your recommendation!
           </h1>
         </div>
 
         {/* Post Preview */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6">
-          <div className="flex items-start space-x-4">
-            <div className="flex-shrink-0">
-              {post.universalItem?.image ? (
-                <Image
-                  src={post.universalItem.image}
-                  alt={post.title}
-                  width={80}
-                  height={100}
-                  className="w-20 h-25 object-cover rounded-lg"
-                />
-              ) : (
-                <div className="w-20 h-25 bg-gray-200 rounded-lg flex items-center justify-center">
-                  {getCategoryIcon(post.category)}
-                </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center space-x-2 mb-2">
-                <span className="text-lg">{getCategoryEmoji(post.category)}</span>
-                <span className="text-xs bg-gray-100 px-2 py-1 rounded-full font-medium text-gray-600">
-                  {post.category.charAt(0).toUpperCase() + post.category.slice(1)}
-                </span>
-              </div>
-              <h2 className="font-bold text-gray-900 mb-2 text-lg">
-                {post.title}
-              </h2>
-              {post.description && (
-                <p className="text-gray-600 text-sm mb-3">
-                  {post.description}
-                </p>
-              )}
-              {post.rating && (
-                <div className="flex items-center space-x-1 mb-2">
-                  <span className="text-yellow-500">⭐</span>
-                  <span className="text-sm font-medium text-gray-700">
-                    {post.rating}/10
-                  </span>
-                </div>
-              )}
-              <div className="text-xs text-gray-500">
-                Shared by {post.authorName}
-                {post.recommendedBy && (
-                  <span> • Recommended by {post.recommendedBy}</span>
-                )}
-              </div>
+          <div className="text-center">
+            <div className="text-3xl mb-3">{getCategoryEmoji(post.category)}</div>
+            <h2 className="font-bold text-gray-900 mb-4 text-xl">
+              {post.title}
+            </h2>
+            <div className="inline-flex items-center space-x-1 text-xs bg-green-50 text-green-700 px-3 py-2 rounded-full">
+              <span>✅</span>
+              <span>Shared</span>
             </div>
           </div>
         </div>
@@ -208,23 +158,14 @@ export default function InvitePage() {
         {/* Signup Form */}
         {!signupMode ? (
           <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">
-              Join Rex to see more
+            <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">
+              Join Rex to save & share recommendations
             </h3>
-            <p className="text-gray-600 text-sm text-center mb-6">
-              Save recommendations from friends, discover new experiences, and never forget what to try next.
-            </p>
             <button
               onClick={() => setSignupMode(true)}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors mb-3"
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Create Free Account
-            </button>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-            >
-              Sign In Instead
+              Join Rex
             </button>
           </div>
         ) : (
@@ -294,24 +235,28 @@ export default function InvitePage() {
                 >
                   {signupLoading ? 'Creating Account...' : 'Create Account'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSignupMode(false)}
-                  className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                >
-                  Back
-                </button>
+                <div className="flex items-center justify-center space-x-4 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setSignupMode(false)}
+                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <span className="text-gray-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => window.location.href = '/'}
+                    className="text-blue-600 hover:text-blue-700 transition-colors"
+                  >
+                    Sign In Instead
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         )}
-        
-        {/* Footer */}
-        <div className="text-center mt-6">
-          <p className="text-xs text-gray-500">
-            Rex helps you save and share trusted recommendations
-          </p>
-        </div>
+
       </div>
     </div>
   );

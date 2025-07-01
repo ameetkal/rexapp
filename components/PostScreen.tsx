@@ -12,6 +12,7 @@ import BookSearch from './BookSearch';
 import MovieSearch from './MovieSearch';
 import PlacesSearch from './PlacesSearch';
 import StructuredPostForm from './StructuredPostForm';
+import UserTagInput from './UserTagInput';
 
 type PostMode = 'selection' | 'book-search' | 'book-form' | 'movie-search' | 'movie-form' | 'places-search' | 'places-form' | 'custom-form';
 
@@ -27,13 +28,16 @@ export default function PostScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<PersonalItemStatus>('want_to_try');
-  const [recommendedBy, setRecommendedBy] = useState('');
   const [postToFeed, setPostToFeed] = useState(true);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   
   // Rating for custom posts
   const [rating, setRating] = useState(0);
+  
+  // User tagging for recommended by
+  const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
+  const [recommendedByText, setRecommendedByText] = useState(''); // For non-Rex users
   
   const { user, userProfile } = useAuthStore();
   const { addPost, addPersonalItem } = useAppStore();
@@ -104,7 +108,8 @@ export default function PostScreen() {
       setDescription('');
       setCategory('places');
       setStatus('want_to_try');
-      setRecommendedBy('');
+      setRecommendedByUser(null);
+      setRecommendedByText('');
       setPostToFeed(true);
       setRating(0);
       setSuccess(true);
@@ -121,7 +126,8 @@ export default function PostScreen() {
     setDescription('');
     setCategory('places');
     setStatus('want_to_try');
-    setRecommendedBy('');
+    setRecommendedByUser(null);
+    setRecommendedByText('');
     setPostToFeed(true);
     setRating(0);
     setSuccess(true);
@@ -137,9 +143,11 @@ export default function PostScreen() {
       let postId: string | null = null;
       
       // Prepare enhanced fields
+      const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
       const enhancedFields = {
         rating: rating > 0 ? rating : undefined,
-        recommendedBy: recommendedBy.trim() || undefined,
+        recommendedBy: recommendedByValue,
+        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
       };
 
       // Always create a personal item
@@ -163,7 +171,8 @@ export default function PostScreen() {
         createdAt: Timestamp.now(),
         source: 'personal',
         // Include enhanced fields
-        ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
+        ...(recommendedByValue && { recommendedBy: recommendedByValue }),
+        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
         ...(rating > 0 && { rating }),
       };
       
@@ -189,7 +198,8 @@ export default function PostScreen() {
           createdAt: Timestamp.now(),
           savedBy: [],
           postType: 'manual' as const,
-          ...(recommendedBy.trim() && { recommendedBy: recommendedBy.trim() }),
+          ...(recommendedByValue && { recommendedBy: recommendedByValue }),
+          ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
         };
         addPost(newPost);
         
@@ -205,19 +215,19 @@ export default function PostScreen() {
 
       // Check if we should offer SMS invite for non-user recommender
       console.log(`🔍 SMS Invite Debug:`, {
-        recommendedBy: recommendedBy.trim(),
-        shouldOffer: shouldOfferSMSInvite(recommendedBy.trim()),
+        recommendedBy: recommendedByValue,
+        shouldOffer: shouldOfferSMSInvite(recommendedByValue || ''),
         postId,
         postToFeed,
         personalItemId
       });
       
-      if (recommendedBy.trim() && shouldOfferSMSInvite(recommendedBy.trim())) {
+      if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
         if (postToFeed && postId) {
           // For shared posts, use the post ID
           console.log(`✅ Setting up SMS invite for shared post: ${postId}`);
           setInviteData({
-            recommenderName: recommendedBy.trim(),
+            recommenderName: recommendedByValue,
             postTitle: title,
             postId: postId,
             isPost: true
@@ -229,7 +239,7 @@ export default function PostScreen() {
           // For private items, use the personal item ID
           console.log(`✅ Setting up SMS invite for private item: ${personalItemId}`);
           setInviteData({
-            recommenderName: recommendedBy.trim(),
+            recommenderName: recommendedByValue,
             postTitle: title,
             postId: personalItemId,
             isPost: false
@@ -242,13 +252,13 @@ export default function PostScreen() {
         }
       }
 
-      // Only reset form and show success if no invite dialog was shown
       // Reset form
       setTitle('');
       setDescription('');
       setCategory('places');
       setStatus('want_to_try');
-      setRecommendedBy('');
+      setRecommendedByUser(null);
+      setRecommendedByText('');
       setPostToFeed(true);
       // Reset enhanced fields
       setRating(0);
@@ -332,6 +342,9 @@ export default function PostScreen() {
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
                   Add Something New
                 </h2>
+                <p className="text-gray-600">
+                  Share something you want to do or have already done
+                </p>
               </div>
 
               <div className="space-y-4 mb-8">
@@ -510,16 +523,23 @@ export default function PostScreen() {
 
                   {/* Recommended By */}
                   <div>
-                    <label htmlFor="recommendedBy" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
                     </label>
-                    <input
-                      type="text"
-                      id="recommendedBy"
-                      placeholder="Who recommended this to you?"
-                      value={recommendedBy}
-                      onChange={(e) => setRecommendedBy(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+                    
+                    <UserTagInput
+                      singleUser={true}
+                      selectedUser={recommendedByUser}
+                      textValue={recommendedByText}
+                      onUserSelect={(user) => {
+                        setRecommendedByUser(user);
+                        if (!user) {
+                          // When removing a tagged user, keep any text that was typed
+                          // The textValue will be maintained by the component
+                        }
+                      }}
+                      onTextChange={(text) => setRecommendedByText(text)}
+                      placeholder="Enter any name or search for Rex users..."
                     />
                   </div>
 

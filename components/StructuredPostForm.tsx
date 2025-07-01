@@ -9,6 +9,7 @@ import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { Timestamp } from 'firebase/firestore';
 import StarRating from './StarRating';
+import UserTagInput from './UserTagInput';
 
 interface StructuredPostFormProps {
   universalItem: UniversalItem;
@@ -24,7 +25,9 @@ export default function StructuredPostForm({
   const [rating, setRating] = useState(0);
   const [status, setStatus] = useState<'completed' | 'want_to_try'>('want_to_try');
   const [postToFeed, setPostToFeed] = useState(true);
-  const [recommendedBy, setRecommendedBy] = useState('');
+  const [description, setDescription] = useState(universalItem.description || '');
+  const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
+  const [recommendedByText, setRecommendedByText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteData, setInviteData] = useState<{
@@ -43,21 +46,24 @@ export default function StructuredPostForm({
 
     setSubmitting(true);
     try {
+      const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
       const enhancedFields = {
         rating: rating > 0 ? rating : undefined,
-        recommendedBy: recommendedBy.trim() || undefined,
+        recommendedBy: recommendedByValue,
+        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
       };
 
       let createdPostId: string | null = null;
 
       if (postToFeed) {
         // Create both post and personal item
+        const finalDescription = description.trim();
         const { postId, personalItemId } = await createStructuredPost(
           user.uid,
           userProfile.name,
           universalItem,
           status,
-          undefined, // No description in simplified flow
+          finalDescription || undefined,
           enhancedFields
         );
         
@@ -70,7 +76,7 @@ export default function StructuredPostForm({
           authorName: userProfile.name,
           category: universalItem.category,
           title: universalItem.title,
-          description: universalItem.description || '',
+          description: finalDescription || '',
           createdAt: Timestamp.now(),
           savedBy: [],
           universalItem,
@@ -85,21 +91,23 @@ export default function StructuredPostForm({
           userId: user.uid,
           category: universalItem.category,
           title: universalItem.title,
-          description: universalItem.description || '',
+          description: finalDescription || '',
           status: status === 'completed' ? 'shared' : 'want_to_try',
           createdAt: Timestamp.now(),
           source: 'personal',
-          ...(status === 'completed' && { sharedPostId: postId, completedAt: Timestamp.now() }),
+          sharedPostId: postId, // Always set for structured posts so edits sync
+          ...(status === 'completed' && { completedAt: Timestamp.now() }),
           ...enhancedFields,
         };
         addPersonalItem(personalItem);
       } else {
         // Only create personal item
+        const finalDescription = description.trim();
         createdPostId = await createPersonalItem(
           user.uid,
           universalItem.category,
           universalItem.title,
-          undefined, // No description
+          finalDescription || undefined,
           enhancedFields,
           undefined // No post linking for standalone personal items
         );
@@ -109,7 +117,7 @@ export default function StructuredPostForm({
           userId: user.uid,
           category: universalItem.category,
           title: universalItem.title,
-          description: universalItem.description || '',
+          description: finalDescription || '',
           status: status,
           createdAt: Timestamp.now(),
           source: 'personal',
@@ -123,18 +131,18 @@ export default function StructuredPostForm({
       
       // Check if we should offer SMS invite for non-user recommender
       console.log(`🔍 SMS Invite Debug:`, {
-        recommendedBy: recommendedBy.trim(),
-        shouldOffer: shouldOfferSMSInvite(recommendedBy.trim()),
+        recommendedBy: recommendedByValue,
+        shouldOffer: shouldOfferSMSInvite(recommendedByValue || ''),
         createdPostId,
         postToFeed
       });
       
-      if (recommendedBy.trim() && shouldOfferSMSInvite(recommendedBy.trim())) {
+      if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
         if (postToFeed && createdPostId) {
           // For shared posts, use the post ID
           console.log(`✅ Setting up SMS invite for shared post: ${createdPostId}`);
           setInviteData({
-            recommenderName: recommendedBy.trim(),
+            recommenderName: recommendedByValue,
             postTitle: universalItem.title,
             postId: createdPostId,
             isPost: true
@@ -146,7 +154,7 @@ export default function StructuredPostForm({
           // For private items, use the personal item ID
           console.log(`✅ Setting up SMS invite for private item: ${createdPostId}`);
           setInviteData({
-            recommenderName: recommendedBy.trim(),
+            recommenderName: recommendedByValue,
             postTitle: universalItem.title,
             postId: createdPostId,
             isPost: false
@@ -303,6 +311,25 @@ export default function StructuredPostForm({
             </div>
           </div>
 
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              📄 Description <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What would you like to share about this?"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              rows={3}
+            />
+            {universalItem.description && description === universalItem.description && (
+              <p className="text-xs text-gray-500 mt-1">
+                Auto-filled from database. You can edit this description.
+              </p>
+            )}
+          </div>
+
           {/* Rating (only for completed) */}
           {status === 'completed' && (
             <div>
@@ -315,16 +342,23 @@ export default function StructuredPostForm({
 
           {/* Recommended By */}
           <div>
-            <label htmlFor="recommendedBy" className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
             </label>
-            <input
-              type="text"
-              id="recommendedBy"
-              placeholder="Who recommended this to you?"
-              value={recommendedBy}
-              onChange={(e) => setRecommendedBy(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+            
+            <UserTagInput
+              singleUser={true}
+              selectedUser={recommendedByUser}
+              textValue={recommendedByText}
+              onUserSelect={(user) => {
+                setRecommendedByUser(user);
+                if (!user) {
+                  // When removing a tagged user, keep any text that was typed
+                  // The textValue will be maintained by the component
+                }
+              }}
+              onTextChange={(text) => setRecommendedByText(text)}
+              placeholder="Enter any name or search for Rex users..."
             />
           </div>
 

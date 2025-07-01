@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { XMarkIcon, UserPlusIcon } from '@heroicons/react/24/outline';
+import { searchUsers } from '@/lib/firestore';
 
 interface TaggedUser {
   id: string;
@@ -15,52 +16,75 @@ interface TaggedNonUser {
 }
 
 interface UserTagInputProps {
-  taggedUsers: TaggedUser[];
-  taggedNonUsers: TaggedNonUser[];
-  onAddUser: (user: TaggedUser) => void;
-  onRemoveUser: (userId: string) => void;
-  onAddNonUser: (nonUser: TaggedNonUser) => void;
-  onRemoveNonUser: (index: number) => void;
+  // For multi-user mode (existing functionality)
+  taggedUsers?: TaggedUser[];
+  taggedNonUsers?: TaggedNonUser[];
+  onAddUser?: (user: TaggedUser) => void;
+  onRemoveUser?: (userId: string) => void;
+  onAddNonUser?: (nonUser: TaggedNonUser) => void;
+  onRemoveNonUser?: (index: number) => void;
+  maxUsers?: number;
+  
+  // For single-user smart text mode (new functionality)
+  singleUser?: boolean;
+  selectedUser?: TaggedUser | null;
+  textValue?: string;
+  onUserSelect?: (user: TaggedUser | null) => void;
+  onTextChange?: (text: string) => void;
+  
   placeholder?: string;
 }
 
 export default function UserTagInput({
-  taggedUsers,
-  taggedNonUsers,
+  // Multi-user props
+  taggedUsers = [],
+  taggedNonUsers = [],
   onAddUser,
   onRemoveUser,
   onAddNonUser,
   onRemoveNonUser,
+  maxUsers,
+  
+  // Single-user props
+  singleUser = false,
+  selectedUser = null,
+  textValue = '',
+  onUserSelect,
+  onTextChange,
+  
   placeholder = "Tag people you experienced this with..."
 }: UserTagInputProps) {
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState(textValue);
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<TaggedUser[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
-
-
-  // Mock search function - in real app this would search your backend
-  const searchUsers = async (query: string): Promise<TaggedUser[]> => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Mock users for demo
-    const mockUsers: TaggedUser[] = [
-      { id: '1', name: 'Sarah Chen', email: 'sarah@example.com' },
-      { id: '2', name: 'Mike Rodriguez', email: 'mike@example.com' },
-      { id: '3', name: 'Alex Kim', email: 'alex@example.com' },
-      { id: '4', name: 'Jessica Park', email: 'jessica@example.com' },
-    ];
-    
-    return mockUsers.filter(user => 
-      user.name.toLowerCase().includes(query.toLowerCase()) ||
-      user.email.toLowerCase().includes(query.toLowerCase())
-    ).filter(user => 
-      !taggedUsers.some(tagged => tagged.id === user.id)
-    );
+  // Update input value when textValue prop changes
+  useEffect(() => {
+    if (singleUser) {
+      setInputValue(textValue);
+    }
+  }, [textValue, singleUser]);
+  
+  // Real user search function
+  const searchUsersAPI = async (query: string): Promise<TaggedUser[]> => {
+    try {
+      const results = await searchUsers(query);
+      return results
+        .filter(user => {
+          if (singleUser) {
+            return selectedUser?.id !== user.id;
+          } else {
+            return !taggedUsers.some(tagged => tagged.id === user.id);
+          }
+        })
+        .slice(0, 5); // Fewer results for less intrusion
+    } catch (error) {
+      console.error('Error searching users:', error);
+      return [];
+    }
   };
 
   useEffect(() => {
@@ -77,12 +101,17 @@ export default function UserTagInput({
   const handleInputChange = async (value: string) => {
     setInputValue(value);
     
+    // For single user mode, also update the parent's text value
+    if (singleUser && onTextChange) {
+      onTextChange(value);
+    }
+    
     if (value.trim().length >= 2) {
       setIsSearching(true);
       setShowDropdown(true);
       
       try {
-        const results = await searchUsers(value.trim());
+        const results = await searchUsersAPI(value.trim());
         setSearchResults(results);
       } catch (error) {
         console.error('Error searching users:', error);
@@ -97,15 +126,40 @@ export default function UserTagInput({
   };
 
   const handleSelectUser = (user: TaggedUser) => {
-    onAddUser(user);
-    setInputValue('');
+    if (singleUser) {
+      // Single user mode - tag the user and clear input
+      if (onUserSelect) {
+        onUserSelect(user);
+      }
+      setInputValue('');
+      if (onTextChange) {
+        onTextChange('');
+      }
+    } else {
+      // Multi-user mode - existing functionality
+      if (maxUsers && taggedUsers.length >= maxUsers) {
+        return;
+      }
+      
+      if (onAddUser) {
+        onAddUser(user);
+      }
+      setInputValue('');
+    }
+    
     setShowDropdown(false);
     setSearchResults([]);
   };
 
+  const handleRemoveSelectedUser = () => {
+    if (singleUser && onUserSelect) {
+      onUserSelect(null);
+    }
+  };
+
   const handleInviteNonUser = () => {
     const trimmedName = inputValue.trim();
-    if (trimmedName) {
+    if (trimmedName && onAddNonUser) {
       // Simple email validation
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedName);
       
@@ -125,12 +179,80 @@ export default function UserTagInput({
       e.preventDefault();
       if (searchResults.length > 0) {
         handleSelectUser(searchResults[0]);
-      } else if (inputValue.trim()) {
+      } else if (!singleUser && inputValue.trim()) {
         handleInviteNonUser();
       }
+      // For single user mode, Enter just submits the form with current text
     }
   };
 
+  // Single user mode render
+  if (singleUser) {
+    return (
+      <div className="relative">
+        <div className="min-h-[42px] px-3 py-2 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
+          <div className="flex flex-wrap gap-2">
+            {/* Tagged user (if any) */}
+            {selectedUser && (
+              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                {selectedUser.name}
+                <button
+                  type="button"
+                  onClick={handleRemoveSelectedUser}
+                  className="ml-1 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800"
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            
+            {/* Input field */}
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputValue}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onKeyPress={handleKeyPress}
+              onFocus={() => inputValue.length >= 2 && setShowDropdown(true)}
+              placeholder={!selectedUser && !inputValue ? placeholder : ""}
+              className="flex-1 min-w-[120px] outline-none text-sm placeholder:text-gray-500"
+            />
+          </div>
+        </div>
+
+        {/* Suggestions dropdown */}
+        {showDropdown && searchResults.length > 0 && (
+          <div
+            ref={dropdownRef}
+            className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+          >
+            {isSearching ? (
+              <div className="px-3 py-2 text-sm text-gray-500">
+                Searching...
+              </div>
+            ) : (
+              searchResults.map((user) => (
+                <button
+                  key={user.id}
+                  onClick={() => handleSelectUser(user)}
+                  className="w-full px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                >
+                  <div className="text-sm font-medium text-gray-900">
+                    {user.name}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {user.email}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Multi-user mode render (existing functionality)
   return (
     <div className="relative">
       <div className="min-h-[42px] px-3 py-2 border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent">
@@ -144,7 +266,7 @@ export default function UserTagInput({
               {user.name}
               <button
                 type="button"
-                onClick={() => onRemoveUser(user.id)}
+                onClick={() => onRemoveUser?.(user.id)}
                 className="ml-1 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800"
               >
                 <XMarkIcon className="w-3 h-3" />
@@ -164,7 +286,7 @@ export default function UserTagInput({
               )}
               <button
                 type="button"
-                onClick={() => onRemoveNonUser(index)}
+                onClick={() => onRemoveNonUser?.(index)}
                 className="ml-1 inline-flex items-center justify-center w-4 h-4 text-green-600 hover:text-green-800"
               >
                 <XMarkIcon className="w-3 h-3" />

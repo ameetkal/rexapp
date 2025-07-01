@@ -3,6 +3,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   getDocs,
   getDoc,
   query,
@@ -31,6 +32,7 @@ export const createPost = async (
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
     recommendedBy?: string;
+    recommendedByUserId?: string;
   }
 ): Promise<string> => {
   try {
@@ -54,6 +56,7 @@ export const createPost = async (
         ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
         ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
         ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
+        ...(enhancedFields.recommendedByUserId && { recommendedByUserId: enhancedFields.recommendedByUserId }),
       }),
     };
     
@@ -355,6 +358,7 @@ export const createPersonalItem = async (
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
     recommendedBy?: string;
+    recommendedByUserId?: string;
   },
   linkToPost?: {
     postId: string;
@@ -376,6 +380,8 @@ export const createPersonalItem = async (
         originalPostId: linkToPost.postId,
         originalAuthorId: linkToPost.authorId,
         originalAuthorName: linkToPost.authorName,
+        // For structured posts, also set sharedPostId so edits sync
+        sharedPostId: linkToPost.postId,
       }),
       // Include enhanced fields if provided
       ...(enhancedFields && {
@@ -388,6 +394,7 @@ export const createPersonalItem = async (
         ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
         ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
         ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
+        ...(enhancedFields.recommendedByUserId && { recommendedByUserId: enhancedFields.recommendedByUserId }),
       }),
     };
     
@@ -845,6 +852,7 @@ export const createStructuredPost = async (
     taggedUsers?: string[];
     taggedNonUsers?: { name: string; email?: string }[];
     recommendedBy?: string;
+    recommendedByUserId?: string;
   }
 ): Promise<{ postId: string; personalItemId: string }> => {
   try {
@@ -873,6 +881,7 @@ export const createStructuredPost = async (
         ...(enhancedFields.taggedUsers && { taggedUsers: enhancedFields.taggedUsers }),
         ...(enhancedFields.taggedNonUsers && { taggedNonUsers: enhancedFields.taggedNonUsers }),
         ...(enhancedFields.recommendedBy && { recommendedBy: enhancedFields.recommendedBy }),
+        ...(enhancedFields.recommendedByUserId && { recommendedByUserId: enhancedFields.recommendedByUserId }),
       }),
     };
     
@@ -917,6 +926,46 @@ export const deletePost = async (postId: string): Promise<void> => {
     });
   } catch (error) {
     console.error('Error deleting post:', error);
+    throw error;
+  }
+};
+
+// Completely delete a post and all associated personal items
+export const fullyDeletePost = async (postId: string): Promise<void> => {
+  try {
+    // First, find and delete all personal items associated with this post
+    const personalItemsQuery = query(
+      collection(db, 'personal_items'),
+      where('originalPostId', '==', postId)
+    );
+    const personalItemsSnapshot = await getDocs(personalItemsQuery);
+    
+    // Delete all associated personal items
+    const deletePromises = personalItemsSnapshot.docs.map(doc => 
+      deleteDoc(doc.ref)
+    );
+    await Promise.all(deletePromises);
+    
+    // Find any personal items that have this post as their sharedPostId
+    const sharedItemsQuery = query(
+      collection(db, 'personal_items'),
+      where('sharedPostId', '==', postId)
+    );
+    const sharedItemsSnapshot = await getDocs(sharedItemsQuery);
+    
+    // Remove the sharedPostId reference from these items
+    const updatePromises = sharedItemsSnapshot.docs.map(doc => 
+      updateDoc(doc.ref, { sharedPostId: null })
+    );
+    await Promise.all(updatePromises);
+    
+    // Finally, delete the post itself
+    const postRef = doc(db, 'posts', postId);
+    await deleteDoc(postRef);
+    
+    console.log(`🗑️ Fully deleted post ${postId} and all associated personal items`);
+  } catch (error) {
+    console.error('Error fully deleting post:', error);
     throw error;
   }
 };

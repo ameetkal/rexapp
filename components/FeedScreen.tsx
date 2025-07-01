@@ -10,9 +10,10 @@ import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/rea
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
+  onNavigateToAdd?: () => void;
 }
 
-export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {}) {
+export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: FeedScreenProps = {}) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -305,21 +306,18 @@ export default function FeedScreen({ onUserProfileClick }: FeedScreenProps = {})
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Your feed is empty
+                  Welcome to Rex!
                 </h3>
                 <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-                  You haven&apos;t posted any recommendations yet, and you&apos;re not following anyone. Start by sharing your first recommendation or finding friends to follow!
+                  Search for people to follow above, or{' '}
+                  <button
+                    onClick={() => onNavigateToAdd?.()}
+                    className="text-blue-600 hover:text-blue-700 font-medium underline"
+                  >
+                    create your first post
+                  </button>
+                  {' '}to get started.
                 </p>
-                <div className="space-y-3">
-                  <p className="text-sm text-gray-600">
-                    Try these actions:
-                  </p>
-                  <div className="space-y-2 text-sm text-gray-500">
-                    <p>• Use the search above to find friends to follow</p>
-                    <p>• Share your first recommendation in the Add tab</p>
-                    <p>• Invite friends to join Rex</p>
-                  </div>
-                </div>
               </div>
             ) : (
               <div className="space-y-4">

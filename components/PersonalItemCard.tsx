@@ -12,9 +12,13 @@ import EditModal from './EditModal';
 
 interface PersonalItemCardProps {
   item: PersonalItem;
+  onUserClick?: (userId: string) => void;
 }
 
-export default function PersonalItemCard({ item }: PersonalItemCardProps) {
+export default function PersonalItemCard({ 
+  item,
+  onUserClick
+}: PersonalItemCardProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -172,8 +176,20 @@ export default function PersonalItemCard({ item }: PersonalItemCardProps) {
         <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
         <p className="text-gray-600 text-sm mb-2">{item.description}</p>
         {item.recommendedBy && (
-          <p className="text-xs text-gray-500 mb-4">
-            🤝 Recommended by <span className="font-medium">{item.recommendedBy}</span>
+          <p className="text-sm text-gray-600 mb-2">
+            🤝 Recommended by {item.recommendedByUserId ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUserClick?.(item.recommendedByUserId!);
+                }}
+                className="font-medium text-blue-600 hover:text-blue-700 underline"
+              >
+                {item.recommendedBy}
+              </button>
+            ) : (
+              <span className="font-medium">{item.recommendedBy}</span>
+            )}
           </p>
         )}
         {!item.recommendedBy && <div className="mb-4" />}

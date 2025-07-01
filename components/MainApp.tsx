@@ -137,7 +137,7 @@ export default function MainApp() {
   const renderActiveScreen = () => {
     switch (activeTab) {
       case 'feed':
-        return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} />;
+        return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
       case 'post':
         return <PostScreen />;
       case 'saved':
@@ -157,9 +157,9 @@ export default function MainApp() {
                 user={selectedUser}
                 onBack={handleBackFromPublicProfile}
               />
-            ) : <ProfileScreen onShowFollowingList={handleShowFollowingList} />;
+            ) : <ProfileScreen onShowFollowingList={handleShowFollowingList} onUserClick={handleProfileClickFromFeed} />;
           default:
-            return <ProfileScreen onShowFollowingList={handleShowFollowingList} />;
+            return <ProfileScreen onShowFollowingList={handleShowFollowingList} onUserClick={handleProfileClickFromFeed} />;
         }
       default:
         return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} />;

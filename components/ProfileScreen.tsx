@@ -9,10 +9,11 @@ import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
 
 interface ProfileScreenProps {
-  onShowFollowingList?: () => void;
+  onShowFollowingList: () => void;
+  onUserClick?: (userId: string) => void;
 }
 
-export default function ProfileScreen({ onShowFollowingList }: ProfileScreenProps = {}) {
+export default function ProfileScreen({ onShowFollowingList, onUserClick }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   
@@ -179,7 +180,7 @@ export default function ProfileScreen({ onShowFollowingList }: ProfileScreenProp
           ) : (
             <div className="space-y-3">
               {filteredPersonalItems.map((item) => (
-                <PersonalItemCard key={item.id} item={item} />
+                <PersonalItemCard key={item.id} item={item} onUserClick={onUserClick} />
               ))}
             </div>
           )}

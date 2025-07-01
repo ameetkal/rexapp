@@ -43,6 +43,7 @@ export interface Post {
   createdAt: Timestamp;
   savedBy: string[]; // userIds who saved this
   recommendedBy?: string; // Who recommended this item
+  recommendedByUserId?: string; // User ID if recommendedBy is a Rex user
   
   // Enhanced optional fields
   rating?: number; // 1-10
@@ -90,6 +91,7 @@ export interface PersonalItem {
   originalAuthorId?: string;
   originalAuthorName?: string;
   recommendedBy?: string; // Who recommended this item
+  recommendedByUserId?: string; // User ID if recommendedBy is a Rex user
   
   // Enhanced optional fields (same as Post)
   rating?: number; // 1-10
