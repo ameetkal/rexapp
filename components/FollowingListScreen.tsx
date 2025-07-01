@@ -189,7 +189,9 @@ export default function FollowingListScreen({ onBack, onUserClick }: FollowingLi
                       </div>
                       <div>
                         <h3 className="font-medium text-gray-900">{searchUser.name}</h3>
-                        <p className="text-sm text-gray-500">{searchUser.email}</p>
+                        <p className="text-sm text-gray-500">
+                          {searchUser.username ? `@${searchUser.username}` : 'Rex user'}
+                        </p>
                       </div>
                     </button>
                     
@@ -261,7 +263,9 @@ export default function FollowingListScreen({ onBack, onUserClick }: FollowingLi
                 </div>
                 <div>
                   <h3 className="font-medium text-gray-900">{followedUser.name}</h3>
-                  <p className="text-sm text-gray-500">{followedUser.email}</p>
+                  <p className="text-sm text-gray-500">
+                    {followedUser.username ? `@${followedUser.username}` : 'Rex user'}
+                  </p>
                 </div>
               </button>
               

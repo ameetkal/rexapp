@@ -449,6 +449,8 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                 }
               }}
               onTextChange={(text) => setRecommendedByText(text)}
+              excludeCurrentUser={true}
+              currentUserId={user?.uid}
               placeholder="Enter any name or search for Rex users..."
             />
           </div>

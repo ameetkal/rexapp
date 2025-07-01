@@ -46,10 +46,17 @@ export default function PostDetailPage() {
   }, [postId]);
 
   const handleBack = () => {
-    if (from === 'profile' && userId && userName) {
-      // Navigate back to the specific user's profile
-      // We'll need to trigger the profile view in the main app
-      router.push(`/?viewProfile=${userId}&userName=${encodeURIComponent(userName)}`);
+    if (from === 'profile') {
+      if (userId && userName) {
+        // Navigate back to the specific user's profile
+        router.push(`/?viewProfile=${userId}&userName=${encodeURIComponent(userName)}`);
+      } else {
+        // Navigate back to your own profile
+        router.push('/?screen=profile');
+      }
+    } else if (from === 'feed') {
+      // Navigate back to feed
+      router.push('/');
     } else {
       // Default: navigate back to feed
       router.push('/');
@@ -57,8 +64,14 @@ export default function PostDetailPage() {
   };
 
   const getBackButtonText = () => {
-    if (from === 'profile' && userName) {
-      return `Back to ${userName}'s Profile`;
+    if (from === 'profile') {
+      if (userName) {
+        return `Back to ${userName}'s Profile`;
+      } else {
+        return 'Back to Profile';
+      }
+    } else if (from === 'feed') {
+      return 'Back to Feed';
     }
     return 'Back to Feed';
   };

@@ -5,12 +5,21 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { User } from './types';
+import { checkUsernameAvailability } from './firestore';
 
-export const signUp = async (email: string, password: string, name: string) => {
+export const signUp = async (email: string, password: string, name: string, username?: string) => {
   try {
+    // Check username availability if provided
+    if (username) {
+      const isAvailable = await checkUsernameAvailability(username);
+      if (!isAvailable) {
+        throw new Error('Username is already taken');
+      }
+    }
+
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
     
@@ -19,7 +28,17 @@ export const signUp = async (email: string, password: string, name: string) => {
       id: user.uid,
       name,
       email,
+      username: username ? username.toLowerCase() : undefined,
       following: [],
+      followers: [],
+      createdAt: serverTimestamp() as unknown as Timestamp,
+      notificationPreferences: {
+        tagged: true,
+        mentioned: true,
+        followed: true,
+        post_liked: true,
+        email_notifications: false,
+      }
     };
     
     await setDoc(doc(db, 'users', user.uid), userProfile);

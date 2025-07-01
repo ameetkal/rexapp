@@ -8,6 +8,7 @@ interface TaggedUser {
   id: string;
   name: string;
   email: string;
+  username?: string;
 }
 
 interface TaggedNonUser {
@@ -32,6 +33,10 @@ interface UserTagInputProps {
   onUserSelect?: (user: TaggedUser | null) => void;
   onTextChange?: (text: string) => void;
   
+  // Filter options
+  excludeCurrentUser?: boolean;
+  currentUserId?: string;
+  
   placeholder?: string;
 }
 
@@ -51,6 +56,10 @@ export default function UserTagInput({
   textValue = '',
   onUserSelect,
   onTextChange,
+  
+  // Filter options
+  excludeCurrentUser = false,
+  currentUserId,
   
   placeholder = "Tag people you experienced this with..."
 }: UserTagInputProps) {
@@ -74,6 +83,11 @@ export default function UserTagInput({
       const results = await searchUsers(query);
       return results
         .filter(user => {
+          // Filter out current user if requested
+          if (excludeCurrentUser && currentUserId && user.id === currentUserId) {
+            return false;
+          }
+          
           if (singleUser) {
             return selectedUser?.id !== user.id;
           } else {
@@ -241,7 +255,7 @@ export default function UserTagInput({
                     {user.name}
                   </div>
                   <div className="text-xs text-gray-500">
-                    {user.email}
+                    {user.username ? `@${user.username}` : 'Rex user'}
                   </div>
                 </button>
               ))
@@ -335,7 +349,7 @@ export default function UserTagInput({
                         {user.name}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {user.email}
+                        {user.username ? `@${user.username}` : 'Rex user'}
                       </div>
                     </button>
                   ))}

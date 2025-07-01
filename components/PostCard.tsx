@@ -106,6 +106,18 @@ export default function PostCard({ post, onAuthorClick, onPostClick }: PostCardP
           originalPostId: post.id,
           originalAuthorId: post.authorId,
           originalAuthorName: post.authorName,
+          // Inherit the post author as the recommender
+          recommendedBy: post.authorName,
+          recommendedByUserId: post.authorId,
+          // Copy any enhanced fields from the original post
+          ...(post.rating && { rating: post.rating }),
+          ...(post.location && { location: post.location }),
+          ...(post.priceRange && { priceRange: post.priceRange }),
+          ...(post.customPrice && { customPrice: post.customPrice }),
+          ...(post.tags && { tags: post.tags }),
+          ...(post.experienceDate && { experienceDate: post.experienceDate }),
+          ...(post.taggedUsers && { taggedUsers: post.taggedUsers }),
+          ...(post.taggedNonUsers && { taggedNonUsers: post.taggedNonUsers }),
         };
         
         addPersonalItem(newPersonalItem);

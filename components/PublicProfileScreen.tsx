@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
-import { getFeedPosts, followUser, unfollowUser } from '@/lib/firestore';
+import { getFeedPosts, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
 import { User, Post } from '@/lib/types';
 import PostCard from './PostCard';
 
@@ -18,26 +18,31 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
+  const [recsGivenCount, setRecsGivenCount] = useState(0);
   
   const { user: currentUser, userProfile, setUserProfile } = useAuthStore();
 
   const isFollowing = userProfile?.following.includes(profileUser.id) || false;
 
   useEffect(() => {
-    const loadUserPosts = async () => {
+    const loadUserData = async () => {
       try {
         // Get all posts from this specific user
         const allPosts = await getFeedPosts([profileUser.id], profileUser.id);
         const userOnlyPosts = allPosts.filter(post => post.authorId === profileUser.id);
         setUserPosts(userOnlyPosts);
+
+        // Get recs given count
+        const recsCount = await getUserRecsGivenCount(profileUser.id);
+        setRecsGivenCount(recsCount);
       } catch (error) {
-        console.error('Error loading user posts:', error);
+        console.error('Error loading user data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    loadUserPosts();
+    loadUserData();
   }, [profileUser.id]);
 
   const handleFollowToggle = async () => {
@@ -93,16 +98,22 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             {profileUser.name.charAt(0).toUpperCase()}
           </div>
           <h2 className="text-xl font-bold text-gray-900">{profileUser.name}</h2>
-          <p className="text-gray-600 text-sm">{profileUser.email}</p>
+          {profileUser.username && (
+            <p className="text-gray-600 text-sm">@{profileUser.username}</p>
+          )}
           
-          <div className="flex justify-center space-x-6 mt-4">
+          <div className="flex justify-center space-x-4 mt-4">
             <div className="text-center">
               <div className="text-xl font-bold text-gray-900">{profileUser.following.length || 0}</div>
               <div className="text-sm text-gray-500">Following</div>
             </div>
             <div className="text-center">
               <div className="text-xl font-bold text-gray-900">{userPosts.length || 0}</div>
-              <div className="text-sm text-gray-500">Posts</div>
+              <div className="text-sm text-gray-500">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-gray-900">{recsGivenCount}</div>
+              <div className="text-sm text-gray-500">Recs Given</div>
             </div>
           </div>
 

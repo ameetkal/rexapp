@@ -2,20 +2,26 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { getPersonalItems } from '@/lib/firestore';
-import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { getPersonalItems, getUserRecsGivenCount } from '@/lib/firestore';
+import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CheckCircleIcon, CogIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import PersonalItemCard from './PersonalItemCard';
+import PersonalItemDetailModal from './PersonalItemDetailModal';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
+import EditProfileModal from './EditProfileModal';
 
 interface ProfileScreenProps {
   onShowFollowingList: () => void;
   onUserClick?: (userId: string) => void;
+  onSettingsClick: () => void;
 }
 
-export default function ProfileScreen({ onShowFollowingList, onUserClick }: ProfileScreenProps) {
+export default function ProfileScreen({ onShowFollowingList, onUserClick, onSettingsClick }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [recsGivenCount, setRecsGivenCount] = useState(0);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   
   const { user, userProfile } = useAuthStore();
   const { isInstalled, isLoading } = usePWAInstallStatus();
@@ -34,9 +40,21 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick }: Prof
     }
   }, [user, setPersonalItems]);
 
+  const loadRecsGivenCount = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const count = await getUserRecsGivenCount(user.uid);
+      setRecsGivenCount(count);
+    } catch (error) {
+      console.error('Error loading recs given count:', error);
+    }
+  }, [user]);
+
   useEffect(() => {
     loadPersonalItems();
-  }, [loadPersonalItems]);
+    loadRecsGivenCount();
+  }, [loadPersonalItems, loadRecsGivenCount]);
 
 
 
@@ -63,13 +81,31 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick }: Prof
     <div className="flex-1 overflow-y-auto pb-20">
       <div className="px-4 py-6">
         {/* User Profile Section */}
-        <div className="text-center mb-8">
+        <div className="relative text-center mb-8">
+          <div className="absolute top-0 right-0 flex space-x-2">
+            <button
+              onClick={() => setShowEditProfile(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              title="Edit Profile"
+            >
+              <PencilSquareIcon className="h-6 w-6 text-gray-600" />
+            </button>
+            <button
+              onClick={onSettingsClick}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              title="Settings"
+            >
+              <CogIcon className="h-6 w-6 text-gray-600" />
+            </button>
+          </div>
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">
             {userProfile?.name.charAt(0).toUpperCase()}
           </div>
           <h2 className="text-xl font-bold text-gray-900">{userProfile?.name}</h2>
-          <p className="text-gray-600 text-sm">{userProfile?.email}</p>
-          <div className="flex justify-center space-x-6 mt-4">
+          <p className="text-gray-600 text-sm">
+            {userProfile?.username ? `@${userProfile.username}` : 'Rex user'}
+          </p>
+          <div className="flex justify-center space-x-4 mt-4">
             <div className="text-center">
               {(userProfile?.following.length || 0) > 0 ? (
                 <button
@@ -90,7 +126,13 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick }: Prof
               <div className="text-xl font-bold text-gray-900">
                 {personalItems.filter(item => item.status === 'completed' || item.status === 'shared').length || 0}
               </div>
-              <div className="text-sm text-gray-500">Experiences</div>
+              <div className="text-sm text-gray-500">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-gray-900">
+                {recsGivenCount}
+              </div>
+              <div className="text-sm text-gray-500">Recs Given</div>
             </div>
           </div>
         </div>
@@ -180,7 +222,12 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick }: Prof
           ) : (
             <div className="space-y-3">
               {filteredPersonalItems.map((item) => (
-                <PersonalItemCard key={item.id} item={item} onUserClick={onUserClick} />
+                <PersonalItemCard 
+                  key={item.id} 
+                  item={item} 
+                  onUserClick={onUserClick}
+                  onItemClick={(itemId) => setSelectedItemId(itemId)}
+                />
               ))}
             </div>
           )}
@@ -194,6 +241,22 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick }: Prof
       {/* PWA Install Prompt */}
       {showInstallPrompt && (
         <PWAInstallPrompt onDismiss={() => setShowInstallPrompt(false)} />
+      )}
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal 
+        isOpen={showEditProfile}
+        onClose={() => setShowEditProfile(false)}
+      />
+
+      {/* Personal Item Detail Modal */}
+      {selectedItemId && (
+        <PersonalItemDetailModal
+          item={personalItems.find(item => item.id === selectedItemId)!}
+          isOpen={true}
+          onClose={() => setSelectedItemId(null)}
+          onUserClick={onUserClick}
+        />
       )}
     </div>
   );

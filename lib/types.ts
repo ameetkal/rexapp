@@ -65,7 +65,11 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  username?: string; // Optional for backwards compatibility
   following: string[]; // userIds
+  followers: string[];
+  createdAt: Timestamp;
+  notificationPreferences?: NotificationPreferences;
 }
 
 export interface CategoryInfo {
@@ -104,6 +108,32 @@ export interface PersonalItem {
   taggedUsers?: string[]; // userIds of tagged people
   taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: 'tagged' | 'mentioned' | 'followed' | 'post_liked';
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: Timestamp;
+  data: {
+    postId?: string;
+    fromUserId: string;
+    fromUserName: string;
+    action?: string;
+  };
+}
+
+export interface NotificationPreferences {
+  tagged: boolean;
+  mentioned: boolean; 
+  followed: boolean;
+  post_liked: boolean;
+  email_notifications: boolean;
+}
+
+
 
 export const CATEGORIES: CategoryInfo[] = [
   { id: 'places', name: 'Places', emoji: '📍' },

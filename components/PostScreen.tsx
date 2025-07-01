@@ -539,6 +539,8 @@ export default function PostScreen() {
                         }
                       }}
                       onTextChange={(text) => setRecommendedByText(text)}
+                      excludeCurrentUser={true}
+                      currentUserId={user?.uid}
                       placeholder="Enter any name or search for Rex users..."
                     />
                   </div>

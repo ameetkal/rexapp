@@ -1,25 +1,31 @@
 'use client';
 
-import { HomeIcon, PlusIcon, BookmarkIcon, UserIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect } from 'react';
+import { HomeIcon, PlusIcon, BookmarkIcon, UserIcon, BellIcon } from '@heroicons/react/24/outline';
 import { HomeIcon as HomeIconSolid, PlusIcon as PlusIconSolid, BookmarkIcon as BookmarkIconSolid, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
-import { logOut } from '@/lib/auth';
 import { useAuthStore } from '@/lib/store';
+import { subscribeToNotifications } from '@/lib/firestore';
+import { Notification } from '@/lib/types';
 
 interface NavigationProps {
   activeTab: 'feed' | 'post' | 'saved' | 'profile';
   onTabChange: (tab: 'feed' | 'post' | 'saved' | 'profile') => void;
+  onNotificationsClick: () => void;
 }
 
-export default function Navigation({ activeTab, onTabChange }: NavigationProps) {
-  const { userProfile } = useAuthStore();
+export default function Navigation({ activeTab, onTabChange, onNotificationsClick }: NavigationProps) {
+  const { user } = useAuthStore();
+  const [notifications, setNotifications] = useState<(Notification & { id: string })[]>([]);
 
-  const handleLogout = async () => {
-    try {
-      await logOut();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = subscribeToNotifications(user.uid, (newNotifications) => {
+      setNotifications(newNotifications);
+    });
+
+    return unsubscribe;
+  }, [user]);
 
   const tabs = [
     {
@@ -54,15 +60,17 @@ export default function Navigation({ activeTab, onTabChange }: NavigationProps) 
       <header className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Rex</h1>
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-600">Hi, {userProfile?.name}</span>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-red-600 hover:text-red-700 font-medium"
-            >
-              Logout
-            </button>
-          </div>
+          <button
+            onClick={onNotificationsClick}
+            className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          >
+            <BellIcon className="h-6 w-6 text-gray-600" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                {notifications.length > 9 ? '9+' : notifications.length}
+              </span>
+            )}
+          </button>
         </div>
       </header>
 

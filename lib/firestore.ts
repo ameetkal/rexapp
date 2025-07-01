@@ -9,12 +9,17 @@ import {
   query,
   where,
   orderBy,
+  limit,
   Timestamp,
   arrayUnion,
   arrayRemove,
+  serverTimestamp,
+  writeBatch,
+  onSnapshot,
+  runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -61,6 +66,21 @@ export const createPost = async (
     };
     
     const docRef = await addDoc(collection(db, 'posts'), postData);
+    
+    // Create notifications for tagged users
+    if (enhancedFields?.taggedUsers && enhancedFields.taggedUsers.length > 0) {
+      const postId = docRef.id;
+      for (const taggedUserId of enhancedFields.taggedUsers) {
+        await notifyTaggedUser(taggedUserId, authorId, authorName, postId, title);
+      }
+    }
+
+    // Create notification for recommended by user
+    if (enhancedFields?.recommendedByUserId) {
+      const postId = docRef.id;
+      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, title);
+    }
+    
     return docRef.id;
   } catch (error) {
     console.error('Error creating post:', error);
@@ -149,9 +169,51 @@ export const savePostAsPersonalItem = async (
       originalPostId: post.id,
       originalAuthorId: post.authorId,
       originalAuthorName: post.authorName,
+      // Inherit the post author as the recommender
+      recommendedBy: post.authorName,
+      recommendedByUserId: post.authorId,
+      // Copy any enhanced fields from the original post
+      ...(post.rating && { rating: post.rating }),
+      ...(post.location && { location: post.location }),
+      ...(post.priceRange && { priceRange: post.priceRange }),
+      ...(post.customPrice && { customPrice: post.customPrice }),
+      ...(post.tags && { tags: post.tags }),
+      ...(post.experienceDate && { experienceDate: post.experienceDate }),
+      ...(post.taggedUsers && { taggedUsers: post.taggedUsers }),
+      ...(post.taggedNonUsers && { taggedNonUsers: post.taggedNonUsers }),
     };
     
     const docRef = await addDoc(collection(db, 'personal_items'), personalItemData);
+    
+    // Update the post's savedBy array to include this user
+    const postRef = doc(db, 'posts', post.id);
+    await updateDoc(postRef, {
+      savedBy: arrayUnion(userId)
+    });
+    
+    // Create notification for post author (unless it's their own post)
+    if (post.authorId !== userId) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        const userName = userDoc.exists() ? userDoc.data().name : 'Someone';
+        
+        await createNotification(
+          post.authorId,
+          'post_liked',
+          `${userName} saved your post!`,
+          `"${post.title}"`,
+          {
+            postId: post.id,
+            fromUserId: userId,
+            fromUserName: userName
+          }
+        );
+      } catch (error) {
+        console.error('Error creating save notification:', error);
+        // Don't fail the save operation if notification fails
+      }
+    }
+    
     return docRef.id;
   } catch (error) {
     console.error('Error saving post as personal item:', error);
@@ -161,10 +223,27 @@ export const savePostAsPersonalItem = async (
 
 export const unsavePersonalItem = async (personalItemId: string): Promise<void> => {
   try {
+    // Get the personal item first to find the original post
+    const personalItemDoc = await getDoc(doc(db, 'personal_items', personalItemId));
+    if (!personalItemDoc.exists()) {
+      throw new Error('Personal item not found');
+    }
+    
+    const personalItem = personalItemDoc.data() as PersonalItem;
+    
+    // Soft delete the personal item
     await updateDoc(doc(db, 'personal_items', personalItemId), {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       status: 'deleted' as any,
     });
+    
+    // Remove user from post's savedBy array if there's an original post
+    if (personalItem.originalPostId && personalItem.userId) {
+      const postRef = doc(db, 'posts', personalItem.originalPostId);
+      await updateDoc(postRef, {
+        savedBy: arrayRemove(personalItem.userId)
+      });
+    }
   } catch (error) {
     console.error('Error unsaving personal item:', error);
     throw error;
@@ -200,6 +279,32 @@ export const followUser = async (currentUserId: string, targetUserId: string) =>
     await updateDoc(userRef, {
       following: arrayUnion(targetUserId),
     });
+
+    // Create notification for the followed user
+    try {
+      const followerDoc = await getDoc(doc(db, 'users', currentUserId));
+      const followerName = followerDoc.exists() ? followerDoc.data().name : 'Someone';
+      
+      // Check if target user wants follow notifications (default to true if not set)
+      const targetDoc = await getDoc(doc(db, 'users', targetUserId));
+      const targetUser = targetDoc.exists() ? targetDoc.data() as User : null;
+      
+      if (targetUser?.notificationPreferences?.followed !== false) {
+        await createNotification(
+          targetUserId,
+          'followed',
+          `${followerName} started following you!`,
+          `You have a new follower`,
+          {
+            fromUserId: currentUserId,
+            fromUserName: followerName
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error creating follow notification:', error);
+      // Don't fail the follow operation if notification fails
+    }
   } catch (error) {
     console.error('Error following user:', error);
     throw error;
@@ -262,7 +367,7 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
       const emailMatch = user.email.toLowerCase().includes(searchTerm.toLowerCase());
       
       if (nameMatch || emailMatch) {
-        console.log(`✅ User match: ${user.name} (${user.email})`, { nameMatch, emailMatch });
+        console.log(`✅ User match: ${user.name}`, { nameMatch, emailMatch });
         users.push(user);
       }
     });
@@ -888,6 +993,18 @@ export const createStructuredPost = async (
     const docRef = await addDoc(collection(db, 'posts'), postData);
     const postId = docRef.id;
 
+    // Create notifications for tagged users
+    if (enhancedFields?.taggedUsers && enhancedFields.taggedUsers.length > 0) {
+      for (const taggedUserId of enhancedFields.taggedUsers) {
+        await notifyTaggedUser(taggedUserId, authorId, authorName, postId, universalItem.title);
+      }
+    }
+
+    // Create notification for recommended by user
+    if (enhancedFields?.recommendedByUserId) {
+      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, universalItem.title);
+    }
+
     // Now create the personal item linked to the post
     const personalItemId = await createPersonalItem(
       authorId,
@@ -992,5 +1109,341 @@ export const unsharePost = async (
   } catch (error) {
     console.error('Error unsharing post:', error);
     throw error;
+  }
+};
+
+// Notification functions
+export const createNotification = async (
+  userId: string,
+  type: 'tagged' | 'mentioned' | 'followed' | 'post_liked',
+  title: string,
+  message: string,
+  data: {
+    postId?: string;
+    fromUserId: string;
+    fromUserName: string;
+    action?: string;
+  }
+) => {
+  try {
+    const notification = {
+      userId,
+      type,
+      title,
+      message,
+      read: false,
+      createdAt: serverTimestamp(),
+      data
+    };
+
+    const docRef = await addDoc(collection(db, 'notifications'), notification);
+    console.log('📬 Created notification:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    throw error;
+  }
+};
+
+export const getUserNotifications = async (userId: string, limitNum: number = 50) => {
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(limitNum)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as (Notification & { id: string })[];
+  } catch (error) {
+    console.error('Error getting notifications:', error);
+    return [];
+  }
+};
+
+export const getUnreadNotificationCount = async (userId: string): Promise<number> => {
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      where('read', '==', false)
+    );
+
+    const snapshot = await getDocs(q);
+    return snapshot.docs.length;
+  } catch (error) {
+    console.error('Error getting unread notification count:', error);
+    return 0;
+  }
+};
+
+export const markNotificationAsRead = async (notificationId: string) => {
+  try {
+    await updateDoc(doc(db, 'notifications', notificationId), {
+      read: true
+    });
+    console.log('✅ Marked notification as read:', notificationId);
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    throw error;
+  }
+};
+
+export const markAllNotificationsAsRead = async (userId: string) => {
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      where('read', '==', false)
+    );
+
+    const snapshot = await getDocs(q);
+    const batch = writeBatch(db);
+
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { read: true });
+    });
+
+    await batch.commit();
+    console.log('✅ Marked all notifications as read for user:', userId);
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+    throw error;
+  }
+};
+
+// Create notification when user gets tagged
+export const notifyTaggedUser = async (
+  taggedUserId: string,
+  fromUserId: string,
+  fromUserName: string,
+  postId: string,
+  postTitle: string
+) => {
+  try {
+    // Check if user wants to receive tagged notifications (default to true if not set)
+    const userDoc = await getDoc(doc(db, 'users', taggedUserId));
+    const userProfile = userDoc.exists() ? userDoc.data() as User : null;
+    if (userProfile?.notificationPreferences?.tagged === false) {
+      console.log('User has disabled tagged notifications');
+      return;
+    }
+
+    await createNotification(
+      taggedUserId,
+      'tagged',
+      `${fromUserName} tagged you!`,
+      `In "${postTitle}"`,
+      {
+        postId,
+        fromUserId,
+        fromUserName
+      }
+    );
+  } catch (error) {
+    console.error('Error notifying tagged user:', error);
+  }
+};
+
+// Create notification when user is mentioned as recommender
+export const notifyRecommendedBy = async (
+  recommendedByUserId: string,
+  fromUserId: string,
+  fromUserName: string,
+  postId: string,
+  postTitle: string
+) => {
+  try {
+    // Check if user wants to receive mentioned notifications (default to true if not set)
+    const userDoc = await getDoc(doc(db, 'users', recommendedByUserId));
+    const userProfile = userDoc.exists() ? userDoc.data() as User : null;
+    if (userProfile?.notificationPreferences?.mentioned === false) {
+      console.log('User has disabled mentioned notifications');
+      return;
+    }
+
+    await createNotification(
+      recommendedByUserId,
+      'mentioned',
+      `${fromUserName} mentioned you recommended something!`,
+      `In "${postTitle}"`,
+      {
+        postId,
+        fromUserId,
+        fromUserName
+      }
+    );
+  } catch (error) {
+    console.error('Error notifying recommended by user:', error);
+  }
+};
+
+// Real-time notification listener
+export const subscribeToNotifications = (
+  userId: string,
+  callback: (notifications: (Notification & { id: string })[]) => void
+) => {
+  const q = query(
+    collection(db, 'notifications'),
+    where('userId', '==', userId),
+    where('read', '==', false),
+    orderBy('createdAt', 'desc')
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const notifications = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as (Notification & { id: string })[];
+    
+    callback(notifications);
+  });
+};
+
+// Username management functions
+export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
+  try {
+    const normalizedUsername = username.toLowerCase();
+    
+    // Check if username exists in users collection
+    const usersQuery = query(
+      collection(db, 'users'),
+      where('username', '==', normalizedUsername)
+    );
+    
+    const usersSnapshot = await getDocs(usersQuery);
+    
+    return usersSnapshot.empty;
+  } catch (error) {
+    console.error('Error checking username availability:', error);
+    throw error;
+  }
+};
+
+export const reserveUsername = async (userId: string, username: string): Promise<boolean> => {
+  try {
+    const normalizedUsername = username.toLowerCase();
+    
+    // Use a transaction to ensure atomicity
+    const result = await runTransaction(db, async (transaction) => {
+      // Check if username is available
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('username', '==', normalizedUsername)
+      );
+      
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      if (!usersSnapshot.empty) {
+        // Username is taken
+        return false;
+      }
+      
+      // Username is available, update the user
+      const userRef = doc(db, 'users', userId);
+      transaction.update(userRef, { username: normalizedUsername });
+      
+      return true;
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error reserving username:', error);
+    throw error;
+  }
+};
+
+export const updateUserWithUsername = async (
+  userId: string, 
+  updates: { name?: string; email?: string; username?: string }
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    if (updates.username) {
+      const normalizedUsername = updates.username.toLowerCase();
+      
+      // Check if this username is already taken by someone else
+      const usersQuery = query(
+        collection(db, 'users'),
+        where('username', '==', normalizedUsername)
+      );
+      
+      const usersSnapshot = await getDocs(usersQuery);
+      
+      // If username exists and belongs to someone else, return error
+      if (!usersSnapshot.empty) {
+        const existingUserDoc = usersSnapshot.docs[0];
+        if (existingUserDoc.id !== userId) {
+          return { success: false, error: 'Username is already taken' };
+        }
+      }
+      
+      // Username is available or belongs to current user, update with normalized version
+      updates.username = normalizedUsername;
+    }
+    
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, updates);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating user with username:', error);
+    return { success: false, error: 'Failed to update profile' };
+  }
+};
+
+export const getUserByUsername = async (username: string): Promise<User | null> => {
+  try {
+    const normalizedUsername = username.toLowerCase();
+    const q = query(
+      collection(db, 'users'),
+      where('username', '==', normalizedUsername),
+      limit(1)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as User;
+  } catch (error) {
+    console.error('Error getting user by username:', error);
+    return null;
+  }
+};
+
+export const getUserRecsGivenCount = async (userId: string): Promise<number> => {
+  try {
+    // Get all posts by this user
+    const userPostsQuery = query(
+      collection(db, 'posts'),
+      where('authorId', '==', userId)
+    );
+    
+    const userPostsSnapshot = await getDocs(userPostsQuery);
+    
+    if (userPostsSnapshot.empty) {
+      return 0;
+    }
+    
+    // Count total saves across all user's posts
+    let totalSaves = 0;
+    userPostsSnapshot.forEach((doc) => {
+      const post = doc.data() as Post;
+      if (post.savedBy && Array.isArray(post.savedBy)) {
+        totalSaves += post.savedBy.length;
+      }
+    });
+    
+    return totalSaves;
+  } catch (error) {
+    console.error('Error getting user recs given count:', error);
+    return 0;
   }
 }; 

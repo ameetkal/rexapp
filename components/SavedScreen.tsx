@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { getPersonalItems } from '@/lib/firestore';
 import PersonalItemCard from './PersonalItemCard';
+import PersonalItemDetailModal from './PersonalItemDetailModal';
 import { CATEGORIES, Category } from '@/lib/types';
 import { ListBulletIcon } from '@heroicons/react/24/outline';
 
@@ -11,6 +12,7 @@ export default function SavedScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   
   const { user } = useAuthStore();
   const { setPersonalItems, getSavedItems } = useAppStore();
@@ -147,13 +149,24 @@ export default function SavedScreen() {
         ) : (
           <div className="space-y-4">
             {filteredItems.map((item) => (
-              <PersonalItemCard key={item.id} item={item} />
+              <PersonalItemCard 
+                key={item.id} 
+                item={item} 
+                onItemClick={(itemId) => setSelectedItemId(itemId)}
+              />
             ))}
           </div>
         )}
       </div>
 
-
+      {/* Personal Item Detail Modal */}
+      {selectedItemId && (
+        <PersonalItemDetailModal
+          item={filteredItems.find(item => item.id === selectedItemId)!}
+          isOpen={true}
+          onClose={() => setSelectedItemId(null)}
+        />
+      )}
     </div>
   );
 } 

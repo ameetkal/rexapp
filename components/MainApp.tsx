@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import AuthForm from './AuthForm';
 import Navigation from './Navigation';
@@ -11,16 +11,21 @@ import SavedScreen from './SavedScreen';
 import ProfileScreen from './ProfileScreen';
 import FollowingListScreen from './FollowingListScreen';
 import PublicProfileScreen from './PublicProfileScreen';
+import NotificationsScreen from './NotificationsScreen';
+import SettingsScreen from './SettingsScreen';
 import { User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 
-type ProfileScreenType = 'main' | 'following' | 'public';
+type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
+type AppScreenType = 'notifications' | 'main';
 
 export default function MainApp() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('feed');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
+  const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
   
@@ -77,14 +82,37 @@ export default function MainApp() {
     );
   }
 
-  // Reset profile screen when switching tabs
+  // Reset screens when switching tabs
   const handleTabChange = (tab: 'feed' | 'post' | 'saved' | 'profile') => {
     if (tab !== 'profile') {
       setProfileScreen('main');
       setSelectedUser(null);
       setProfileNavigationSource('feed');
     }
+    setAppScreen('main'); // Always reset to main app screen
     setActiveTab(tab);
+  };
+
+  // Navigation handlers for notifications and settings
+  const handleNotificationsClick = () => {
+    setAppScreen('notifications');
+  };
+
+  const handleSettingsClick = () => {
+    setProfileScreen('settings');
+  };
+
+  const handleBackFromNotifications = () => {
+    setAppScreen('main');
+  };
+
+  const handleBackFromSettings = () => {
+    setProfileScreen('main');
+  };
+
+  // Post navigation handler
+  const handlePostClick = (postId: string) => {
+    router.push(`/post/${postId}?from=notifications`);
   };
 
   // Navigation handlers for profile screens
@@ -135,6 +163,17 @@ export default function MainApp() {
   };
 
   const renderActiveScreen = () => {
+    // Handle app-level screens first
+    if (appScreen === 'notifications') {
+      return (
+        <NotificationsScreen 
+          onBack={handleBackFromNotifications}
+          onPostClick={handlePostClick}
+        />
+      );
+    }
+
+    // Handle main app screens
     switch (activeTab) {
       case 'feed':
         return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
@@ -157,9 +196,23 @@ export default function MainApp() {
                 user={selectedUser}
                 onBack={handleBackFromPublicProfile}
               />
-            ) : <ProfileScreen onShowFollowingList={handleShowFollowingList} onUserClick={handleProfileClickFromFeed} />;
+            ) : (
+              <ProfileScreen 
+                onShowFollowingList={handleShowFollowingList} 
+                onUserClick={handleProfileClickFromFeed}
+                onSettingsClick={handleSettingsClick}
+              />
+            );
+          case 'settings':
+            return <SettingsScreen onBack={handleBackFromSettings} />;
           default:
-            return <ProfileScreen onShowFollowingList={handleShowFollowingList} onUserClick={handleProfileClickFromFeed} />;
+            return (
+              <ProfileScreen 
+                onShowFollowingList={handleShowFollowingList} 
+                onUserClick={handleProfileClickFromFeed}
+                onSettingsClick={handleSettingsClick}
+              />
+            );
         }
       default:
         return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} />;
@@ -168,7 +221,14 @@ export default function MainApp() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+      {/* Only show navigation on main app screens, not notifications/settings */}
+      {appScreen === 'main' && profileScreen !== 'settings' && (
+        <Navigation 
+          activeTab={activeTab} 
+          onTabChange={handleTabChange}
+          onNotificationsClick={handleNotificationsClick}
+        />
+      )}
       <main className="flex-1 flex flex-col">
         {renderActiveScreen()}
       </main>

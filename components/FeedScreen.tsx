@@ -225,7 +225,9 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">{searchUser.name}</p>
-                            <p className="text-sm text-gray-500">{searchUser.email}</p>
+                            <p className="text-sm text-gray-500">
+                              {searchUser.username ? `@${searchUser.username}` : 'Rex user'}
+                            </p>
                           </div>
                         </button>
                         <button

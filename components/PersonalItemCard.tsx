@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckIcon, ShareIcon, TrashIcon, PencilSquareIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ShareIcon, TrashIcon, PencilSquareIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { PersonalItem } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
 import { updatePersonalItemStatus, deletePersonalItem, sharePersonalItemAsPost } from '@/lib/firestore';
@@ -13,11 +13,13 @@ import EditModal from './EditModal';
 interface PersonalItemCardProps {
   item: PersonalItem;
   onUserClick?: (userId: string) => void;
+  onItemClick?: (itemId: string) => void;
 }
 
 export default function PersonalItemCard({ 
   item,
-  onUserClick
+  onUserClick,
+  onItemClick
 }: PersonalItemCardProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
@@ -30,6 +32,18 @@ export default function PersonalItemCard({
   const { updatePersonalItem, removePersonalItem, addPost } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === item.category);
+  
+  // Check if item has enhanced fields worth showing
+  const hasEnhancedFields = !!(
+    (item.rating && item.rating > 0) ||
+    item.location ||
+    item.priceRange ||
+    (item.customPrice && item.customPrice > 0) ||
+    (item.tags && item.tags.length > 0) ||
+    item.experienceDate ||
+    (item.taggedUsers && item.taggedUsers.length > 0) ||
+    (item.taggedNonUsers && item.taggedNonUsers.length > 0)
+  );
   
   const formatDate = (timestamp: { toDate: () => Date }) => {
     const date = timestamp.toDate();
@@ -132,18 +146,19 @@ export default function PersonalItemCard({
   };
 
   const handleCardClick = () => {
-    // Only navigate if this item was shared as a post
+    // If this item was shared as a post, navigate to the post
     if (item.sharedPostId) {
       router.push(`/post/${item.sharedPostId}?from=profile`);
+    } else if (onItemClick) {
+      // Otherwise, show item details
+      onItemClick(item.id);
     }
   };
 
   return (
     <>
       <div 
-        className={`bg-white rounded-lg border border-gray-200 p-4 mb-3 ${
-          item.sharedPostId ? 'cursor-pointer hover:shadow-md hover:border-gray-300 transition-all' : ''
-        }`}
+        className="bg-white rounded-lg border border-gray-200 p-4 mb-3 cursor-pointer hover:shadow-md hover:border-gray-300 transition-all"
         onClick={handleCardClick}
       >
         {/* Header */}
@@ -153,11 +168,6 @@ export default function PersonalItemCard({
             <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor()}`}>
               {getStatusText()}
             </span>
-            {item.sharedPostId && (
-              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-200">
-                View post →
-              </span>
-            )}
           </div>
           <div className="flex items-center space-x-1">
             <span className="text-xs text-gray-500">
@@ -166,15 +176,49 @@ export default function PersonalItemCard({
                 <span className="ml-1">• Completed {formatDate(item.completedAt)}</span>
               )}
             </span>
-            {item.sharedPostId && (
-              <ChevronRightIcon className="h-3 w-3 text-gray-400" />
-            )}
           </div>
         </div>
 
         {/* Content */}
-        <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
-        <p className="text-gray-600 text-sm mb-2">{item.description}</p>
+        <div 
+          className="space-y-2 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+          onClick={handleCardClick}
+        >
+          <div className="flex items-start justify-between">
+            <h3 className="font-semibold text-gray-900 leading-tight flex-1">{item.title}</h3>
+            <div className="ml-2 flex-shrink-0 flex items-center space-x-1 text-gray-400">
+              <span className="text-xs">view details</span>
+              <ChevronDownIcon className="h-4 w-4 rotate-[-90deg]" />
+            </div>
+          </div>
+          <p className="text-gray-600 text-sm">{item.description}</p>
+          
+          {/* Quick preview of enhanced details */}
+          {hasEnhancedFields && (
+            <div className="flex flex-wrap gap-1 text-xs text-gray-500">
+              {item.rating && item.rating > 0 && (
+                <span className="bg-yellow-50 text-yellow-700 px-2 py-1 rounded-full">
+                  ⭐ {item.rating}/10
+                </span>
+              )}
+              {item.location && (
+                <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full">
+                  📍 {item.location.length > 20 ? `${item.location.slice(0, 20)}...` : item.location}
+                </span>
+              )}
+              {item.priceRange && (
+                <span className="bg-green-50 text-green-700 px-2 py-1 rounded-full">
+                  💰 {item.priceRange}
+                </span>
+              )}
+              {item.tags && item.tags.length > 0 && (
+                <span className="bg-purple-50 text-purple-700 px-2 py-1 rounded-full">
+                  🏷️ {item.tags.slice(0, 2).join(', ')}{item.tags.length > 2 ? '...' : ''}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         {item.recommendedBy && (
           <p className="text-sm text-gray-600 mb-2">
             🤝 Recommended by {item.recommendedByUserId ? (
