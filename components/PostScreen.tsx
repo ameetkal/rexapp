@@ -473,7 +473,7 @@ export default function PostScreen() {
                         className={`p-4 border rounded-lg text-left transition-colors ${
                           status === 'want_to_try'
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 hover:border-gray-400'
+                            : 'border-gray-300 hover:border-gray-400 text-gray-700'
                         }`}
                       >
                         <div className="font-medium">📝 To Do</div>

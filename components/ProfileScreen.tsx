@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { getPersonalItems, getUserRecsGivenCount } from '@/lib/firestore';
-import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CheckCircleIcon, CogIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import PersonalItemCard from './PersonalItemCard';
 import PersonalItemDetailModal from './PersonalItemDetailModal';
 import PWAInstallPrompt from './PWAInstallPrompt';
@@ -137,39 +137,30 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
           </div>
         </div>
 
-        {/* PWA Status Section */}
-        {!isLoading && (
+        {/* PWA Install Prompt - Only show when not installed */}
+        {!isLoading && !isInstalled && (
           <div className="mb-8">
-            <div className={`bg-gradient-to-r ${isInstalled ? 'from-green-50 to-emerald-50 border-green-100' : 'from-blue-50 to-indigo-50 border-blue-100'} border rounded-xl p-4`}>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100 border rounded-xl p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className={`w-10 h-10 ${isInstalled ? 'bg-green-100' : 'bg-blue-100'} rounded-lg flex items-center justify-center`}>
-                    {isInstalled ? (
-                      <CheckCircleIcon className="h-5 w-5 text-green-600" />
-                    ) : (
-                      <DevicePhoneMobileIcon className="h-5 w-5 text-blue-600" />
-                    )}
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <DevicePhoneMobileIcon className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
                     <h4 className="font-medium text-gray-900">
-                      {isInstalled ? 'Rex App Added ✨' : 'Add Rex to Home Screen'}
+                      Add Rex to Home Screen
                     </h4>
                     <p className="text-sm text-gray-600">
-                      {isInstalled 
-                        ? 'You\'re using Rex as a native app!' 
-                        : 'No download needed - works like a native app'
-                      }
+                      No download needed - works like a native app
                     </p>
                   </div>
                 </div>
-                {!isInstalled && (
-                  <button
-                    onClick={() => setShowInstallPrompt(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm"
-                  >
-                    Add Now
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowInstallPrompt(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Add Now
+                </button>
               </div>
             </div>
           </div>
@@ -236,8 +227,8 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
 
 
 
-      </div>
-      
+              </div>
+        
       {/* PWA Install Prompt */}
       {showInstallPrompt && (
         <PWAInstallPrompt onDismiss={() => setShowInstallPrompt(false)} />
