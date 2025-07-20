@@ -22,7 +22,7 @@ type AppScreenType = 'notifications' | 'main';
 export default function MainApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('post');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
@@ -215,7 +215,7 @@ export default function MainApp() {
             );
         }
       default:
-        return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} />;
+        return <PostScreen />;
     }
   };
 

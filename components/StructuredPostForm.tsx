@@ -199,7 +199,7 @@ export default function StructuredPostForm({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto pb-20">
       <div className="px-4 py-6">
         {/* Header */}
         <div className="flex items-center mb-6">
