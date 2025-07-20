@@ -303,7 +303,7 @@ export default function StructuredPostForm({
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   status === 'completed'
                     ? 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-300 hover:border-gray-400'
+                    : 'border-gray-300 hover:border-gray-400 text-gray-700'
                 }`}
               >
                 <div className="font-medium">✅ Completed</div>

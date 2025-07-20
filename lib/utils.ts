@@ -9,7 +9,12 @@ export const sendSMSInvite = (
 ) => {
   const itemType = isPost ? 'shared on Rex' : 'saved on Rex';
   const basePath = isPost ? '/invite' : '/personal-invite';
-  const message = `Hey ${recommenderName}! Your recommendation for "${itemTitle}" is being ${itemType} by ${currentUserName}. Check it out: ${window.location.origin}${basePath}/${itemId}?ref=${encodeURIComponent(recommenderName)}`;
+  
+  // Extract first name from recommender name
+  const firstName = recommenderName.split(' ')[0];
+  const displayName = firstName || recommenderName; // Fallback to full name if no space found
+  
+  const message = `Hey ${displayName}! Your recommendation for "${itemTitle}" is being ${itemType} by ${currentUserName}. Check it out: ${window.location.origin}${basePath}/${itemId}?ref=${encodeURIComponent(recommenderName)}`;
   
   const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
   window.open(smsUrl, '_self');
