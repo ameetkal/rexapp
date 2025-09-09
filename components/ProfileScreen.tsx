@@ -61,7 +61,7 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
 
 
   const filteredPersonalItems = personalItems.filter(item => {
-    // Show both completed and shared items in Profile (want_to_try items are in Want to Try tab)
+    // Show both completed and shared items in Profile (want_to_try items are in Bucket List tab)
     const isCompletedOrShared = item.status === 'completed' || item.status === 'shared';
     
     // Apply search filter if search term exists
@@ -205,7 +205,7 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
                     You haven&apos;t completed anything yet
                   </p>
                   <p className="text-sm text-gray-400 mt-1">
-                    Complete items from your Want to Try list to see them here
+                    Complete items from your Bucket List to see them here
                   </p>
                 </>
               )}

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { PersonalItem } from '@/lib/types';
-import { getPersonalItem } from '@/lib/firestore';
+import { getPersonalItem, followUser } from '@/lib/firestore';
 import { signUp } from '@/lib/auth';
 
 export default function PersonalInvitePage() {
@@ -57,8 +57,17 @@ export default function PersonalInvitePage() {
     setError('');
 
     try {
-      await signUp(email, password, name);
-      // User will be redirected to main app by auth state change
+      const result = await signUp(email, password, name);
+      // Auto-follow the inviter (item owner) if available
+      if (result?.user && item?.userId) {
+        try {
+          await followUser(result.user.uid, item.userId);
+        } catch (err) {
+          console.error('Error auto-following inviter:', err);
+        }
+      }
+      // Redirect to main app after successful signup
+      window.location.href = '/';
     } catch (err: unknown) {
       const error = err as Error;
       setError(error.message || 'An error occurred');

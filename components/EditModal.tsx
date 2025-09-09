@@ -343,7 +343,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                       : 'border-gray-300 hover:border-gray-400'
                   }`}
                 >
-                  <div className="font-medium">📝 Want to Try</div>
+                  <div className="font-medium">📝 Bucket List</div>
                 </button>
                 <button
                   type="button"
@@ -393,7 +393,7 @@ export default function EditModal({ isOpen, onClose, item, type }: EditModalProp
                           : 'border-gray-300 hover:border-gray-400'
                       }`}
                     >
-                      <div className="font-medium">📖 Want to try</div>
+                      <div className="font-medium">📖 Bucket List</div>
                     </button>
                     <button
                       type="button"

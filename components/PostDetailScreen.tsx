@@ -276,7 +276,7 @@ export default function PostDetailScreen({ post, onBack, onUserProfileClick, bac
                     ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
                     : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
                 } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                title={isSaved ? 'Remove from Want to Try' : 'Add to Want to Try'}
+                title={isSaved ? 'Remove from Bucket List' : 'Add to Bucket List'}
               >
                 {isSaved ? (
                   <BookmarkSolid className="h-5 w-5" />
@@ -334,7 +334,7 @@ export default function PostDetailScreen({ post, onBack, onUserProfileClick, bac
                 ? 'bg-green-100 text-green-800'
                 : 'bg-purple-100 text-purple-800'
             }`}>
-              {savedPersonalItem.status === 'want_to_try' && '📖 Want to Try'}
+              {savedPersonalItem.status === 'want_to_try' && '📖 Bucket List'}
               {savedPersonalItem.status === 'completed' && '✅ Completed'}
               {savedPersonalItem.status === 'shared' && '✅ Completed'}
             </span>

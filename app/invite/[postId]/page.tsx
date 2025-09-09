@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Post } from '@/lib/types';
-import { getPost } from '@/lib/firestore';
+import { getPost, followUser } from '@/lib/firestore';
 import { signUp } from '@/lib/auth';
 
 export default function InvitePage() {
@@ -59,7 +59,15 @@ export default function InvitePage() {
     setError('');
 
     try {
-      await signUp(email, password, name);
+      const result = await signUp(email, password, name);
+      // Auto-follow the inviter (post author) if available
+      if (result?.user && post?.authorId) {
+        try {
+          await followUser(result.user.uid, post.authorId);
+        } catch (err) {
+          console.error('Error auto-following inviter:', err);
+        }
+      }
       // Redirect to main app after successful signup
       window.location.href = '/';
     } catch (err: unknown) {

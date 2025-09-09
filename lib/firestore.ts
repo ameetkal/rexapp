@@ -363,10 +363,12 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
     
     querySnapshot.forEach((doc) => {
       const user = doc.data() as User;
-      const nameMatch = user.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const emailMatch = user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      const term = searchTerm.toLowerCase();
+      const nameMatch = user.name.toLowerCase().includes(term);
+      const emailMatch = user.email.toLowerCase().includes(term);
+      const usernameMatch = user.username ? user.username.toLowerCase().includes(term) : false;
       
-      if (nameMatch || emailMatch) {
+      if (nameMatch || emailMatch || usernameMatch) {
         console.log(`✅ User match: ${user.name}`, { nameMatch, emailMatch });
         users.push(user);
       }

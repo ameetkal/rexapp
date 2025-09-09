@@ -42,7 +42,7 @@ export default function Navigation({ activeTab, onTabChange, onNotificationsClic
     },
     {
       id: 'saved' as const,
-      name: 'Want to Try',
+      name: 'Bucket List',
       icon: BookmarkIcon,
       activeIcon: BookmarkIconSolid,
     },

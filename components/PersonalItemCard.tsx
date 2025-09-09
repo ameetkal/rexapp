@@ -138,7 +138,7 @@ export default function PersonalItemCard({
 
   const getStatusText = () => {
     switch (item.status) {
-      case 'want_to_try': return 'Want to Try';
+      case 'want_to_try': return 'Bucket List';
       case 'completed': return 'Completed';
       case 'shared': return 'Shared';
       default: return '';
