@@ -98,9 +98,9 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             {profileUser.name.charAt(0).toUpperCase()}
           </div>
           <h2 className="text-xl font-bold text-gray-900">{profileUser.name}</h2>
-          {profileUser.username && (
-            <p className="text-gray-600 text-sm">@{profileUser.username}</p>
-          )}
+          <p className="text-gray-600 text-sm">
+            {profileUser.username ? `@${profileUser.username}` : 'Rex user'}
+          </p>
           
           <div className="flex justify-center space-x-4 mt-4">
             <div className="text-center">

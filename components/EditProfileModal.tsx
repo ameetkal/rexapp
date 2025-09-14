@@ -55,7 +55,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
         ...userProfile,
         name: name.trim(),
         email: email.trim(),
-        username: username.trim() || undefined,
+        username: username.trim() || userProfile?.username || '',
       });
 
       onClose();

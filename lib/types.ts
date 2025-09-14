@@ -65,7 +65,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  username?: string; // Optional for backwards compatibility
+  username: string; // Required - auto-generated for new users
   following: string[]; // userIds
   followers: string[];
   createdAt: Timestamp;

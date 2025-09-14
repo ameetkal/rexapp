@@ -103,7 +103,7 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
           </div>
           <h2 className="text-xl font-bold text-gray-900">{userProfile?.name}</h2>
           <p className="text-gray-600 text-sm">
-            {userProfile?.username ? `@${userProfile.username}` : 'Rex user'}
+            {userProfile?.username ? `@${userProfile.username}` : 'Setting up...'}
           </p>
           <div className="flex justify-center space-x-4 mt-4">
             <div className="text-center">
