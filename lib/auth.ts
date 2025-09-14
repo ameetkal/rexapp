@@ -41,9 +41,13 @@ export const signUp = async (email: string, password: string, name: string, user
       }
     };
     
+    console.log('📝 Creating user profile in Firestore for:', user.uid);
     await setDoc(doc(db, 'users', user.uid), userProfile);
+    console.log('✅ User profile created successfully');
+    
     return { user, userProfile };
   } catch (error) {
+    console.error('❌ Error in signUp function:', error);
     throw error;
   }
 };

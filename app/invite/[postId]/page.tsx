@@ -60,18 +60,32 @@ export default function InvitePage() {
     setError('');
 
     try {
+      console.log('🔐 Starting signup process for:', email);
       const result = await signUp(email, password, name);
+      console.log('✅ Signup successful:', result?.user?.uid);
+      
+      // Verify user was created in Firestore
+      if (!result?.user || !result?.userProfile) {
+        throw new Error('User creation failed - missing user data');
+      }
+      
       // Auto-follow the inviter (post author) if available
-      if (result?.user && post?.authorId) {
+      if (result.user && post?.authorId) {
         try {
+          console.log('👥 Auto-following inviter:', post.authorId);
           await followUser(result.user.uid, post.authorId);
+          console.log('✅ Auto-follow successful');
         } catch (err) {
-          console.error('Error auto-following inviter:', err);
+          console.error('❌ Error auto-following inviter:', err);
+          // Don't fail the signup if following fails
         }
       }
+      
+      console.log('🚀 Redirecting to main app');
       // Redirect to main app after successful signup
       router.push('/');
     } catch (err: unknown) {
+      console.error('❌ Signup failed:', err);
       const error = err as Error;
       let errorMessage = error.message || 'An error occurred';
       
@@ -82,6 +96,10 @@ export default function InvitePage() {
         errorMessage = 'Password should be at least 6 characters long.';
       } else if (errorMessage.includes('auth/invalid-email')) {
         errorMessage = 'Please enter a valid email address.';
+      } else if (errorMessage.includes('permission-denied')) {
+        errorMessage = 'Unable to create account. Please try again or contact support.';
+      } else if (errorMessage.includes('User creation failed')) {
+        errorMessage = 'Account creation incomplete. Please try again.';
       }
       
       setError(errorMessage);

@@ -58,20 +58,49 @@ export default function PersonalInvitePage() {
     setError('');
 
     try {
+      console.log('🔐 Starting signup process for:', email);
       const result = await signUp(email, password, name);
+      console.log('✅ Signup successful:', result?.user?.uid);
+      
+      // Verify user was created in Firestore
+      if (!result?.user || !result?.userProfile) {
+        throw new Error('User creation failed - missing user data');
+      }
+      
       // Auto-follow the inviter (item owner) if available
       if (result?.user && item?.userId) {
         try {
+          console.log('👥 Auto-following inviter:', item.userId);
           await followUser(result.user.uid, item.userId);
+          console.log('✅ Auto-follow successful');
         } catch (err) {
-          console.error('Error auto-following inviter:', err);
+          console.error('❌ Error auto-following inviter:', err);
+          // Don't fail the signup if following fails
         }
       }
+      
+      console.log('🚀 Redirecting to main app');
       // Redirect to main app after successful signup
       router.push('/');
     } catch (err: unknown) {
+      console.error('❌ Signup failed:', err);
       const error = err as Error;
-      setError(error.message || 'An error occurred');
+      let errorMessage = error.message || 'An error occurred';
+      
+      // Show user-friendly error messages
+      if (errorMessage.includes('auth/email-already-in-use')) {
+        errorMessage = 'An account with this email already exists. Try signing in instead.';
+      } else if (errorMessage.includes('auth/weak-password')) {
+        errorMessage = 'Password should be at least 6 characters long.';
+      } else if (errorMessage.includes('auth/invalid-email')) {
+        errorMessage = 'Please enter a valid email address.';
+      } else if (errorMessage.includes('permission-denied')) {
+        errorMessage = 'Unable to create account. Please try again or contact support.';
+      } else if (errorMessage.includes('User creation failed')) {
+        errorMessage = 'Account creation incomplete. Please try again.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setSignupLoading(false);
     }
