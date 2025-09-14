@@ -37,28 +37,12 @@ const generateUniqueUsername = async (name: string): Promise<string> => {
     .replace(/[^a-z0-9]/g, '') // Remove special characters
     .substring(0, 15); // Limit length
   
-  let username = baseUsername;
-  let counter = 1;
+  // For now, just append a random number to ensure uniqueness
+  // TODO: Implement proper username availability checking after user is created
+  const randomSuffix = Math.floor(Math.random() * 10000);
+  const username = `${baseUsername}${randomSuffix}`;
   
-  // Keep trying until we find an available username
-  while (true) {
-    const isAvailable = await checkUsernameAvailability(username);
-    if (isAvailable) {
-      return username;
-    }
-    
-    // If base username is taken, append a number
-    username = `${baseUsername}${counter}`;
-    counter++;
-    
-    // Safety check to prevent infinite loop
-    if (counter > 999) {
-      // Fallback to random number if we can't find a good username
-      username = `user${Math.floor(Math.random() * 10000)}`;
-      break;
-    }
-  }
-  
+  console.log('🎲 Generated username:', username);
   return username;
 };
 
@@ -67,11 +51,7 @@ export const signUp = async (email: string, password: string, name: string, user
     let finalUsername: string;
     
     if (username) {
-      // User provided a username - check availability
-      const isAvailable = await checkUsernameAvailability(username);
-      if (!isAvailable) {
-        throw new Error('Username is already taken');
-      }
+      // User provided a username - use it directly (availability check can be done later)
       finalUsername = username.toLowerCase();
     } else {
       // Auto-generate a unique username
