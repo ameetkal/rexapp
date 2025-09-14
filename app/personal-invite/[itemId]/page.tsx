@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { PersonalItem } from '@/lib/types';
 import { getPersonalItem, followUser } from '@/lib/firestore';
 import { signUp } from '@/lib/auth';
@@ -9,6 +9,7 @@ import { signUp } from '@/lib/auth';
 export default function PersonalInvitePage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const itemId = params.itemId as string;
   const referrerName = searchParams.get('ref') || 'Someone';
   
@@ -67,7 +68,7 @@ export default function PersonalInvitePage() {
         }
       }
       // Redirect to main app after successful signup
-      window.location.href = '/';
+      router.push('/');
     } catch (err: unknown) {
       const error = err as Error;
       setError(error.message || 'An error occurred');
