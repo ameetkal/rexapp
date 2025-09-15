@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { getPersonalItems } from '@/lib/firestore';
+import { getPersonalItems, getUserThingInteractionsWithThings } from '@/lib/firestore';
 import PersonalItemCard from './PersonalItemCard';
 import PersonalItemDetailModal from './PersonalItemDetailModal';
-import { CATEGORIES, Category } from '@/lib/types';
+import ThingInteractionCard from './ThingInteractionCard';
+import { CATEGORIES, Category, UserThingInteraction, Thing } from '@/lib/types';
 import { ListBulletIcon } from '@heroicons/react/24/outline';
 
 export default function SavedScreen() {
@@ -13,6 +14,11 @@ export default function SavedScreen() {
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [useNewSystem, setUseNewSystem] = useState(false);
+  
+  // NEW SYSTEM STATE
+  const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
   
   const { user } = useAuthStore();
   const { setPersonalItems, getSavedItems } = useAppStore();
@@ -21,8 +27,18 @@ export default function SavedScreen() {
     if (!user) return;
     
     try {
+      // Load OLD system personal items
+      console.log('📋 Loading OLD system personal items...');
       const items = await getPersonalItems(user.uid);
       setPersonalItems(items);
+      
+      // Load NEW system user interactions
+      console.log('🚀 Loading NEW system user interactions...');
+      const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(user.uid);
+      setUserInteractions(interactions);
+      setThings(thingsData);
+      
+      console.log(`✅ Loaded ${items.length} old items and ${interactions.length} new interactions`);
     } catch (error) {
       console.error('Error loading personal items:', error);
     } finally {
@@ -42,16 +58,36 @@ export default function SavedScreen() {
     }
   }, [user, loadPersonalItems]);
 
-  // Get only "want to try" items
-  const savedItems = getSavedItems();
+  // Get items based on system
+  const bucketListInteractions = userInteractions.filter(i => i.state === 'bucketList');
+  const savedPersonalItems = getSavedItems();
   
-  const filteredItems = selectedCategory === 'all' 
-    ? savedItems 
-    : savedItems.filter(item => item.category === selectedCategory);
+  const filteredItems = useNewSystem ? (
+    selectedCategory === 'all' 
+      ? bucketListInteractions 
+      : bucketListInteractions.filter(interaction => {
+          const thing = things.find(t => t.id === interaction.thingId);
+          return thing?.category === selectedCategory;
+        })
+  ) : (
+    selectedCategory === 'all' 
+      ? savedPersonalItems 
+      : savedPersonalItems.filter(item => item.category === selectedCategory)
+  );
 
   const getCategoryCount = (category: Category | 'all') => {
-    if (category === 'all') return savedItems.length;
-    return savedItems.filter(item => item.category === category).length;
+    if (category === 'all') {
+      return useNewSystem ? bucketListInteractions.length : savedPersonalItems.length;
+    }
+    
+    if (useNewSystem) {
+      return bucketListInteractions.filter(interaction => {
+        const thing = things.find(t => t.id === interaction.thingId);
+        return thing?.category === category;
+      }).length;
+    } else {
+      return savedPersonalItems.filter(item => item.category === category).length;
+    }
   };
 
 
@@ -83,6 +119,34 @@ export default function SavedScreen() {
         </div>
         
 
+      </div>
+
+      {/* System Toggle */}
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="flex justify-center">
+          <div className="bg-gray-100 rounded-lg p-1 flex">
+            <button
+              onClick={() => setUseNewSystem(false)}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                !useNewSystem 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Old System
+            </button>
+            <button
+              onClick={() => setUseNewSystem(true)}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                useNewSystem 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              New System
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Category Filter */}
@@ -148,21 +212,41 @@ export default function SavedScreen() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredItems.map((item) => (
-              <PersonalItemCard 
-                key={item.id} 
-                item={item} 
-                onItemClick={(itemId) => setSelectedItemId(itemId)}
-              />
-            ))}
+            {useNewSystem ? (
+              // NEW SYSTEM: Show thing interactions
+              (filteredItems as UserThingInteraction[]).map((interaction) => {
+                const thing = things.find(t => t.id === interaction.thingId);
+                if (!thing) {
+                  console.warn('Thing not found for interaction:', interaction.id, 'thingId:', interaction.thingId);
+                  return null;
+                }
+                
+                return (
+                  <ThingInteractionCard
+                    key={interaction.id}
+                    thing={thing}
+                    interaction={interaction}
+                  />
+                );
+              })
+            ) : (
+              // OLD SYSTEM: Show personal items
+              (filteredItems as typeof savedPersonalItems).map((item) => (
+                <PersonalItemCard 
+                  key={item.id} 
+                  item={item} 
+                  onItemClick={(itemId) => setSelectedItemId(itemId)}
+                />
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {/* Personal Item Detail Modal */}
-      {selectedItemId && (
+      {/* Personal Item Detail Modal - Only for old system */}
+      {selectedItemId && !useNewSystem && (
         <PersonalItemDetailModal
-          item={filteredItems.find(item => item.id === selectedItemId)!}
+          item={savedPersonalItems.find(item => item.id === selectedItemId)!}
           isOpen={true}
           onClose={() => setSelectedItemId(null)}
         />

@@ -19,7 +19,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2 } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -1447,5 +1447,733 @@ export const getUserRecsGivenCount = async (userId: string): Promise<number> => 
   } catch (error) {
     console.error('Error getting user recs given count:', error);
     return 0;
+  }
+};
+
+// ============================================================================
+// NEW DATA MODEL FUNCTIONS
+// ============================================================================
+
+// THINGS COLLECTION FUNCTIONS
+
+export const createOrGetThing = async (
+  universalItem: UniversalItem,
+  createdBy: string
+): Promise<string> => {
+  try {
+    // For API items, always create new (they're unique by API ID)
+    if (universalItem.source !== 'manual') {
+      const thingData: Omit<Thing, 'id'> = {
+        title: universalItem.title,
+        category: universalItem.category,
+        description: universalItem.description,
+        image: universalItem.image,
+        metadata: universalItem.metadata,
+        source: universalItem.source,
+        createdAt: Timestamp.now(),
+        createdBy,
+      };
+      
+      const docRef = await addDoc(collection(db, 'things'), thingData);
+      console.log('✅ Created new thing:', docRef.id, 'for', universalItem.title);
+      return docRef.id;
+    }
+
+    // For manual items, check for exact duplicates
+    const thingsQuery = query(
+      collection(db, 'things'),
+      where('title', '==', universalItem.title),
+      where('category', '==', universalItem.category),
+      where('source', '==', 'manual')
+    );
+    
+    const existingThings = await getDocs(thingsQuery);
+    
+    if (!existingThings.empty) {
+      const existingThing = existingThings.docs[0];
+      console.log('♻️ Using existing thing:', existingThing.id, 'for', universalItem.title);
+      return existingThing.id;
+    }
+    
+    // Create new manual thing
+    const thingData: Omit<Thing, 'id'> = {
+      title: universalItem.title,
+      category: universalItem.category,
+      description: universalItem.description,
+      image: universalItem.image,
+      metadata: universalItem.metadata,
+      source: universalItem.source,
+      createdAt: Timestamp.now(),
+      createdBy,
+    };
+    
+    const docRef = await addDoc(collection(db, 'things'), thingData);
+    console.log('✅ Created new manual thing:', docRef.id, 'for', universalItem.title);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating/getting thing:', error);
+    throw error;
+  }
+};
+
+export const getThing = async (thingId: string): Promise<Thing | null> => {
+  try {
+    const docRef = doc(db, 'things', thingId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      return null;
+    }
+    
+    return { id: docSnap.id, ...docSnap.data() } as Thing;
+  } catch (error) {
+    console.error('Error getting thing:', error);
+    return null;
+  }
+};
+
+// USER THING INTERACTIONS COLLECTION FUNCTIONS
+
+export const createUserThingInteraction = async (
+  userId: string,
+  thingId: string,
+  state: UserThingInteractionState,
+  visibility: 'private' | 'friends' | 'public' = 'friends'
+): Promise<string> => {
+  try {
+    // Check if user already has an interaction with this thing
+    const existingQuery = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      where('thingId', '==', thingId)
+    );
+    
+    const existingInteractions = await getDocs(existingQuery);
+    
+    if (!existingInteractions.empty) {
+      // Update existing interaction
+      const existingDoc = existingInteractions.docs[0];
+      await updateDoc(doc(db, 'user_thing_interactions', existingDoc.id), {
+        state,
+        date: Timestamp.now(),
+        visibility,
+      });
+      console.log('🔄 Updated existing interaction:', existingDoc.id);
+      return existingDoc.id;
+    }
+    
+    // Create new interaction
+    const interactionData: Omit<UserThingInteraction, 'id'> = {
+      userId,
+      thingId,
+      state,
+      date: Timestamp.now(),
+      visibility,
+      createdAt: Timestamp.now(),
+    };
+    
+    const docRef = await addDoc(collection(db, 'user_thing_interactions'), interactionData);
+    console.log('✅ Created new interaction:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating user thing interaction:', error);
+    throw error;
+  }
+};
+
+export const getUserThingInteractions = async (userId: string): Promise<UserThingInteraction[]> => {
+  try {
+    const q = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const interactions: UserThingInteraction[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      interactions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
+    });
+    
+    return interactions;
+  } catch (error) {
+    console.error('Error getting user thing interactions:', error);
+    return [];
+  }
+};
+
+export const getUserThingInteraction = async (
+  userId: string,
+  thingId: string
+): Promise<UserThingInteraction | null> => {
+  try {
+    const q = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      where('thingId', '==', thingId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as UserThingInteraction;
+  } catch (error) {
+    console.error('Error getting user thing interaction:', error);
+    return null;
+  }
+};
+
+export const deleteUserThingInteraction = async (interactionId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'user_thing_interactions', interactionId));
+    console.log('🗑️ Deleted interaction:', interactionId);
+  } catch (error) {
+    console.error('Error deleting user thing interaction:', error);
+    throw error;
+  }
+};
+
+// RECOMMENDATIONS COLLECTION FUNCTIONS
+
+export const createRecommendation = async (
+  fromUserId: string,
+  toUserId: string,
+  thingId: string,
+  message?: string
+): Promise<string> => {
+  try {
+    const recommendationData: Omit<Recommendation, 'id'> = {
+      fromUserId,
+      toUserId,
+      thingId,
+      date: Timestamp.now(),
+      message,
+    };
+    
+    const docRef = await addDoc(collection(db, 'recommendations'), recommendationData);
+    console.log('✅ Created recommendation:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating recommendation:', error);
+    throw error;
+  }
+};
+
+export const getRecommendationsReceived = async (userId: string): Promise<Recommendation[]> => {
+  try {
+    const q = query(
+      collection(db, 'recommendations'),
+      where('toUserId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const recommendations: Recommendation[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      recommendations.push({ id: doc.id, ...doc.data() } as Recommendation);
+    });
+    
+    return recommendations;
+  } catch (error) {
+    console.error('Error getting recommendations received:', error);
+    return [];
+  }
+};
+
+export const getRecommendationsGiven = async (userId: string): Promise<Recommendation[]> => {
+  try {
+    const q = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const recommendations: Recommendation[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      recommendations.push({ id: doc.id, ...doc.data() } as Recommendation);
+    });
+    
+    return recommendations;
+  } catch (error) {
+    console.error('Error getting recommendations given:', error);
+    return [];
+  }
+};
+
+// POSTS V2 COLLECTION FUNCTIONS
+
+export const createPostV2 = async (
+  authorId: string,
+  authorName: string,
+  thingId: string,
+  content: string,
+  enhancedFields?: {
+    rating?: number;
+    photos?: string[];
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
+): Promise<string> => {
+  try {
+    const postData: Omit<PostV2, 'id'> = {
+      authorId,
+      authorName,
+      thingId,
+      content,
+      rating: enhancedFields?.rating,
+      photos: enhancedFields?.photos,
+      location: enhancedFields?.location,
+      priceRange: enhancedFields?.priceRange,
+      customPrice: enhancedFields?.customPrice,
+      tags: enhancedFields?.tags,
+      experienceDate: enhancedFields?.experienceDate ? Timestamp.fromDate(enhancedFields.experienceDate) : undefined,
+      taggedUsers: enhancedFields?.taggedUsers,
+      taggedNonUsers: enhancedFields?.taggedNonUsers,
+      createdAt: Timestamp.now(),
+      likedBy: [],
+    };
+    
+    const docRef = await addDoc(collection(db, 'posts_v2'), postData);
+    console.log('✅ Created post v2:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating post v2:', error);
+    throw error;
+  }
+};
+
+export const getPostsV2 = async (limitCount: number = 50): Promise<PostV2[]> => {
+  try {
+    const q = query(
+      collection(db, 'posts_v2'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const posts: PostV2[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    return posts;
+  } catch (error) {
+    console.error('Error getting posts v2:', error);
+    return [];
+  }
+};
+
+export const likePostV2 = async (postId: string, userId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      likedBy: arrayUnion(userId),
+    });
+    console.log('👍 Liked post v2:', postId);
+  } catch (error) {
+    console.error('Error liking post v2:', error);
+    throw error;
+  }
+};
+
+export const unlikePostV2 = async (postId: string, userId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      likedBy: arrayRemove(userId),
+    });
+    console.log('👎 Unliked post v2:', postId);
+  } catch (error) {
+    console.error('Error unliking post v2:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// FEED AND DATA LOADING FUNCTIONS (NEW SYSTEM)
+// ============================================================================
+
+// Get feed posts using new system (posts_v2 with things data)
+export const getFeedPostsV2 = async (following: string[], currentUserId: string): Promise<PostV2[]> => {
+  try {
+    console.log('📱 Loading feed posts with new system...');
+    
+    // Include current user's posts in the feed (like old system)
+    const allUserIds = [...new Set([...following, currentUserId])];
+    
+    if (allUserIds.length === 0) return [];
+    
+    // Get posts from followed users + current user
+    const followingPostsQuery = query(
+      collection(db, 'posts_v2'),
+      where('authorId', 'in', allUserIds),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    
+    const followingPostsSnapshot = await getDocs(followingPostsQuery);
+    const followingPosts: PostV2[] = [];
+    
+    followingPostsSnapshot.forEach((doc) => {
+      followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    // If no posts from following, get recent posts from all users
+    if (followingPosts.length === 0) {
+      const allPostsQuery = query(
+        collection(db, 'posts_v2'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+      
+      const allPostsSnapshot = await getDocs(allPostsQuery);
+      allPostsSnapshot.forEach((doc) => {
+        followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
+      });
+    }
+    
+    console.log(`✅ Loaded ${followingPosts.length} posts with new system`);
+    return followingPosts;
+  } catch (error) {
+    console.error('Error loading feed posts v2:', error);
+    return [];
+  }
+};
+
+// Get user's thing interactions
+export const getUserThingInteractionsWithThings = async (userId: string): Promise<{
+  interactions: UserThingInteraction[];
+  things: Thing[];
+}> => {
+  try {
+    console.log('📋 Loading user interactions with things...');
+    
+    // Get user interactions
+    const interactions = await getUserThingInteractions(userId);
+    
+    // Get unique thing IDs
+    const thingIds = [...new Set(interactions.map(i => i.thingId))];
+    
+    // Get things data
+    const things: Thing[] = [];
+    for (const thingId of thingIds) {
+      const thing = await getThing(thingId);
+      if (thing) {
+        things.push(thing);
+      }
+    }
+    
+    console.log(`✅ Loaded ${interactions.length} interactions and ${things.length} things`);
+    return { interactions, things };
+  } catch (error) {
+    console.error('Error loading user interactions with things:', error);
+    return { interactions: [], things: [] };
+  }
+};
+
+// Get user's posts using new system
+export const getUserPostsV2 = async (userId: string): Promise<PostV2[]> => {
+  try {
+    console.log('📝 Loading user posts with new system...');
+    
+    const q = query(
+      collection(db, 'posts_v2'),
+      where('authorId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const posts: PostV2[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    console.log(`✅ Loaded ${posts.length} user posts with new system`);
+    return posts;
+  } catch (error) {
+    console.error('Error loading user posts v2:', error);
+    return [];
+  }
+};
+
+// Get recommendations received by user
+export const getRecommendationsWithThings = async (userId: string): Promise<{
+  recommendations: Recommendation[];
+  things: Thing[];
+}> => {
+  try {
+    console.log('🎯 Loading recommendations with things...');
+    
+    // Get recommendations
+    const recommendations = await getRecommendationsReceived(userId);
+    
+    // Get unique thing IDs
+    const thingIds = [...new Set(recommendations.map(r => r.thingId))];
+    
+    // Get things data
+    const things: Thing[] = [];
+    for (const thingId of thingIds) {
+      const thing = await getThing(thingId);
+      if (thing) {
+        things.push(thing);
+      }
+    }
+    
+    console.log(`✅ Loaded ${recommendations.length} recommendations and ${things.length} things`);
+    return { recommendations, things };
+  } catch (error) {
+    console.error('Error loading recommendations with things:', error);
+    return { recommendations: [], things: [] };
+  }
+};
+
+// ============================================================================
+// DUAL SYSTEM POST CREATION (NEW + OLD)
+// ============================================================================
+
+export const createPostWithNewSystem = async (
+  authorId: string,
+  authorName: string,
+  category: Category,
+  title: string,
+  description?: string,
+  status: 'want_to_try' | 'completed' = 'want_to_try',
+  postToFeed: boolean = true,
+  enhancedFields?: {
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
+    recommendedByUserId?: string;
+  }
+): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId?: string;
+  recommendationId?: string;
+}> => {
+  try {
+    console.log('🚀 Creating post with new system for:', title);
+    
+    // 1. Create UniversalItem from the data
+    const universalItem: UniversalItem = {
+      id: '', // Will be set by createOrGetThing
+      title,
+      category,
+      description,
+      image: undefined,
+      metadata: {
+        // For manual items, we don't have rich metadata
+        // This could be enhanced later with location, tags, etc.
+        ...(enhancedFields?.location && { address: enhancedFields.location }),
+        ...(enhancedFields?.tags && { tags: enhancedFields.tags }),
+      },
+      source: 'manual',
+    };
+    
+    // 2. Create or get the thing
+    const thingId = await createOrGetThing(universalItem, authorId);
+    console.log('✅ Thing created/found:', thingId);
+    
+    // 3. Create user interaction
+    const interactionState: UserThingInteractionState = status === 'completed' ? 'completed' : 'bucketList';
+    const interactionId = await createUserThingInteraction(
+      authorId,
+      thingId,
+      interactionState,
+      'friends'
+    );
+    console.log('✅ User interaction created:', interactionId);
+    
+    let postId: string | undefined;
+    let recommendationId: string | undefined;
+    
+    // 4. If posting to feed, create post
+    if (postToFeed) {
+      postId = await createPostV2(
+        authorId,
+        authorName,
+        thingId,
+        description || '',
+        {
+          rating: enhancedFields?.rating,
+          location: enhancedFields?.location,
+          priceRange: enhancedFields?.priceRange,
+          customPrice: enhancedFields?.customPrice,
+          tags: enhancedFields?.tags,
+          experienceDate: enhancedFields?.experienceDate,
+          taggedUsers: enhancedFields?.taggedUsers,
+          taggedNonUsers: enhancedFields?.taggedNonUsers,
+        }
+      );
+      console.log('✅ Post created:', postId);
+    }
+    
+    // 5. If there's a recommendation, create recommendation record
+    if (enhancedFields?.recommendedByUserId && enhancedFields?.recommendedByUserId !== authorId) {
+      recommendationId = await createRecommendation(
+        enhancedFields.recommendedByUserId,
+        authorId,
+        thingId,
+        enhancedFields.recommendedBy ? `Recommended: ${enhancedFields.recommendedBy}` : undefined
+      );
+      console.log('✅ Recommendation created:', recommendationId);
+    }
+    
+    return {
+      thingId,
+      interactionId,
+      postId,
+      recommendationId,
+    };
+  } catch (error) {
+    console.error('❌ Error creating post with new system:', error);
+    throw error;
+  }
+};
+
+// Helper function to convert old Post to new system data
+export const migratePostToNewSystem = async (post: Post): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId: string;
+}> => {
+  try {
+    console.log('🔄 Migrating post to new system:', post.title);
+    
+    // Create UniversalItem from old post
+    const universalItem: UniversalItem = {
+      id: '',
+      title: post.title,
+      category: post.category,
+      description: post.description,
+      image: post.universalItem?.image,
+      metadata: post.universalItem?.metadata || {},
+      source: post.universalItem?.source || 'manual',
+    };
+    
+    // Create thing
+    const thingId = await createOrGetThing(universalItem, post.authorId);
+    
+    // Create user interaction (assume bucketList since it was posted)
+    const interactionId = await createUserThingInteraction(
+      post.authorId,
+      thingId,
+      'bucketList',
+      'friends'
+    );
+    
+    // Create new post
+    const postId = await createPostV2(
+      post.authorId,
+      post.authorName,
+      thingId,
+      post.description,
+      {
+        rating: post.rating,
+        location: post.location,
+        priceRange: post.priceRange,
+        customPrice: post.customPrice,
+        tags: post.tags,
+        experienceDate: post.experienceDate?.toDate(),
+        taggedUsers: post.taggedUsers,
+        taggedNonUsers: post.taggedNonUsers,
+      }
+    );
+    
+    console.log('✅ Post migrated successfully');
+    return { thingId, interactionId, postId };
+  } catch (error) {
+    console.error('❌ Error migrating post:', error);
+    throw error;
+  }
+};
+
+// Helper function to convert PersonalItem to new system data
+export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId?: string;
+}> => {
+  try {
+    console.log('🔄 Migrating personal item to new system:', personalItem.title);
+    
+    // Create UniversalItem from personal item
+    const universalItem: UniversalItem = {
+      id: '',
+      title: personalItem.title,
+      category: personalItem.category,
+      description: personalItem.description,
+      image: undefined,
+      metadata: {},
+      source: 'manual',
+    };
+    
+    // Create thing
+    const thingId = await createOrGetThing(universalItem, personalItem.userId);
+    
+    // Map old status to new interaction state
+    const interactionState: UserThingInteractionState = 
+      personalItem.status === 'completed' ? 'completed' : 'bucketList';
+    
+    // Create user interaction
+    const interactionId = await createUserThingInteraction(
+      personalItem.userId,
+      thingId,
+      interactionState,
+      'friends'
+    );
+    
+    let postId: string | undefined;
+    
+    // If it was shared, create a post
+    if (personalItem.status === 'shared' && personalItem.sharedPostId) {
+      // Try to get the original post data
+      const originalPost = await getPost(personalItem.sharedPostId);
+      if (originalPost) {
+        postId = await createPostV2(
+          personalItem.userId,
+          originalPost.authorName,
+          thingId,
+          personalItem.description,
+          {
+            rating: personalItem.rating,
+            location: personalItem.location,
+            priceRange: personalItem.priceRange,
+            customPrice: personalItem.customPrice,
+            tags: personalItem.tags,
+            experienceDate: personalItem.experienceDate?.toDate(),
+            taggedUsers: personalItem.taggedUsers,
+            taggedNonUsers: personalItem.taggedNonUsers,
+          }
+        );
+      }
+    }
+    
+    console.log('✅ Personal item migrated successfully');
+    return { thingId, interactionId, postId };
+  } catch (error) {
+    console.error('❌ Error migrating personal item:', error);
+    throw error;
   }
 }; 

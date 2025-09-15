@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { createPost, createPersonalItem } from '@/lib/firestore';
+import { createPost, createPersonalItem, createPostWithNewSystem } from '@/lib/firestore';
 import { Category, PersonalItemStatus, PersonalItem, UniversalItem } from '@/lib/types';
 import { Timestamp } from 'firebase/firestore';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
@@ -140,8 +140,6 @@ export default function PostScreen() {
 
     setLoading(true);
     try {
-      let postId: string | null = null;
-      
       // Prepare enhanced fields
       const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
       const enhancedFields = {
@@ -150,6 +148,27 @@ export default function PostScreen() {
         ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
       };
 
+      // ===== NEW SYSTEM =====
+      console.log('🚀 Creating with NEW system...');
+      // Map old status to new system status
+      const newSystemStatus = status === 'completed' ? 'completed' : 'want_to_try';
+      const newSystemResult = await createPostWithNewSystem(
+        user.uid,
+        userProfile.name,
+        category,
+        title,
+        description.trim() || undefined,
+        newSystemStatus,
+        postToFeed,
+        enhancedFields
+      );
+      
+      console.log('✅ New system result:', newSystemResult);
+
+      // ===== OLD SYSTEM (for backward compatibility) =====
+      console.log('🔄 Also creating with OLD system...');
+      let postId: string | null = null;
+      
       // Always create a personal item
       const personalItemId = await createPersonalItem(
         user.uid,
@@ -212,24 +231,30 @@ export default function PostScreen() {
       
       // Add personal item to store
       addPersonalItem(personalItem);
+      
+      console.log('✅ Old system result:', { personalItemId, postId });
 
       // Check if we should offer SMS invite for non-user recommender
       console.log(`🔍 SMS Invite Debug:`, {
         recommendedBy: recommendedByValue,
         shouldOffer: shouldOfferSMSInvite(recommendedByValue || ''),
-        postId,
+        newSystemPostId: newSystemResult.postId,
+        oldSystemPostId: postId,
         postToFeed,
         personalItemId
       });
       
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        if (postToFeed && postId) {
+        // Use new system post ID if available, fallback to old system
+        const finalPostId = newSystemResult.postId || postId;
+        
+        if (postToFeed && finalPostId) {
           // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${postId}`);
+          console.log(`✅ Setting up SMS invite for shared post: ${finalPostId}`);
           setInviteData({
             recommenderName: recommendedByValue,
             postTitle: title,
-            postId: postId,
+            postId: finalPostId,
             isPost: true
           });
           setShowInviteDialog(true);

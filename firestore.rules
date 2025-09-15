@@ -46,6 +46,49 @@ service cloud.firestore {
       allow update: if request.auth != null && request.auth.uid == resource.data.userId;
     }
     
+    // NEW DATA MODEL COLLECTIONS
+    
+    // Things - anyone can read, authenticated users can create
+    match /things/{thingId} {
+      allow read: if true; // Anyone can read things (for invite pages)
+      allow create: if request.auth != null;
+      // No updates or deletes - things are immutable once created
+    }
+    
+    // User Thing Interactions - users can read/write their own
+    match /user_thing_interactions/{interactionId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Recommendations - users can read their own, create recommendations to others
+    match /recommendations/{recommendationId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.fromUserId ||
+        request.auth.uid == resource.data.toUserId
+      );
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.fromUserId;
+      allow update, delete: if request.auth != null && 
+        request.auth.uid == resource.data.fromUserId;
+    }
+    
+    // Posts V2 - anyone can read (for invite pages), authors can write
+    match /posts_v2/{postId} {
+      allow read: if true; // Anyone can read posts (for invite pages)
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.authorId;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.authorId ||
+        // Allow users to like/unlike posts
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy'])
+      );
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.authorId;
+    }
+    
     // Allow authenticated users to read all documents for search functionality
     match /{document=**} {
       allow read: if request.auth != null;

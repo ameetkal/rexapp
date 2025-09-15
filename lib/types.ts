@@ -133,6 +133,93 @@ export interface NotificationPreferences {
   email_notifications: boolean;
 }
 
+// NEW DATA MODEL INTERFACES
+
+export interface Thing {
+  id: string;
+  title: string;
+  category: Category;
+  description?: string;
+  image?: string;
+  metadata: {
+    // Books
+    author?: string;
+    isbn?: string;
+    publishedDate?: string;
+    pageCount?: number;
+    // Movies/TV
+    director?: string;
+    year?: number;
+    tmdbRating?: number;
+    type?: 'movie' | 'tv';
+    // Places
+    address?: string;
+    rating?: number;
+    priceLevel?: 1 | 2 | 3 | 4;
+    phoneNumber?: string;
+    website?: string;
+    placeType?: 'restaurant' | 'tourist_attraction' | 'lodging' | 'cafe' | 'bar' | 'store' | 'museum' | 'park' | 'other';
+    // Music (future)
+    artist?: string;
+    album?: string;
+  };
+  source: 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual';
+  createdAt: Timestamp;
+  createdBy: string; // userId who first created this thing
+}
+
+export type UserThingInteractionState = 'bucketList' | 'inProgress' | 'completed';
+
+export interface UserThingInteraction {
+  id: string;
+  userId: string;
+  thingId: string;
+  state: UserThingInteractionState;
+  date: Timestamp;
+  visibility: 'private' | 'friends' | 'public';
+  createdAt: Timestamp;
+}
+
+export interface Recommendation {
+  id: string;
+  fromUserId: string; // User who made the recommendation
+  toUserId: string;   // User who received the recommendation
+  thingId: string;    // The thing being recommended
+  date: Timestamp;
+  message?: string;   // Optional message with the recommendation
+}
+
+// Updated Post interface to link to things
+export interface PostV2 {
+  id: string;
+  authorId: string;
+  authorName: string; // Denormalized for better UX
+  thingId: string;    // Links to the thing
+  content: string;    // User's description/review
+  rating?: number;    // 1-10 user rating
+  createdAt: Timestamp;
+  likedBy: string[];  // userIds who liked this post
+  comments?: Comment[];
+  
+  // Enhanced optional fields
+  photos?: string[]; // image URLs
+  location?: string;
+  priceRange?: '$' | '$$' | '$$$' | '$$$$';
+  customPrice?: number;
+  tags?: string[];
+  experienceDate?: Timestamp;
+  taggedUsers?: string[]; // userIds of tagged people
+  taggedNonUsers?: { name: string; email?: string }[]; // for invites
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: Timestamp;
+}
+
 
 
 export const CATEGORIES: CategoryInfo[] = [

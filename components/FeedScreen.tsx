@@ -3,9 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { getFeedPosts, universalSearch, followUser, unfollowUser } from '@/lib/firestore';
-import { Post, User } from '@/lib/types';
+import { getFeedPosts, universalSearch, followUser, unfollowUser, getFeedPostsV2, getThing } from '@/lib/firestore';
+import { Post, User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
 import PostCard from './PostCard';
+import PostCardV2 from './PostCardV2';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
 interface FeedScreenProps {
@@ -22,6 +23,13 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
   const [searching, setSearching] = useState(false);
   const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
+  
+  // NEW SYSTEM STATE
+  const [postsV2, setPostsV2] = useState<PostV2[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
+  const [userInteractions] = useState<UserThingInteraction[]>([]);
+  const [useNewSystem, setUseNewSystem] = useState(false); // Toggle between old and new
+  
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { posts, setPosts } = useAppStore();
 
@@ -29,8 +37,28 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     if (!userProfile || !user) return;
     
     try {
+      // Load OLD system posts
+      console.log('📱 Loading OLD system feed...');
       const feedPosts = await getFeedPosts(userProfile.following, user.uid);
       setPosts(feedPosts);
+      
+      // Load NEW system posts
+      console.log('🚀 Loading NEW system feed...');
+      const feedPostsV2 = await getFeedPostsV2(userProfile.following, user.uid);
+      setPostsV2(feedPostsV2);
+      
+      // Load things data for new posts
+      const uniqueThingIds = [...new Set(feedPostsV2.map(post => post.thingId))];
+      const thingsData: Thing[] = [];
+      for (const thingId of uniqueThingIds) {
+        const thing = await getThing(thingId);
+        if (thing) {
+          thingsData.push(thing);
+        }
+      }
+      setThings(thingsData);
+      
+      console.log(`✅ Loaded ${feedPosts.length} old posts and ${feedPostsV2.length} new posts`);
     } catch (error) {
       console.error('Error loading feed posts:', error);
     } finally {
@@ -130,6 +158,19 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     if (userProfile && user) {
       loadFeedPosts();
     }
+  }, [userProfile, user, loadFeedPosts]);
+
+  // Refresh feed when component becomes visible (e.g., when switching from Add tab back to Feed)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && userProfile && user) {
+        // Refresh feed when tab becomes visible
+        loadFeedPosts();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [userProfile, user, loadFeedPosts]);
 
   // Debounced live search
@@ -304,7 +345,33 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </button>
             </div>
 
-            {posts.length === 0 ? (
+            {/* System Toggle */}
+            <div className="mb-4 flex justify-center">
+              <div className="bg-gray-100 rounded-lg p-1 flex">
+                <button
+                  onClick={() => setUseNewSystem(false)}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    !useNewSystem 
+                      ? 'bg-white text-gray-900 shadow-sm' 
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Old System
+                </button>
+                <button
+                  onClick={() => setUseNewSystem(true)}
+                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                    useNewSystem 
+                      ? 'bg-white text-gray-900 shadow-sm' 
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  New System
+                </button>
+              </div>
+            </div>
+
+            {(!useNewSystem ? posts.length === 0 : postsV2.length === 0) ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -323,9 +390,34 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </div>
             ) : (
               <div className="space-y-4">
-                {posts.map((post) => (
-                  <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
-                ))}
+                {useNewSystem ? (
+                  // NEW SYSTEM POSTS
+                  postsV2.map((post) => {
+                    const thing = things.find(t => t.id === post.thingId);
+                    const userInteraction = userInteractions.find(i => i.thingId === post.thingId);
+                    
+                    if (!thing) {
+                      console.warn('Thing not found for post:', post.id, 'thingId:', post.thingId);
+                      return null;
+                    }
+                    
+                    return (
+                      <PostCardV2
+                        key={post.id}
+                        post={post}
+                        thing={thing}
+                        userInteraction={userInteraction}
+                        onAuthorClick={onUserProfileClick}
+                        onPostClick={handlePostClick}
+                      />
+                    );
+                  })
+                ) : (
+                  // OLD SYSTEM POSTS
+                  posts.map((post) => (
+                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
+                  ))
+                )}
               </div>
             )}
           </>
