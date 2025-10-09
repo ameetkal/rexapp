@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
-import { getFeedPosts, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
-import { User, Post } from '@/lib/types';
-import PostCard from './PostCard';
+import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount, getUserThingInteraction } from '@/lib/firestore';
+import { User, Thing, UserThingInteraction } from '@/lib/types';
+import PostCardV2 from './PostCardV2';
 
 interface PublicProfileScreenProps {
   user: User;
@@ -14,8 +13,9 @@ interface PublicProfileScreenProps {
 }
 
 export default function PublicProfileScreen({ user: profileUser, onBack }: PublicProfileScreenProps) {
-  const router = useRouter();
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
+  const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
+  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
@@ -27,10 +27,29 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        // Get all posts from this specific user
-        const allPosts = await getFeedPosts([profileUser.id], profileUser.id);
-        const userOnlyPosts = allPosts.filter(post => post.authorId === profileUser.id);
-        setUserPosts(userOnlyPosts);
+        // Get this user's public/friends interactions with things
+        const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(profileUser.id);
+        
+        // Filter to only public/friends visibility (respect privacy)
+        const visibleInteractions = interactions.filter(i => 
+          i.visibility === 'public' || i.visibility === 'friends'
+        );
+        
+        setUserInteractions(visibleInteractions);
+        setThings(thingsData);
+
+        // Load current user's interactions for button states
+        if (currentUser) {
+          const uniqueThingIds = [...new Set(visibleInteractions.map(i => i.thingId))];
+          const myInteractionsMap = new Map<string, UserThingInteraction>();
+          
+          for (const thingId of uniqueThingIds) {
+            const myInteraction = await getUserThingInteraction(currentUser.uid, thingId);
+            if (myInteraction) myInteractionsMap.set(thingId, myInteraction);
+          }
+          
+          setMyInteractions(myInteractionsMap);
+        }
 
         // Get recs given count
         const recsCount = await getUserRecsGivenCount(profileUser.id);
@@ -43,7 +62,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     };
 
     loadUserData();
-  }, [profileUser.id]);
+  }, [profileUser.id, currentUser]);
 
   const handleFollowToggle = async () => {
     if (!currentUser || !userProfile || followLoading) return;
@@ -72,9 +91,6 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     }
   };
 
-  const handlePostClick = (postId: string) => {
-    router.push(`/post/${postId}?from=profile&userId=${profileUser.id}&userName=${encodeURIComponent(profileUser.name)}`);
-  };
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -108,7 +124,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
               <div className="text-sm text-gray-500">Following</div>
             </div>
             <div className="text-center">
-              <div className="text-xl font-bold text-gray-900">{userPosts.length || 0}</div>
+              <div className="text-xl font-bold text-gray-900">{userInteractions.filter(i => i.state === 'completed').length}</div>
               <div className="text-sm text-gray-500">Completed</div>
             </div>
             <div className="text-center">
@@ -171,7 +187,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
                 </div>
               ))}
             </div>
-          ) : userPosts.length === 0 ? (
+          ) : userInteractions.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-2xl">📝</span>
@@ -183,9 +199,26 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             </div>
           ) : (
             <div className="space-y-4">
-              {userPosts.map((post) => (
-                <PostCard key={post.id} post={post} onPostClick={handlePostClick} />
-              ))}
+              {userInteractions.map((interaction) => {
+                const thing = things.find(t => t.id === interaction.thingId);
+                const myInteraction = myInteractions.get(interaction.thingId);
+                
+                if (!thing) {
+                  console.warn('Thing not found for interaction:', interaction.id);
+                  return null;
+                }
+                
+                return (
+                  <PostCardV2 
+                    key={interaction.id} 
+                    interaction={interaction}
+                    thing={thing}
+                    myInteraction={myInteraction}
+                    avgRating={undefined}
+                    isOwnInteraction={currentUser?.uid === interaction.userId}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

@@ -17,9 +17,10 @@ import {
   writeBatch,
   onSnapshot,
   runTransaction,
+  increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -1447,5 +1448,1260 @@ export const getUserRecsGivenCount = async (userId: string): Promise<number> => 
   } catch (error) {
     console.error('Error getting user recs given count:', error);
     return 0;
+  }
+};
+
+// ============================================================================
+// NEW DATA MODEL FUNCTIONS
+// ============================================================================
+
+// THINGS COLLECTION FUNCTIONS
+
+export const createOrGetThing = async (
+  universalItem: UniversalItem,
+  createdBy: string
+): Promise<string> => {
+  try {
+    // For API items, check if it exists by unique API ID
+    if (universalItem.source !== 'manual') {
+      if (universalItem.source === 'google_places') {
+        // Dedupe by place_id (stored in metadata)
+        const placeId = universalItem.id || universalItem.metadata?.placeId;
+        if (placeId) {
+          // Try to find by stored ID first (most reliable)
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'google_places' && 
+                   (data.id === placeId || data.metadata?.placeId === placeId);
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing Google Place:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      } else if (universalItem.source === 'google_books') {
+        // Dedupe by ISBN
+        const isbn = universalItem.metadata?.isbn;
+        if (isbn) {
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'google_books' && data.metadata?.isbn === isbn;
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing book:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      } else if (universalItem.source === 'tmdb') {
+        // Dedupe by TMDB ID
+        const tmdbId = universalItem.id || universalItem.metadata?.tmdbId;
+        if (tmdbId) {
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'tmdb' && 
+                   (data.id === tmdbId || data.metadata?.tmdbId === tmdbId);
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing movie/TV show:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      }
+      
+      // If no existing thing found, create new API thing
+      const thingData: Omit<Thing, 'id'> = {
+        title: universalItem.title,
+        category: universalItem.category,
+        description: universalItem.description,
+        image: universalItem.image,
+        metadata: universalItem.metadata,
+        source: universalItem.source,
+        createdAt: Timestamp.now(),
+        createdBy,
+      };
+      
+      // Clean undefined values before writing to Firestore
+      const cleanedThingData = cleanObject(thingData);
+      const docRef = await addDoc(collection(db, 'things'), cleanedThingData);
+      console.log('✅ Created new API thing:', docRef.id, 'for', universalItem.title, `(${universalItem.source})`);
+      return docRef.id;
+    }
+
+    // For manual items, check for exact duplicates by title + category
+    const thingsQuery = query(
+      collection(db, 'things'),
+      where('title', '==', universalItem.title),
+      where('category', '==', universalItem.category),
+      where('source', '==', 'manual')
+    );
+    
+    const existingThings = await getDocs(thingsQuery);
+    
+    if (!existingThings.empty) {
+      const existingThing = existingThings.docs[0];
+      console.log('♻️ Using existing manual thing:', existingThing.id, 'for', universalItem.title);
+      return existingThing.id;
+    }
+    
+    // Create new manual thing
+    const thingData: Omit<Thing, 'id'> = {
+      title: universalItem.title,
+      category: universalItem.category,
+      description: universalItem.description,
+      image: universalItem.image,
+      metadata: universalItem.metadata,
+      source: universalItem.source,
+      createdAt: Timestamp.now(),
+      createdBy,
+    };
+    
+    // Clean undefined values before writing to Firestore
+    const cleanedThingData = cleanObject(thingData);
+    const docRef = await addDoc(collection(db, 'things'), cleanedThingData);
+    console.log('✅ Created new manual thing:', docRef.id, 'for', universalItem.title);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating/getting thing:', error);
+    throw error;
+  }
+};
+
+export const getThing = async (thingId: string): Promise<Thing | null> => {
+  try {
+    const docRef = doc(db, 'things', thingId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      return null;
+    }
+    
+    return { id: docSnap.id, ...docSnap.data() } as Thing;
+  } catch (error) {
+    console.error('Error getting thing:', error);
+    return null;
+  }
+};
+
+// USER THING INTERACTIONS COLLECTION FUNCTIONS
+
+export const createUserThingInteraction = async (
+  userId: string,
+  userName: string,
+  thingId: string,
+  state: UserThingInteractionState,
+  visibility: 'private' | 'friends' | 'public' = 'friends',
+  options?: {
+    rating?: number;
+    notes?: string;
+    content?: string;      // Public comments (for feed display)
+    photos?: string[];     // Photos (for feed display)
+  }
+): Promise<string> => {
+  try {
+    // Check if user already has an interaction with this thing
+    const existingQuery = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      where('thingId', '==', thingId)
+    );
+    
+    const existingInteractions = await getDocs(existingQuery);
+    
+    if (!existingInteractions.empty) {
+      // Update existing interaction
+      const existingDoc = existingInteractions.docs[0];
+      const updateData: Partial<UserThingInteraction> = {
+        state,
+        date: Timestamp.now(),
+        visibility,
+        updatedAt: Timestamp.now(),
+      };
+      
+      // Add optional fields if provided
+      if (options?.rating !== undefined) updateData.rating = options.rating;
+      if (options?.notes !== undefined) updateData.notes = options.notes;
+      if (options?.content !== undefined) updateData.content = options.content;
+      if (options?.photos !== undefined) updateData.photos = options.photos;
+      
+      await updateDoc(doc(db, 'user_thing_interactions', existingDoc.id), updateData);
+      console.log('🔄 Updated existing interaction:', existingDoc.id);
+      return existingDoc.id;
+    }
+    
+    // Create new interaction
+    const interactionData: Omit<UserThingInteraction, 'id'> = {
+      userId,
+      userName,
+      thingId,
+      state,
+      date: Timestamp.now(),
+      visibility,
+      rating: options?.rating,
+      notes: options?.notes,
+      content: options?.content,
+      photos: options?.photos,
+      likedBy: [],
+      commentCount: 0,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+    
+    // Clean undefined values
+    const cleanedData = cleanObject(interactionData);
+    const docRef = await addDoc(collection(db, 'user_thing_interactions'), cleanedData);
+    console.log('✅ Created new interaction:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating user thing interaction:', error);
+    throw error;
+  }
+};
+
+export const getUserThingInteractions = async (userId: string): Promise<UserThingInteraction[]> => {
+  try {
+    const q = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const interactions: UserThingInteraction[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      interactions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
+    });
+    
+    return interactions;
+  } catch (error) {
+    console.error('Error getting user thing interactions:', error);
+    return [];
+  }
+};
+
+export const getUserThingInteraction = async (
+  userId: string,
+  thingId: string
+): Promise<UserThingInteraction | null> => {
+  try {
+    const q = query(
+      collection(db, 'user_thing_interactions'),
+      where('userId', '==', userId),
+      where('thingId', '==', thingId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as UserThingInteraction;
+  } catch (error) {
+    console.error('Error getting user thing interaction:', error);
+    return null;
+  }
+};
+
+export const deleteUserThingInteraction = async (interactionId: string): Promise<void> => {
+  try {
+    // Delete the interaction
+    await deleteDoc(doc(db, 'user_thing_interactions', interactionId));
+    console.log('✅ Deleted user thing interaction:', interactionId);
+    
+    // Also delete all comments for this interaction
+    const commentsQuery = query(
+      collection(db, 'comments'),
+      where('interactionId', '==', interactionId)
+    );
+    const commentsSnapshot = await getDocs(commentsQuery);
+    
+    const batch = writeBatch(db);
+    commentsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    
+    console.log(`🗑️ Deleted ${commentsSnapshot.size} comments for interaction ${interactionId}`);
+  } catch (error) {
+    console.error('Error deleting user thing interaction:', error);
+    throw error;
+  }
+};
+
+// Like/unlike interactions (for feed engagement)
+export const likeInteraction = async (interactionId: string, userId: string): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      likedBy: arrayUnion(userId),
+    });
+    console.log('❤️ Liked interaction:', interactionId);
+  } catch (error) {
+    console.error('Error liking interaction:', error);
+    throw error;
+  }
+};
+
+export const unlikeInteraction = async (interactionId: string, userId: string): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      likedBy: arrayRemove(userId),
+    });
+    console.log('💔 Unliked interaction:', interactionId);
+  } catch (error) {
+    console.error('Error unliking interaction:', error);
+    throw error;
+  }
+};
+
+// Update interaction content/photos (for editing)
+export const updateInteractionContent = async (
+  interactionId: string,
+  updates: {
+    content?: string;
+    rating?: number;
+    photos?: string[];
+  }
+): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    
+    const updateData: Partial<UserThingInteraction> = {
+      updatedAt: Timestamp.now(),
+    };
+    
+    if (updates.content !== undefined) updateData.content = updates.content;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.photos !== undefined) updateData.photos = updates.photos;
+    
+    await updateDoc(interactionRef, updateData);
+    console.log('✏️ Updated interaction content:', interactionId);
+  } catch (error) {
+    console.error('Error updating interaction content:', error);
+    throw error;
+  }
+};
+
+// RECOMMENDATIONS COLLECTION FUNCTIONS
+
+export const createRecommendation = async (
+  fromUserId: string,
+  toUserId: string,
+  thingId: string,
+  message?: string
+): Promise<string> => {
+  try {
+    const recommendationData: Omit<Recommendation, 'id'> = {
+      fromUserId,
+      toUserId,
+      thingId,
+      date: Timestamp.now(),
+      message,
+    };
+    
+    const docRef = await addDoc(collection(db, 'recommendations'), recommendationData);
+    console.log('✅ Created recommendation:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating recommendation:', error);
+    throw error;
+  }
+};
+
+export const getRecommendationsReceived = async (userId: string): Promise<Recommendation[]> => {
+  try {
+    const q = query(
+      collection(db, 'recommendations'),
+      where('toUserId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const recommendations: Recommendation[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      recommendations.push({ id: doc.id, ...doc.data() } as Recommendation);
+    });
+    
+    return recommendations;
+  } catch (error) {
+    console.error('Error getting recommendations received:', error);
+    return [];
+  }
+};
+
+export const getRecommendationsGiven = async (userId: string): Promise<Recommendation[]> => {
+  try {
+    const q = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', userId),
+      orderBy('date', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const recommendations: Recommendation[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      recommendations.push({ id: doc.id, ...doc.data() } as Recommendation);
+    });
+    
+    return recommendations;
+  } catch (error) {
+    console.error('Error getting recommendations given:', error);
+    return [];
+  }
+};
+
+// POSTS V2 COLLECTION FUNCTIONS
+
+export const createPostV2 = async (
+  authorId: string,
+  authorName: string,
+  thingId: string,
+  content: string,
+  enhancedFields?: {
+    rating?: number;
+    photos?: string[];
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+  }
+): Promise<string> => {
+  try {
+    const postData: Omit<PostV2, 'id'> = {
+      authorId,
+      authorName,
+      thingId,
+      content,
+      rating: enhancedFields?.rating,
+      photos: enhancedFields?.photos,
+      location: enhancedFields?.location,
+      priceRange: enhancedFields?.priceRange,
+      customPrice: enhancedFields?.customPrice,
+      tags: enhancedFields?.tags,
+      experienceDate: enhancedFields?.experienceDate ? Timestamp.fromDate(enhancedFields.experienceDate) : undefined,
+      taggedUsers: enhancedFields?.taggedUsers,
+      taggedNonUsers: enhancedFields?.taggedNonUsers,
+      createdAt: Timestamp.now(),
+      likedBy: [],
+    };
+    
+    // Clean undefined values before writing to Firestore
+    const cleanedPostData = cleanObject(postData);
+    const docRef = await addDoc(collection(db, 'posts_v2'), cleanedPostData);
+    console.log('✅ Created post v2:', docRef.id);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating post v2:', error);
+    throw error;
+  }
+};
+
+export const getPostsV2 = async (limitCount: number = 50): Promise<PostV2[]> => {
+  try {
+    const q = query(
+      collection(db, 'posts_v2'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const posts: PostV2[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    return posts;
+  } catch (error) {
+    console.error('Error getting posts v2:', error);
+    return [];
+  }
+};
+
+export const likePostV2 = async (postId: string, userId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      likedBy: arrayUnion(userId),
+    });
+    console.log('👍 Liked post v2:', postId);
+  } catch (error) {
+    console.error('Error liking post v2:', error);
+    throw error;
+  }
+};
+
+export const unlikePostV2 = async (postId: string, userId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      likedBy: arrayRemove(userId),
+    });
+    console.log('👎 Unliked post v2:', postId);
+  } catch (error) {
+    console.error('Error unliking post v2:', error);
+    throw error;
+  }
+};
+
+export const updatePostV2 = async (
+  postId: string,
+  updates: {
+    content?: string;
+    rating?: number;
+    photos?: string[];
+  }
+): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    
+    // Build update object with only defined values
+    const updateData: {
+      content?: string;
+      rating?: number;
+      photos?: string[];
+    } = {};
+    
+    if (updates.content !== undefined) updateData.content = updates.content;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.photos !== undefined) updateData.photos = updates.photos;
+    
+    await updateDoc(postRef, updateData);
+    console.log('✏️ Updated post v2:', postId);
+  } catch (error) {
+    console.error('Error updating post v2:', error);
+    throw error;
+  }
+};
+
+export const deletePostV2 = async (postId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await deleteDoc(postRef);
+    console.log('🗑️ Deleted post v2:', postId);
+    
+    // Also delete all comments for this post
+    const commentsQuery = query(
+      collection(db, 'comments'),
+      where('postId', '==', postId)
+    );
+    const commentsSnapshot = await getDocs(commentsQuery);
+    
+    const batch = writeBatch(db);
+    commentsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    
+    console.log(`🗑️ Deleted ${commentsSnapshot.size} comments for post ${postId}`);
+  } catch (error) {
+    console.error('Error deleting post v2:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// FEED AND DATA LOADING FUNCTIONS (NEW SYSTEM)
+// ============================================================================
+
+// Get feed posts using new system (posts_v2 with things data)
+// Get feed interactions (replaces getFeedPostsV2)
+export const getFeedInteractions = async (following: string[], currentUserId: string): Promise<UserThingInteraction[]> => {
+  try {
+    console.log('📱 Loading feed interactions...');
+    console.log('👥 Following:', following.length, 'users');
+    console.log('👤 Current user:', currentUserId);
+    
+    // Include current user's interactions in the feed
+    const allUserIds = [...new Set([...following, currentUserId])];
+    console.log('📊 Total user IDs to query:', allUserIds.length);
+    
+    if (allUserIds.length === 0) {
+      console.log('⚠️ No user IDs to query');
+      return [];
+    }
+    
+    const feedInteractions: UserThingInteraction[] = [];
+    
+    try {
+      // Get public/friends interactions from followed users + current user
+      const interactionsQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('userId', 'in', allUserIds),
+        where('visibility', 'in', ['public', 'friends']),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      console.log('🔍 Querying user_thing_interactions collection...');
+      const snapshot = await getDocs(interactionsQuery);
+      console.log('📦 Query returned', snapshot.size, 'documents');
+      
+      snapshot.forEach((doc) => {
+        feedInteractions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
+      });
+    } catch (queryError) {
+      console.error('❌ Error with filtered query:', queryError);
+      console.log('🔄 Falling back to all public interactions...');
+      
+      // Fallback: get all public interactions
+      const allPublicQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('visibility', 'in', ['public', 'friends']),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      const allSnapshot = await getDocs(allPublicQuery);
+      allSnapshot.forEach((doc) => {
+        const interaction = { id: doc.id, ...doc.data() } as UserThingInteraction;
+        // Filter client-side
+        if (allUserIds.includes(interaction.userId)) {
+          feedInteractions.push(interaction);
+        }
+      });
+    }
+    
+    // If no interactions from following, get recent public interactions
+    if (feedInteractions.length === 0) {
+      console.log('📭 No interactions from followed users, loading all recent public...');
+      const allPublicQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('visibility', '==', 'public'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+      
+      const allSnapshot = await getDocs(allPublicQuery);
+      console.log('📦 All public query returned', allSnapshot.size, 'documents');
+      allSnapshot.forEach((doc) => {
+        feedInteractions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
+      });
+    }
+    
+    console.log(`✅ Loaded ${feedInteractions.length} feed interactions`);
+    return feedInteractions;
+  } catch (error) {
+    console.error('❌ Error loading feed interactions:', error);
+    return [];
+  }
+};
+
+// LEGACY: Keep for backwards compatibility during migration
+export const getFeedPostsV2 = async (following: string[], currentUserId: string): Promise<PostV2[]> => {
+  try {
+    console.log('⚠️ getFeedPostsV2 is deprecated, use getFeedInteractions instead');
+    const allUserIds = [...new Set([...following, currentUserId])];
+    
+    const followingPostsQuery = query(
+      collection(db, 'posts_v2'),
+      where('authorId', 'in', allUserIds),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    
+    const snapshot = await getDocs(followingPostsQuery);
+    const posts: PostV2[] = [];
+    snapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    return posts;
+  } catch (error) {
+    console.error('Error loading feed posts v2:', error);
+    return [];
+  }
+};
+
+// Get user's thing interactions
+export const getUserThingInteractionsWithThings = async (userId: string): Promise<{
+  interactions: UserThingInteraction[];
+  things: Thing[];
+}> => {
+  try {
+    console.log('📋 Loading user interactions with things...');
+    
+    // Get user interactions
+    const interactions = await getUserThingInteractions(userId);
+    
+    // Get unique thing IDs
+    const thingIds = [...new Set(interactions.map(i => i.thingId))];
+    
+    // Get things data
+    const things: Thing[] = [];
+    for (const thingId of thingIds) {
+      const thing = await getThing(thingId);
+      if (thing) {
+        things.push(thing);
+      }
+    }
+    
+    console.log(`✅ Loaded ${interactions.length} interactions and ${things.length} things`);
+    return { interactions, things };
+  } catch (error) {
+    console.error('Error loading user interactions with things:', error);
+    return { interactions: [], things: [] };
+  }
+};
+
+// Get user's posts using new system
+export const getUserPostsV2 = async (userId: string): Promise<PostV2[]> => {
+  try {
+    console.log('📝 Loading user posts with new system...');
+    
+    const q = query(
+      collection(db, 'posts_v2'),
+      where('authorId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const posts: PostV2[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    console.log(`✅ Loaded ${posts.length} user posts with new system`);
+    return posts;
+  } catch (error) {
+    console.error('Error loading user posts v2:', error);
+    return [];
+  }
+};
+
+// Get average rating for a thing across all users
+export const getThingAverageRating = async (thingId: string): Promise<number | null> => {
+  try {
+    const interactionsQuery = query(
+      collection(db, 'user_thing_interactions'),
+      where('thingId', '==', thingId),
+      where('rating', '>', 0)
+    );
+    
+    const snapshot = await getDocs(interactionsQuery);
+    
+    if (snapshot.empty) return null;
+    
+    const ratings = snapshot.docs
+      .map(doc => doc.data().rating)
+      .filter((rating): rating is number => rating !== undefined && rating > 0);
+    
+    if (ratings.length === 0) return null;
+    
+    const sum = ratings.reduce((acc, rating) => acc + rating, 0);
+    const average = sum / ratings.length;
+    
+    return Math.round(average * 10) / 10; // Round to 1 decimal
+  } catch (error) {
+    console.error('Error calculating average rating:', error);
+    return null;
+  }
+};
+
+// Get recommendations received by user
+export const getRecommendationsWithThings = async (userId: string): Promise<{
+  recommendations: Recommendation[];
+  things: Thing[];
+}> => {
+  try {
+    console.log('🎯 Loading recommendations with things...');
+    
+    // Get recommendations
+    const recommendations = await getRecommendationsReceived(userId);
+    
+    // Get unique thing IDs
+    const thingIds = [...new Set(recommendations.map(r => r.thingId))];
+    
+    // Get things data
+    const things: Thing[] = [];
+    for (const thingId of thingIds) {
+      const thing = await getThing(thingId);
+      if (thing) {
+        things.push(thing);
+      }
+    }
+    
+    console.log(`✅ Loaded ${recommendations.length} recommendations and ${things.length} things`);
+    return { recommendations, things };
+  } catch (error) {
+    console.error('Error loading recommendations with things:', error);
+    return { recommendations: [], things: [] };
+  }
+};
+
+// ============================================================================
+// DUAL SYSTEM POST CREATION (NEW + OLD)
+// ============================================================================
+
+export const createPostWithNewSystem = async (
+  authorId: string,
+  authorName: string,
+  category: Category,
+  title: string,
+  description?: string,
+  status: 'want_to_try' | 'completed' = 'want_to_try',
+  postToFeed: boolean = true,
+  enhancedFields?: {
+    rating?: number;
+    location?: string;
+    priceRange?: '$' | '$$' | '$$$' | '$$$$';
+    customPrice?: number;
+    tags?: string[];
+    experienceDate?: Date;
+    taggedUsers?: string[];
+    taggedNonUsers?: { name: string; email?: string }[];
+    recommendedBy?: string;
+    recommendedByUserId?: string;
+  }
+): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId?: string;
+  recommendationId?: string;
+}> => {
+  try {
+    console.log('🚀 Creating post with new system for:', title);
+    
+    // 1. Create UniversalItem from the data
+    const universalItem: UniversalItem = {
+      id: '', // Will be set by createOrGetThing
+      title,
+      category,
+      description,
+      image: undefined,
+      metadata: {
+        // For manual items, we don't have rich metadata
+        // This could be enhanced later with location, tags, etc.
+        ...(enhancedFields?.location && { address: enhancedFields.location }),
+        ...(enhancedFields?.tags && { tags: enhancedFields.tags }),
+      },
+      source: 'manual',
+    };
+    
+    // 2. Create or get the thing
+    const thingId = await createOrGetThing(universalItem, authorId);
+    console.log('✅ Thing created/found:', thingId);
+    
+    // 3. Create user interaction
+    const interactionState: UserThingInteractionState = status === 'completed' ? 'completed' : 'bucketList';
+    const visibility = postToFeed ? 'public' : 'private';
+    const interactionId = await createUserThingInteraction(
+      authorId,
+      authorName,
+      thingId,
+      interactionState,
+      visibility
+    );
+    console.log('✅ User interaction created:', interactionId);
+    
+    let postId: string | undefined;
+    let recommendationId: string | undefined;
+    
+    // 4. If posting to feed, create post
+    if (postToFeed) {
+      postId = await createPostV2(
+        authorId,
+        authorName,
+        thingId,
+        description || '',
+        {
+          rating: enhancedFields?.rating,
+          location: enhancedFields?.location,
+          priceRange: enhancedFields?.priceRange,
+          customPrice: enhancedFields?.customPrice,
+          tags: enhancedFields?.tags,
+          experienceDate: enhancedFields?.experienceDate,
+          taggedUsers: enhancedFields?.taggedUsers,
+          taggedNonUsers: enhancedFields?.taggedNonUsers,
+        }
+      );
+      console.log('✅ Post created:', postId);
+    }
+    
+    // 5. If there's a recommendation, create recommendation record
+    if (enhancedFields?.recommendedByUserId && enhancedFields?.recommendedByUserId !== authorId) {
+      recommendationId = await createRecommendation(
+        enhancedFields.recommendedByUserId,
+        authorId,
+        thingId,
+        enhancedFields.recommendedBy ? `Recommended: ${enhancedFields.recommendedBy}` : undefined
+      );
+      console.log('✅ Recommendation created:', recommendationId);
+    }
+    
+    return {
+      thingId,
+      interactionId,
+      postId,
+      recommendationId,
+    };
+  } catch (error) {
+    console.error('❌ Error creating post with new system:', error);
+    throw error;
+  }
+};
+
+// Helper function to convert old Post to new system data
+export const migratePostToNewSystem = async (post: Post): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId: string;
+}> => {
+  try {
+    console.log('🔄 Migrating post to new system:', post.title);
+    
+    // Create UniversalItem from old post
+    const universalItem: UniversalItem = {
+      id: '',
+      title: post.title,
+      category: post.category,
+      description: post.description,
+      image: post.universalItem?.image,
+      metadata: post.universalItem?.metadata || {},
+      source: post.universalItem?.source || 'manual',
+    };
+    
+    // Create thing
+    const thingId = await createOrGetThing(universalItem, post.authorId);
+    
+    // Create user interaction (assume bucketList since it was posted)
+    const interactionId = await createUserThingInteraction(
+      post.authorId,
+      post.authorName,
+      thingId,
+      'bucketList',
+      'friends' // Keep as friends for old posts
+    );
+    
+    // Create new post
+    const postId = await createPostV2(
+      post.authorId,
+      post.authorName,
+      thingId,
+      post.description,
+      {
+        rating: post.rating,
+        location: post.location,
+        priceRange: post.priceRange,
+        customPrice: post.customPrice,
+        tags: post.tags,
+        experienceDate: post.experienceDate?.toDate(),
+        taggedUsers: post.taggedUsers,
+        taggedNonUsers: post.taggedNonUsers,
+      }
+    );
+    
+    console.log('✅ Post migrated successfully');
+    return { thingId, interactionId, postId };
+  } catch (error) {
+    console.error('❌ Error migrating post:', error);
+    throw error;
+  }
+};
+
+// Helper function to convert PersonalItem to new system data
+export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem): Promise<{
+  thingId: string;
+  interactionId: string;
+  postId?: string;
+}> => {
+  try {
+    console.log('🔄 Migrating personal item to new system:', personalItem.title);
+    
+    // Create UniversalItem from personal item
+    const universalItem: UniversalItem = {
+      id: '',
+      title: personalItem.title,
+      category: personalItem.category,
+      description: personalItem.description,
+      image: undefined,
+      metadata: {},
+      source: 'manual',
+    };
+    
+    // Create thing
+    const thingId = await createOrGetThing(universalItem, personalItem.userId);
+    
+    // Map old status to new interaction state
+    const interactionState: UserThingInteractionState = 
+      personalItem.status === 'completed' ? 'completed' : 'bucketList';
+    
+    // Create user interaction
+    // For old personal items, we don't have userName, so use empty string  
+    const interactionId = await createUserThingInteraction(
+      personalItem.userId,
+      '', // No userName in old PersonalItem
+      thingId,
+      interactionState,
+      'private' // Old personal items were private
+    );
+    
+    let postId: string | undefined;
+    
+    // If it was shared, create a post
+    if (personalItem.status === 'shared' && personalItem.sharedPostId) {
+      // Try to get the original post data
+      const originalPost = await getPost(personalItem.sharedPostId);
+      if (originalPost) {
+        postId = await createPostV2(
+          personalItem.userId,
+          originalPost.authorName,
+          thingId,
+          personalItem.description,
+          {
+            rating: personalItem.rating,
+            location: personalItem.location,
+            priceRange: personalItem.priceRange,
+            customPrice: personalItem.customPrice,
+            tags: personalItem.tags,
+            experienceDate: personalItem.experienceDate?.toDate(),
+            taggedUsers: personalItem.taggedUsers,
+            taggedNonUsers: personalItem.taggedNonUsers,
+          }
+        );
+      }
+    }
+    
+    console.log('✅ Personal item migrated successfully');
+    return { thingId, interactionId, postId };
+  } catch (error) {
+    console.error('❌ Error migrating personal item:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// COMMENTS COLLECTION FUNCTIONS
+// ============================================================================
+
+export const createComment = async (
+  interactionId: string,
+  authorId: string,
+  authorName: string,
+  content: string
+): Promise<string> => {
+  try {
+    const commentData: Omit<Comment, 'id'> = {
+      interactionId,
+      authorId,
+      authorName,
+      content,
+      createdAt: Timestamp.now(),
+      likedBy: [],
+    };
+    
+    const docRef = await addDoc(collection(db, 'comments'), commentData);
+    console.log('✅ Created comment:', docRef.id);
+    
+    // Increment comment count on the interaction
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      commentCount: increment(1)
+    });
+    
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating comment:', error);
+    throw error;
+  }
+};
+
+export const getCommentsForInteraction = async (interactionId: string): Promise<Comment[]> => {
+  try {
+    const q = query(
+      collection(db, 'comments'),
+      where('interactionId', '==', interactionId),
+      orderBy('createdAt', 'asc') // Oldest first for natural conversation flow
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const comments: Comment[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      comments.push({ id: doc.id, ...doc.data() } as Comment);
+    });
+    
+    console.log(`✅ Loaded ${comments.length} comments for interaction ${interactionId}`);
+    return comments;
+  } catch (error) {
+    console.error('Error getting comments:', error);
+    return [];
+  }
+};
+
+// LEGACY: Keep for backwards compatibility
+export const getCommentsForPost = async (postId: string): Promise<Comment[]> => {
+  console.log('⚠️ getCommentsForPost is deprecated, use getCommentsForInteraction instead');
+  return getCommentsForInteraction(postId);
+};
+
+export const deleteComment = async (commentId: string, interactionId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'comments', commentId));
+    
+    // Decrement comment count on the interaction
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      commentCount: increment(-1)
+    });
+    
+    console.log('✅ Deleted comment:', commentId);
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    throw error;
+  }
+};
+
+export const likeComment = async (commentId: string, userId: string): Promise<void> => {
+  try {
+    const commentRef = doc(db, 'comments', commentId);
+    await updateDoc(commentRef, {
+      likedBy: arrayUnion(userId)
+    });
+  } catch (error) {
+    console.error('Error liking comment:', error);
+    throw error;
+  }
+};
+
+export const unlikeComment = async (commentId: string, userId: string): Promise<void> => {
+  try {
+    const commentRef = doc(db, 'comments', commentId);
+    await updateDoc(commentRef, {
+      likedBy: arrayRemove(userId)
+    });
+  } catch (error) {
+    console.error('Error unliking comment:', error);
+    throw error;
+  }
+};
+
+// ===== MIGRATION HELPERS =====
+
+/**
+ * Cleanup: Remove duplicate user_thing_interactions
+ * Keeps the most recent one for each user+thing combination
+ */
+export const cleanupDuplicateInteractions = async (userId: string): Promise<void> => {
+  try {
+    console.log('🔄 Starting duplicate cleanup for user:', userId);
+    
+    // Get all interactions for this user
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(interactionsRef, where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    
+    // Group by thingId
+    type InteractionDoc = { id: string; data: Record<string, unknown> };
+    const thingMap = new Map<string, InteractionDoc[]>();
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const thingId = data.thingId as string;
+      if (!thingMap.has(thingId)) {
+        thingMap.set(thingId, []);
+      }
+      thingMap.get(thingId)!.push({ id: doc.id, data });
+    });
+    
+    // Find and delete duplicates (keep most recent)
+    let deletedCount = 0;
+    for (const [thingId, interactions] of thingMap.entries()) {
+      if (interactions.length > 1) {
+        console.log(`⚠️ Found ${interactions.length} interactions for thing: ${thingId}`);
+        
+        // Sort by createdAt (most recent first)
+        interactions.sort((a, b) => {
+          const aCreatedAt = a.data.createdAt as { seconds: number } | undefined;
+          const bCreatedAt = b.data.createdAt as { seconds: number } | undefined;
+          const aTime = aCreatedAt?.seconds || 0;
+          const bTime = bCreatedAt?.seconds || 0;
+          return bTime - aTime;
+        });
+        
+        // Keep first (most recent), delete rest
+        for (let i = 1; i < interactions.length; i++) {
+          await deleteDoc(doc(db, 'user_thing_interactions', interactions[i].id));
+          console.log(`🗑️ Deleted duplicate: ${interactions[i].id}`);
+          deletedCount++;
+        }
+      }
+    }
+    
+    console.log(`✅ Cleanup complete! Deleted ${deletedCount} duplicate(s)`);
+    if (deletedCount > 0) {
+      alert(`Removed ${deletedCount} duplicate interaction(s). Refresh the page.`);
+    } else {
+      alert('No duplicates found!');
+    }
+  } catch (error) {
+    console.error('❌ Cleanup failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Migration: Add userName to existing user_thing_interactions
+ * Run this once to populate missing userName fields
+ */
+export const migrateAddUserNameToInteractions = async (): Promise<void> => {
+  try {
+    console.log('🔄 Starting migration: Adding userName to interactions...');
+    
+    // Get all interactions
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const snapshot = await getDocs(interactionsRef);
+    
+    console.log(`📊 Found ${snapshot.size} interactions to check`);
+    
+    let updated = 0;
+    let skipped = 0;
+    
+    // Get all users for lookup
+    const usersRef = collection(db, 'users');
+    const usersSnapshot = await getDocs(usersRef);
+    const usersMap = new Map<string, string>();
+    usersSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      usersMap.set(doc.id, data.name || 'User');
+    });
+    
+    // Update each interaction that's missing userName
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      
+      if (!data.userName) {
+        const userName = usersMap.get(data.userId) || 'User';
+        await updateDoc(doc(db, 'user_thing_interactions', docSnap.id), {
+          userName
+        });
+        updated++;
+        console.log(`✅ Updated ${docSnap.id} with userName: ${userName}`);
+      } else {
+        skipped++;
+      }
+    }
+    
+    console.log(`✅ Migration complete! Updated: ${updated}, Skipped: ${skipped}`);
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    throw error;
   }
 }; 

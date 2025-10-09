@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuthStore, useAppStore } from '@/lib/store';
-import { getPersonalItems, getUserRecsGivenCount } from '@/lib/firestore';
+import { useAuthStore } from '@/lib/store';
+import { getUserThingInteractionsWithThings, getUserRecsGivenCount } from '@/lib/firestore';
+import { UserThingInteraction, Thing, Category, CATEGORIES } from '@/lib/types';
 import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
-import PersonalItemCard from './PersonalItemCard';
-import PersonalItemDetailModal from './PersonalItemDetailModal';
+import ThingInteractionCard from './ThingInteractionCard';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
 import EditProfileModal from './EditProfileModal';
@@ -14,31 +14,35 @@ interface ProfileScreenProps {
   onShowFollowingList: () => void;
   onUserClick?: (userId: string) => void;
   onSettingsClick: () => void;
+  onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
-export default function ProfileScreen({ onShowFollowingList, onUserClick, onSettingsClick }: ProfileScreenProps) {
+export default function ProfileScreen({ onShowFollowingList, onSettingsClick, onEditInteraction }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
+  
+  // NEW: State and Category filters
+  const [selectedState, setSelectedState] = useState<'all' | 'bucketList' | 'inProgress' | 'completed'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   
   const { user, userProfile } = useAuthStore();
   const { isInstalled, isLoading } = usePWAInstallStatus();
-  const { personalItems, setPersonalItems } = useAppStore();
 
-
-
-  const loadPersonalItems = useCallback(async () => {
+  const loadUserActivity = useCallback(async () => {
     if (!user) return;
     
     try {
-      const items = await getPersonalItems(user.uid);
-      setPersonalItems(items);
+      const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(user.uid);
+      setUserInteractions(interactions);
+      setThings(thingsData);
     } catch (error) {
-      console.error('Error loading personal items:', error);
+      console.error('Error loading user activity:', error);
     }
-  }, [user, setPersonalItems]);
+  }, [user]);
 
   const loadRecsGivenCount = useCallback(async () => {
     if (!user) return;
@@ -52,30 +56,62 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
   }, [user]);
 
   useEffect(() => {
-    loadPersonalItems();
+    loadUserActivity();
     loadRecsGivenCount();
-  }, [loadPersonalItems, loadRecsGivenCount]);
+  }, [loadUserActivity, loadRecsGivenCount]);
 
 
 
 
 
-  const filteredPersonalItems = personalItems.filter(item => {
-    // Show both completed and shared items in Profile (want_to_try items are in Bucket List tab)
-    const isCompletedOrShared = item.status === 'completed' || item.status === 'shared';
+  // Filter interactions by state, category, and search
+  const filteredInteractions = userInteractions.filter(interaction => {
+    // State filter
+    if (selectedState !== 'all' && interaction.state !== selectedState) {
+      return false;
+    }
     
-    // Apply search filter if search term exists
+    const thing = things.find(t => t.id === interaction.thingId);
+    if (!thing) return false;
+    
+    // Category filter
+    if (selectedCategory !== 'all' && thing.category !== selectedCategory) {
+      return false;
+    }
+    
+    // Search filter
     if (activitySearchTerm.trim()) {
       const searchLower = activitySearchTerm.toLowerCase();
       const matchesSearch = 
-        item.title.toLowerCase().includes(searchLower) ||
-        item.description.toLowerCase().includes(searchLower) ||
-        (item.recommendedBy && item.recommendedBy.toLowerCase().includes(searchLower));
-      return isCompletedOrShared && matchesSearch;
+        thing.title.toLowerCase().includes(searchLower) ||
+        (thing.description && thing.description.toLowerCase().includes(searchLower));
+      return matchesSearch;
     }
     
-    return isCompletedOrShared;
+    return true;
   });
+  
+  // Helper to get count for each state
+  const getStateCount = (state: 'all' | 'bucketList' | 'inProgress' | 'completed') => {
+    if (state === 'all') return userInteractions.length;
+    return userInteractions.filter(i => i.state === state).length;
+  };
+  
+  // Helper to get count for each category within current state filter
+  const getCategoryCount = (category: Category | 'all') => {
+    const stateFiltered = selectedState === 'all' 
+      ? userInteractions 
+      : userInteractions.filter(i => i.state === selectedState);
+    
+    if (category === 'all') return stateFiltered.length;
+    
+    return stateFiltered.filter(interaction => {
+      const thing = things.find(t => t.id === interaction.thingId);
+      return thing?.category === category;
+    }).length;
+  };
+  
+  const completedCount = userInteractions.filter(i => i.state === 'completed').length;
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -124,7 +160,7 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
             </div>
             <div className="text-center">
               <div className="text-xl font-bold text-gray-900">
-                {personalItems.filter(item => item.status === 'completed' || item.status === 'shared').length || 0}
+                {completedCount || 0}
               </div>
               <div className="text-sm text-gray-500">Completed</div>
             </div>
@@ -166,10 +202,65 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
           </div>
         )}
 
-        {/* Completed Activities Section */}
+        {/* Activities Section */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Completed Activities</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Activities</h3>
+          </div>
+          
+          {/* State Filter Tabs */}
+          <div className="mb-4 flex space-x-2 overflow-x-auto pb-2">
+            {[
+              { id: 'all', label: 'All', icon: '📋' },
+              { id: 'bucketList', label: 'To Do', icon: '📝' },
+              { id: 'inProgress', label: 'In Progress', icon: '▶️' },
+              { id: 'completed', label: 'Completed', icon: '✅' },
+            ].map((state) => {
+              const count = getStateCount(state.id as 'all' | 'bucketList' | 'inProgress' | 'completed');
+              return (
+                <button
+                  key={state.id}
+                  onClick={() => setSelectedState(state.id as 'all' | 'bucketList' | 'inProgress' | 'completed')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    selectedState === state.id
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {state.icon} {state.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Category Filter Pills */}
+          <div className="mb-4 flex space-x-2 overflow-x-auto pb-2">
+            <button
+              onClick={() => setSelectedCategory('all')}
+              className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                selectedCategory === 'all'
+                  ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All ({getCategoryCount('all')})
+            </button>
+            {CATEGORIES.map((category) => {
+              const count = getCategoryCount(category.id);
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => setSelectedCategory(category.id)}
+                  className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
+                    selectedCategory === category.id
+                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {category.emoji} {category.name} ({count})
+                </button>
+              );
+            })}
           </div>
           
           {/* Activity Search */}
@@ -187,7 +278,7 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
           </div>
 
           {/* Activity Items List */}
-          {filteredPersonalItems.length === 0 ? (
+          {filteredInteractions.length === 0 ? (
             <div className="text-center py-8">
               <ListBulletIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
               {activitySearchTerm.trim() ? (
@@ -212,14 +303,19 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredPersonalItems.map((item) => (
-                <PersonalItemCard 
-                  key={item.id} 
-                  item={item} 
-                  onUserClick={onUserClick}
-                  onItemClick={(itemId) => setSelectedItemId(itemId)}
-                />
-              ))}
+              {filteredInteractions.map((interaction) => {
+                const thing = things.find(t => t.id === interaction.thingId);
+                if (!thing) return null;
+                
+                return (
+                  <ThingInteractionCard
+                    key={interaction.id}
+                    thing={thing}
+                    interaction={interaction}
+                    onEdit={onEditInteraction}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -240,15 +336,6 @@ export default function ProfileScreen({ onShowFollowingList, onUserClick, onSett
         onClose={() => setShowEditProfile(false)}
       />
 
-      {/* Personal Item Detail Modal */}
-      {selectedItemId && (
-        <PersonalItemDetailModal
-          item={personalItems.find(item => item.id === selectedItemId)!}
-          isOpen={true}
-          onClose={() => setSelectedItemId(null)}
-          onUserClick={onUserClick}
-        />
-      )}
     </div>
   );
 } 

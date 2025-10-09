@@ -7,14 +7,15 @@ import AuthForm from './AuthForm';
 import Navigation from './Navigation';
 import FeedScreen from './FeedScreen';
 import PostScreen from './PostScreen';
-import SavedScreen from './SavedScreen';
 import ProfileScreen from './ProfileScreen';
 import FollowingListScreen from './FollowingListScreen';
 import PublicProfileScreen from './PublicProfileScreen';
 import NotificationsScreen from './NotificationsScreen';
 import SettingsScreen from './SettingsScreen';
-import { User } from '@/lib/types';
+import { User, Thing, UserThingInteraction } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
+import { PlusIcon } from '@heroicons/react/24/outline';
+import { cleanupDuplicateInteractions } from '@/lib/firestore';
 
 type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
 type AppScreenType = 'notifications' | 'main';
@@ -22,14 +23,29 @@ type AppScreenType = 'notifications' | 'main';
 export default function MainApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'saved' | 'profile'>('post');
+  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('post');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
+  const [editingInteraction, setEditingInteraction] = useState<{interaction: UserThingInteraction; thing: Thing} | null>(null);
   
   const { user, loading } = useAuthStore();
+
+  // Expose cleanup function to window for debugging
+  useEffect(() => {
+    if (typeof window !== 'undefined' && user) {
+      (window as Window & typeof globalThis & { cleanupDuplicates?: () => Promise<void> }).cleanupDuplicates = async () => {
+        try {
+          await cleanupDuplicateInteractions(user.uid);
+        } catch (error) {
+          console.error('Cleanup failed:', error);
+          alert('Cleanup failed. Check console for details.');
+        }
+      };
+    }
+  }, [user]);
 
   // Handle URL parameters for profile navigation
   useEffect(() => {
@@ -83,7 +99,7 @@ export default function MainApp() {
   }
 
   // Reset screens when switching tabs
-  const handleTabChange = (tab: 'feed' | 'post' | 'saved' | 'profile') => {
+  const handleTabChange = (tab: 'feed' | 'post' | 'profile') => {
     if (tab !== 'profile') {
       setProfileScreen('main');
       setSelectedUser(null);
@@ -178,9 +194,15 @@ export default function MainApp() {
       case 'feed':
         return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
       case 'post':
-        return <PostScreen />;
-      case 'saved':
-        return <SavedScreen />;
+        return (
+          <PostScreen 
+            editMode={editingInteraction || undefined}
+            onEditComplete={() => {
+              setEditingInteraction(null);
+              setActiveTab('profile');
+            }}
+          />
+        );
       case 'profile':
         switch (profileScreen) {
           case 'following':
@@ -201,6 +223,10 @@ export default function MainApp() {
                 onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
+                onEditInteraction={(interaction, thing) => {
+                  setEditingInteraction({ interaction, thing });
+                  setActiveTab('post');
+                }}
               />
             );
           case 'settings':
@@ -211,6 +237,10 @@ export default function MainApp() {
                 onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
+                onEditInteraction={(interaction, thing) => {
+                  setEditingInteraction({ interaction, thing });
+                  setActiveTab('post');
+                }}
               />
             );
         }
@@ -229,6 +259,18 @@ export default function MainApp() {
           onNotificationsClick={handleNotificationsClick}
         />
       )}
+      
+      {/* Floating Action Button - only show when not on Add screen */}
+      {appScreen === 'main' && profileScreen !== 'settings' && activeTab !== 'post' && (
+        <button
+          onClick={() => setActiveTab('post')}
+          className="fixed bottom-20 right-4 z-50 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all hover:scale-110 active:scale-95 flex items-center justify-center"
+          aria-label="Add new item"
+        >
+          <PlusIcon className="h-7 w-7" />
+        </button>
+      )}
+      
       <main className="flex-1 flex flex-col">
         {renderActiveScreen()}
       </main>

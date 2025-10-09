@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { HomeIcon, PlusIcon, BookmarkIcon, UserIcon, BellIcon } from '@heroicons/react/24/outline';
-import { HomeIcon as HomeIconSolid, PlusIcon as PlusIconSolid, BookmarkIcon as BookmarkIconSolid, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
+import { SparklesIcon, UserIcon, BellIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon as SparklesIconSolid, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
 import { useAuthStore } from '@/lib/store';
 import { subscribeToNotifications } from '@/lib/firestore';
 import { Notification } from '@/lib/types';
 
 interface NavigationProps {
-  activeTab: 'feed' | 'post' | 'saved' | 'profile';
-  onTabChange: (tab: 'feed' | 'post' | 'saved' | 'profile') => void;
+  activeTab: 'feed' | 'post' | 'profile';
+  onTabChange: (tab: 'feed' | 'post' | 'profile') => void;
   onNotificationsClick: () => void;
 }
 
@@ -30,21 +30,9 @@ export default function Navigation({ activeTab, onTabChange, onNotificationsClic
   const tabs = [
     {
       id: 'feed' as const,
-      name: 'Feed',
-      icon: HomeIcon,
-      activeIcon: HomeIconSolid,
-    },
-    {
-      id: 'post' as const,
-      name: 'Add',
-      icon: PlusIcon,
-      activeIcon: PlusIconSolid,
-    },
-    {
-      id: 'saved' as const,
-      name: 'Bucket List',
-      icon: BookmarkIcon,
-      activeIcon: BookmarkIconSolid,
+      name: 'Discover',
+      icon: SparklesIcon,
+      activeIcon: SparklesIconSolid,
     },
     {
       id: 'profile' as const,
