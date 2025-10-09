@@ -3,43 +3,58 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createRecommendation } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
-import { Category, PersonalItemStatus, UniversalItem } from '@/lib/types';
+import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
 import UserTagInput from './UserTagInput';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface PostFormProps {
   universalItem?: UniversalItem; // If present, it's structured (from API)
+  editMode?: {
+    interaction: UserThingInteraction;
+    thing: Thing;
+  }; // If present, we're editing an existing interaction
   onBack: () => void;
   onSuccess: () => void;
 }
 
 export default function PostForm({ 
   universalItem, 
+  editMode,
   onBack, 
   onSuccess 
 }: PostFormProps) {
-  const isStructured = !!universalItem;
+  const isStructured = !!universalItem || !!editMode;
+  const isEditMode = !!editMode;
   
   // Form state
-  const [title, setTitle] = useState(universalItem?.title || '');
-  const [category, setCategory] = useState<Category>(universalItem?.category || 'other');
-  const [rating, setRating] = useState(0);
-  const [status, setStatus] = useState<PersonalItemStatus>('want_to_try');
-  const [postToFeed, setPostToFeed] = useState(true);
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(universalItem?.title || editMode?.thing.title || '');
+  const [category, setCategory] = useState<Category>(universalItem?.category || editMode?.thing.category || 'other');
+  const [rating, setRating] = useState(editMode?.interaction.rating || 0);
+  const [status, setStatus] = useState<PersonalItemStatus>(
+    editMode?.interaction.state === 'completed' ? 'completed' : 'want_to_try'
+  );
+  const [postToFeed, setPostToFeed] = useState(
+    editMode ? editMode.interaction.visibility === 'public' : true
+  );
+  const [description, setDescription] = useState(editMode?.interaction.content || '');
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
   const [recommendedByText, setRecommendedByText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   
   // More Info state
-  const [showMoreInfo, setShowMoreInfo] = useState(false);
+  const [showMoreInfo, setShowMoreInfo] = useState(
+    !!(editMode?.interaction.photos?.length || editMode?.interaction.notes)
+  );
   const [photos, setPhotos] = useState<File[]>([]);
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([]);
-  const [internalNotes, setInternalNotes] = useState('');
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>(editMode?.interaction.photos || []);
+  const [internalNotes, setInternalNotes] = useState(editMode?.interaction.notes || '');
   const [photoError, setPhotoError] = useState('');
   
   // SMS invite state
@@ -52,6 +67,9 @@ export default function PostForm({
   } | null>(null);
   
   const { user, userProfile } = useAuthStore();
+
+  // Helper variables for thing data (works for both structured and edit mode)
+  const thingData = editMode?.thing || universalItem;
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -85,6 +103,10 @@ export default function PostForm({
     setPhotoError('');
   };
 
+  const removeExistingPhoto = (index: number) => {
+    setExistingPhotoUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -93,13 +115,58 @@ export default function PostForm({
       return;
     }
 
-    // Validation for manual entry
-    if (!isStructured && !title.trim()) {
+    // Validation for manual entry (not in edit mode)
+    if (!isStructured && !isEditMode && !title.trim()) {
       return;
     }
 
     setSubmitting(true);
     try {
+      // ===== EDIT MODE =====
+      if (isEditMode && editMode) {
+        console.log('✏️ Updating existing interaction:', editMode.interaction.id);
+        
+        // Upload new photos if any
+        let newPhotoUrls: string[] = [];
+        if (photos.length > 0) {
+          console.log('📸 Uploading new photos...');
+          newPhotoUrls = await uploadPhotos(photos, user.uid);
+          console.log('✅ Photos uploaded:', newPhotoUrls.length);
+        }
+        
+        // Combine existing photos + new photos
+        const allPhotoUrls = [...existingPhotoUrls, ...newPhotoUrls];
+        
+        // Update interaction content
+        await updateInteractionContent(editMode.interaction.id, {
+          content: description.trim() || undefined,
+          rating: rating > 0 ? rating : undefined,
+          photos: allPhotoUrls.length > 0 ? allPhotoUrls : undefined,
+        });
+        
+        // Update state and visibility if changed
+        const newState = status === 'completed' ? 'completed' : 'bucketList';
+        const newVisibility = postToFeed ? 'public' : 'private';
+        
+        const interactionRef = doc(db, 'user_thing_interactions', editMode.interaction.id);
+        const updateData: Record<string, unknown> = {
+          state: newState,
+          visibility: newVisibility,
+        };
+        
+        // Only add notes if it has a value (Firestore doesn't allow undefined)
+        if (internalNotes.trim()) {
+          updateData.notes = internalNotes.trim();
+        }
+        
+        await updateDoc(interactionRef, updateData);
+        
+        console.log('✅ Interaction updated');
+        onSuccess();
+        return;
+      }
+      
+      // ===== CREATE MODE =====
       const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
 
       // Upload photos if any
@@ -111,36 +178,34 @@ export default function PostForm({
       }
 
       // Build UniversalItem
-      const itemToCreate: UniversalItem = isStructured 
-        ? universalItem 
-        : {
-            id: '', // Will be set by createOrGetThing
-            title: title.trim(),
-            category,
-            description: '',
-            metadata: {},
-            source: 'manual',
-          };
+      const itemToCreate: UniversalItem = universalItem! || {
+        id: '',
+        title: title.trim(),
+        category,
+        description: '',
+        metadata: {},
+        source: 'manual',
+      } as UniversalItem;
 
       // 1. Create or get the thing
       const thingId = await createOrGetThing(itemToCreate, user.uid);
       console.log('✅ Thing created/found:', thingId);
       
-      // 2. Create user interaction (with all fields including content/photos if sharing)
+      // 2. Create user interaction
       const interactionState = status === 'completed' ? 'completed' : 'bucketList';
-      const visibility = postToFeed ? 'public' : 'friends'; // Public if sharing to feed
+      const visibility = postToFeed ? 'public' : 'private';
       
       const interactionId = await createUserThingInteraction(
         user.uid,
-        userProfile.name, // userName for feed display
+        userProfile.name,
         thingId,
         interactionState as 'completed' | 'bucketList',
         visibility,
         {
           rating: rating > 0 ? rating : undefined,
           notes: internalNotes.trim() || undefined,
-          content: postToFeed ? description.trim() || undefined : undefined, // Only add content if sharing
-          photos: postToFeed ? (photoUrls.length > 0 ? photoUrls : undefined) : undefined, // Only add photos if sharing
+          content: postToFeed ? description.trim() || undefined : undefined,
+          photos: postToFeed ? (photoUrls.length > 0 ? photoUrls : undefined) : undefined,
         }
       );
       console.log('✅ User interaction created:', interactionId);
@@ -162,7 +227,7 @@ export default function PostForm({
 
       // Check if we should offer SMS invite for non-user recommender
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        const itemTitle = isStructured ? universalItem.title : title.trim();
+        const itemTitle = universalItem?.title || title.trim();
         
         if (postToFeed && result.postId) {
           // For shared posts, use the post ID
@@ -244,19 +309,20 @@ export default function PostForm({
             ← Back
           </button>
           <h2 className="text-xl font-bold text-gray-900">
-            {isStructured ? 'Add to Your List' : 'Add Custom Item'}
+            {isEditMode ? 'Edit Item' : isStructured ? 'Add to Your List' : 'Add Custom Item'}
           </h2>
         </div>
 
-        {/* Item Preview (Structured Only) */}
-        {isStructured && universalItem && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        {/* Item Preview (Structured or Edit Mode) */}
+        {(isStructured || isEditMode) && (
+          <div className={`mb-6 p-4 border rounded-lg ${isEditMode ? 'bg-gray-50 border-gray-300' : 'bg-blue-50 border-blue-200'}`}>
+            {isEditMode && <p className="text-xs text-gray-500 mb-2">📌 Editing</p>}
             <div className="flex space-x-4">
               <div className="flex-shrink-0">
-                {universalItem.image ? (
+                {thingData?.image ? (
                   <Image
-                    src={universalItem.image}
-                    alt={universalItem.title}
+                    src={thingData.image}
+                    alt={thingData.title}
                     width={64}
                     height={80}
                     className="w-16 h-20 object-cover rounded"
@@ -269,43 +335,43 @@ export default function PostForm({
               </div>
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900 mb-1">
-                  {universalItem.title}
+                  {thingData?.title}
                 </h3>
-                {universalItem.metadata.author && (
+                {thingData?.metadata?.author && (
                   <p className="text-sm text-gray-600 mb-1">
-                    by {universalItem.metadata.author}
+                    by {thingData.metadata.author}
                   </p>
                 )}
-                {universalItem.metadata.year && (
+                {(universalItem?.metadata.year || editMode?.thing.metadata?.year) && (
                   <p className="text-sm text-gray-600 mb-1">
-                    {universalItem.metadata.year}
-                    {universalItem.metadata.type && (
+                    {universalItem?.metadata.year || editMode?.thing.metadata?.year}
+                    {(universalItem?.metadata.type || editMode?.thing.metadata?.type) && (
                       <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded-full">
-                        {universalItem.metadata.type === 'tv' ? '📺 TV Show' : '🎬 Movie'}
+                        {(universalItem?.metadata.type || editMode?.thing.metadata?.type) === 'tv' ? '📺 TV Show' : '🎬 Movie'}
                       </span>
                     )}
                   </p>
                 )}
-                {universalItem.metadata.address && (
+                {thingData?.metadata.address && (
                   <p className="text-sm text-gray-600 mb-1">
-                    📍 {universalItem.metadata.address}
+                    📍 {thingData?.metadata.address}
                   </p>
                 )}
-                {(universalItem.metadata.rating || universalItem.metadata.priceLevel) && (
+                {(thingData?.metadata.rating || thingData?.metadata.priceLevel) && (
                   <div className="flex items-center space-x-3 text-sm text-gray-600 mb-1">
-                    {universalItem.metadata.rating && (
-                      <span>⭐ {universalItem.metadata.rating}/5</span>
+                    {thingData?.metadata.rating && (
+                      <span>⭐ {thingData?.metadata.rating}/5</span>
                     )}
-                    {universalItem.metadata.priceLevel && (
+                    {thingData?.metadata.priceLevel && (
                       <span className="text-green-600 font-medium">
-                        {'$'.repeat(universalItem.metadata.priceLevel)}
+                        {'$'.repeat(thingData?.metadata.priceLevel)}
                       </span>
                     )}
                   </div>
                 )}
                 <div className="text-xs text-gray-500">
-                  {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : 
-                   universalItem.category === 'movies' ? '🎬 Movies/TV • Auto-filled from TMDb' : 
+                  {thingData?.category === 'books' ? '📚 Books • Auto-filled from Google Books' :
+                   thingData?.category === 'movies' ? '🎬 Movies/TV • Auto-filled from TMDb' :
                    '📍 Places • Auto-filled from Google Places'}
                 </div>
               </div>
@@ -399,28 +465,30 @@ export default function PostForm({
             </div>
           )}
 
-          {/* Recommended By */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            
-            <UserTagInput
-              singleUser={true}
-              selectedUser={recommendedByUser}
-              textValue={recommendedByText}
-              onUserSelect={(user) => {
-                setRecommendedByUser(user);
-                if (!user) {
-                  setRecommendedByText('');
-                }
-              }}
-              onTextChange={(text) => setRecommendedByText(text)}
-              excludeCurrentUser={true}
-              currentUserId={user?.uid}
-              placeholder="Enter any name or search for Rex users..."
-            />
-          </div>
+          {/* Recommended By (Create Mode Only) */}
+          {!isEditMode && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              
+              <UserTagInput
+                singleUser={true}
+                selectedUser={recommendedByUser}
+                textValue={recommendedByText}
+                onUserSelect={(user) => {
+                  setRecommendedByUser(user);
+                  if (!user) {
+                    setRecommendedByText('');
+                  }
+                }}
+                onTextChange={(text) => setRecommendedByText(text)}
+                excludeCurrentUser={true}
+                currentUserId={user?.uid}
+                placeholder="Enter any name or search for Rex users..."
+              />
+            </div>
+          )}
 
           {/* Comments for Post */}
           <div>
@@ -462,10 +530,10 @@ export default function PostForm({
                 {showMoreInfo ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
                 <span>Add More Info (Optional)</span>
               </span>
-              {(photos.length > 0 || internalNotes.trim()) && (
+              {(photos.length > 0 || existingPhotoUrls.length > 0 || internalNotes.trim()) && (
                 <span className="text-xs text-blue-600 font-medium">
                   {[
-                    photos.length > 0 && `${photos.length} photo${photos.length > 1 ? 's' : ''}`,
+                    (photos.length + existingPhotoUrls.length) > 0 && `${photos.length + existingPhotoUrls.length} photo${(photos.length + existingPhotoUrls.length) > 1 ? 's' : ''}`,
                     internalNotes.trim() && 'Notes added'
                   ].filter(Boolean).join(', ')}
                 </span>
@@ -487,7 +555,7 @@ export default function PostForm({
                   )}
                   
                   {/* Upload Button */}
-                  {photos.length < MAX_PHOTOS && (
+                  {(photos.length + existingPhotoUrls.length) < MAX_PHOTOS && (
                     <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                       <input
                         type="file"
@@ -501,7 +569,34 @@ export default function PostForm({
                     </label>
                   )}
                   
-                  {/* Photo Previews */}
+                  {/* Existing Photos (Edit Mode) */}
+                  {existingPhotoUrls.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-xs text-gray-500 mb-2">Current photos:</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {existingPhotoUrls.map((url, index) => (
+                          <div key={`existing-${index}`} className="relative group">
+                            <Image
+                              src={url}
+                              alt={`Existing photo ${index + 1}`}
+                              width={100}
+                              height={100}
+                              className="w-full h-24 object-cover rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeExistingPhoto(index)}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <XMarkIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* New Photo Previews */}
                   {photoPreviewUrls.length > 0 && (
                     <div className="mt-3 grid grid-cols-3 gap-2">
                       {photoPreviewUrls.map((url, index) => (
@@ -557,8 +652,9 @@ export default function PostForm({
               disabled={submitting || !user || !userProfile}
               className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {submitting ? 'Adding...' : 
+              {submitting ? (isEditMode ? 'Saving...' : 'Adding...') : 
                !user || !userProfile ? 'Loading...' :
+               isEditMode ? 'Save Changes' :
                postToFeed ? 'Add & Share' : 'Add to List'}
             </button>
           </div>

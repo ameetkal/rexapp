@@ -1,18 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { UniversalItem } from '@/lib/types';
+import { UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { BookOpenIcon, FilmIcon, MapPinIcon, PlusIcon } from '@heroicons/react/24/outline';
 import BookSearch from './BookSearch';
 import MovieSearch from './MovieSearch';
 import PlacesSearch from './PlacesSearch';
 import PostForm from './PostForm';
 
-type PostMode = 'selection' | 'book-search' | 'book-form' | 'movie-search' | 'movie-form' | 'places-search' | 'places-form' | 'custom-form';
+type PostMode = 'selection' | 'book-search' | 'book-form' | 'movie-search' | 'movie-form' | 'places-search' | 'places-form' | 'custom-form' | 'edit';
 
-export default function PostScreen() {
+interface PostScreenProps {
+  editMode?: {
+    interaction: UserThingInteraction;
+    thing: Thing;
+  };
+  onEditComplete?: () => void;
+}
+
+export default function PostScreen({ editMode, onEditComplete }: PostScreenProps = {}) {
   // Post creation mode state
-  const [mode, setMode] = useState<PostMode>('selection');
+  const [mode, setMode] = useState<PostMode>(editMode ? 'edit' : 'selection');
   const [selectedBook, setSelectedBook] = useState<UniversalItem | null>(null);
   const [selectedMovie, setSelectedMovie] = useState<UniversalItem | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<UniversalItem | null>(null);
@@ -116,6 +124,28 @@ export default function PostScreen() {
       <PostForm
         onBack={handleBackToSelection}
         onSuccess={handleStructuredSuccess}
+      />
+    );
+  }
+
+  if (mode === 'edit' && editMode) {
+    return (
+      <PostForm
+        editMode={editMode}
+        onBack={() => {
+          if (onEditComplete) {
+            onEditComplete();
+          } else {
+            setMode('selection');
+          }
+        }}
+        onSuccess={() => {
+          if (onEditComplete) {
+            onEditComplete();
+          } else {
+            setMode('selection');
+          }
+        }}
       />
     );
   }

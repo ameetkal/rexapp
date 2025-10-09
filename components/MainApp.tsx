@@ -12,7 +12,7 @@ import FollowingListScreen from './FollowingListScreen';
 import PublicProfileScreen from './PublicProfileScreen';
 import NotificationsScreen from './NotificationsScreen';
 import SettingsScreen from './SettingsScreen';
-import { User } from '@/lib/types';
+import { User, Thing, UserThingInteraction } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { cleanupDuplicateInteractions } from '@/lib/firestore';
@@ -29,6 +29,7 @@ export default function MainApp() {
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
+  const [editingInteraction, setEditingInteraction] = useState<{interaction: UserThingInteraction; thing: Thing} | null>(null);
   
   const { user, loading } = useAuthStore();
 
@@ -193,7 +194,15 @@ export default function MainApp() {
       case 'feed':
         return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
       case 'post':
-        return <PostScreen />;
+        return (
+          <PostScreen 
+            editMode={editingInteraction || undefined}
+            onEditComplete={() => {
+              setEditingInteraction(null);
+              setActiveTab('profile');
+            }}
+          />
+        );
       case 'profile':
         switch (profileScreen) {
           case 'following':
@@ -214,6 +223,10 @@ export default function MainApp() {
                 onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
+                onEditInteraction={(interaction, thing) => {
+                  setEditingInteraction({ interaction, thing });
+                  setActiveTab('post');
+                }}
               />
             );
           case 'settings':
@@ -224,6 +237,10 @@ export default function MainApp() {
                 onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
+                onEditInteraction={(interaction, thing) => {
+                  setEditingInteraction({ interaction, thing });
+                  setActiveTab('post');
+                }}
               />
             );
         }

@@ -14,9 +14,10 @@ interface ProfileScreenProps {
   onShowFollowingList: () => void;
   onUserClick?: (userId: string) => void;
   onSettingsClick: () => void;
+  onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
-export default function ProfileScreen({ onShowFollowingList, onSettingsClick }: ProfileScreenProps) {
+export default function ProfileScreen({ onShowFollowingList, onSettingsClick, onEditInteraction }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -311,6 +312,7 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick }: 
                     key={interaction.id}
                     thing={thing}
                     interaction={interaction}
+                    onEdit={onEditInteraction}
                   />
                 );
               })}

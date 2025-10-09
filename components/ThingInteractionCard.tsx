@@ -18,11 +18,13 @@ interface ThingInteractionCardProps {
   thing: Thing;
   interaction: UserThingInteraction;
   onThingClick?: (thingId: string) => void;
+  onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
 export default function ThingInteractionCard({ 
   thing, 
-  interaction
+  interaction,
+  onEdit
 }: ThingInteractionCardProps) {
   const [loading, setLoading] = useState(false);
   const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
@@ -119,9 +121,10 @@ export default function ThingInteractionCard({
   };
 
   const handleEdit = () => {
-    // TODO: Open edit modal with rating, notes, photos
-    alert('Edit functionality coming soon!');
     setShowMenu(false);
+    if (onEdit) {
+      onEdit(interaction, thing);
+    }
   };
 
   const handleDelete = async () => {
