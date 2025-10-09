@@ -3,39 +3,37 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createPostV2 } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createPostV2, createRecommendation } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
-import { UniversalItem } from '@/lib/types';
+import { Category, PersonalItemStatus, UniversalItem } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
 import UserTagInput from './UserTagInput';
 
-interface StructuredPostFormProps {
-  universalItem: UniversalItem;
+interface PostFormProps {
+  universalItem?: UniversalItem; // If present, it's structured (from API)
   onBack: () => void;
   onSuccess: () => void;
 }
 
-export default function StructuredPostForm({ 
+export default function PostForm({ 
   universalItem, 
   onBack, 
   onSuccess 
-}: StructuredPostFormProps) {
+}: PostFormProps) {
+  const isStructured = !!universalItem;
+  
+  // Form state
+  const [title, setTitle] = useState(universalItem?.title || '');
+  const [category, setCategory] = useState<Category>(universalItem?.category || 'other');
   const [rating, setRating] = useState(0);
-  const [status, setStatus] = useState<'completed' | 'want_to_try'>('want_to_try');
+  const [status, setStatus] = useState<PersonalItemStatus>('want_to_try');
   const [postToFeed, setPostToFeed] = useState(true);
-  const [description, setDescription] = useState(''); // No pre-fill
+  const [description, setDescription] = useState('');
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
   const [recommendedByText, setRecommendedByText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteData, setInviteData] = useState<{
-    recommenderName: string;
-    postTitle: string;
-    postId: string;
-    isPost: boolean;
-  } | null>(null);
   
   // More Info state
   const [showMoreInfo, setShowMoreInfo] = useState(false);
@@ -43,6 +41,15 @@ export default function StructuredPostForm({
   const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([]);
   const [internalNotes, setInternalNotes] = useState('');
   const [photoError, setPhotoError] = useState('');
+  
+  // SMS invite state
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteData, setInviteData] = useState<{
+    recommenderName: string;
+    postTitle: string;
+    postId: string;
+    isPost: boolean;
+  } | null>(null);
   
   const { user, userProfile } = useAuthStore();
 
@@ -53,13 +60,11 @@ export default function StructuredPostForm({
     setPhotoError('');
     const newPhotos = Array.from(files);
     
-    // Check if adding these would exceed max
     if (photos.length + newPhotos.length > MAX_PHOTOS) {
       setPhotoError(`Maximum ${MAX_PHOTOS} photos allowed`);
       return;
     }
     
-    // Validate each file
     for (const file of newPhotos) {
       const validation = validatePhotoFile(file);
       if (!validation.valid) {
@@ -68,7 +73,6 @@ export default function StructuredPostForm({
       }
     }
     
-    // Add photos and create previews
     setPhotos(prev => [...prev, ...newPhotos]);
     const urls = newPhotos.map(file => URL.createObjectURL(file));
     setPhotoPreviewUrls(prev => [...prev, ...urls]);
@@ -84,22 +88,13 @@ export default function StructuredPostForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Debug logging to help identify authentication issues
-    console.log('🔍 StructuredPostForm handleSubmit called', {
-      user: user ? 'present' : 'missing',
-      userProfile: userProfile ? 'present' : 'missing',
-      userUid: user?.uid,
-      userName: userProfile?.name,
-      submitting: submitting
-    });
-    
     if (!user || !userProfile) {
-      console.error('❌ Cannot submit: Missing user or userProfile', {
-        user: !!user,
-        userProfile: !!userProfile,
-        userUid: user?.uid,
-        userName: userProfile?.name
-      });
+      console.error('❌ Cannot submit: Missing user or userProfile');
+      return;
+    }
+
+    // Validation for manual entry
+    if (!isStructured && !title.trim()) {
       return;
     }
 
@@ -115,11 +110,20 @@ export default function StructuredPostForm({
         console.log('✅ Photos uploaded:', photoUrls.length);
       }
 
-      // Create structured post
-      console.log('🚀 Creating structured post...');
-      
+      // Build UniversalItem
+      const itemToCreate: UniversalItem = isStructured 
+        ? universalItem 
+        : {
+            id: '', // Will be set by createOrGetThing
+            title: title.trim(),
+            category,
+            description: '',
+            metadata: {},
+            source: 'manual',
+          };
+
       // 1. Create or get the thing
-      const thingId = await createOrGetThing(universalItem, user.uid);
+      const thingId = await createOrGetThing(itemToCreate, user.uid);
       console.log('✅ Thing created/found:', thingId);
       
       // 2. Create user interaction (with rating and notes)
@@ -151,28 +155,43 @@ export default function StructuredPostForm({
         console.log('✅ Post V2 created:', newSystemPostId);
       }
       
-      console.log('✅ Created:', { thingId, interactionId, postId: newSystemPostId });
+      // 4. Create recommendation if applicable
+      if (recommendedByUser && recommendedByUser.id !== user.uid) {
+        await createRecommendation(
+          recommendedByUser.id,
+          user.uid,
+          thingId,
+          recommendedByValue
+        );
+        console.log('✅ Recommendation created');
+      }
       
+      const result = { thingId, interactionId, postId: newSystemPostId };
+      
+      console.log('✅ Created:', result);
+
       // Check if we should offer SMS invite for non-user recommender
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        if (postToFeed && newSystemPostId) {
+        const itemTitle = isStructured ? universalItem.title : title.trim();
+        
+        if (postToFeed && result.postId) {
           // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${newSystemPostId}`);
+          console.log(`✅ Setting up SMS invite for shared post: ${result.postId}`);
           setInviteData({
             recommenderName: recommendedByValue,
-            postTitle: universalItem.title,
-            postId: newSystemPostId,
+            postTitle: itemTitle,
+            postId: result.postId,
             isPost: true
           });
           setShowInviteDialog(true);
           return;
-        } else if (!postToFeed && interactionId) {
+        } else if (!postToFeed && result.interactionId) {
           // For private items, use the interaction ID
-          console.log(`✅ Setting up SMS invite for private item: ${interactionId}`);
+          console.log(`✅ Setting up SMS invite for private item: ${result.interactionId}`);
           setInviteData({
             recommenderName: recommendedByValue,
-            postTitle: universalItem.title,
-            postId: interactionId,
+            postTitle: itemTitle,
+            postId: result.interactionId,
             isPost: false
           });
           setShowInviteDialog(true);
@@ -183,13 +202,12 @@ export default function StructuredPostForm({
       // Only call onSuccess if no invite dialog was shown
       onSuccess();
     } catch (error) {
-      console.error('Error creating structured post:', error);
+      console.error('Error creating post:', error);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // SMS invite handlers
   const handleSendInvite = () => {
     if (inviteData && userProfile) {
       sendSMSInvite(
@@ -201,14 +219,27 @@ export default function StructuredPostForm({
       );
       setShowInviteDialog(false);
       setInviteData(null);
-      onSuccess(); // Complete the flow after sending invite
+      onSuccess();
     }
   };
 
   const handleSkipInvite = () => {
     setShowInviteDialog(false);
     setInviteData(null);
-    onSuccess(); // Complete the flow after skipping invite
+    onSuccess();
+  };
+
+  const getCategoryIcon = () => {
+    switch (category) {
+      case 'books':
+        return <BookOpenIcon className="h-8 w-8 text-gray-400" />;
+      case 'movies':
+        return <FilmIcon className="h-8 w-8 text-gray-400" />;
+      case 'places':
+        return <MapPinIcon className="h-8 w-8 text-gray-400" />;
+      default:
+        return <span className="text-2xl">✨</span>;
+    }
   };
 
   return (
@@ -222,80 +253,124 @@ export default function StructuredPostForm({
           >
             ← Back
           </button>
-          <h2 className="text-xl font-bold text-gray-900">Add to Your List</h2>
+          <h2 className="text-xl font-bold text-gray-900">
+            {isStructured ? 'Add to Your List' : 'Add Custom Item'}
+          </h2>
         </div>
 
-        {/* Selected Item Preview */}
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex space-x-4">
-            <div className="flex-shrink-0">
-              {universalItem.image ? (
-                <Image
-                  src={universalItem.image}
-                  alt={universalItem.title}
-                  width={64}
-                  height={80}
-                  className="w-16 h-20 object-cover rounded"
-                />
-              ) : (
-                <div className="w-16 h-20 bg-gray-200 rounded flex items-center justify-center">
-                  {universalItem.category === 'books' ? (
-                    <BookOpenIcon className="h-8 w-8 text-gray-400" />
-                  ) : universalItem.category === 'movies' ? (
-                    <FilmIcon className="h-8 w-8 text-gray-400" />
-                  ) : (
-                    <MapPinIcon className="h-8 w-8 text-gray-400" />
-                  )}
+        {/* Item Preview (Structured Only) */}
+        {isStructured && universalItem && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex space-x-4">
+              <div className="flex-shrink-0">
+                {universalItem.image ? (
+                  <Image
+                    src={universalItem.image}
+                    alt={universalItem.title}
+                    width={64}
+                    height={80}
+                    className="w-16 h-20 object-cover rounded"
+                  />
+                ) : (
+                  <div className="w-16 h-20 bg-gray-200 rounded flex items-center justify-center">
+                    {getCategoryIcon()}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900 mb-1">
+                  {universalItem.title}
+                </h3>
+                {universalItem.metadata.author && (
+                  <p className="text-sm text-gray-600 mb-1">
+                    by {universalItem.metadata.author}
+                  </p>
+                )}
+                {universalItem.metadata.year && (
+                  <p className="text-sm text-gray-600 mb-1">
+                    {universalItem.metadata.year}
+                    {universalItem.metadata.type && (
+                      <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded-full">
+                        {universalItem.metadata.type === 'tv' ? '📺 TV Show' : '🎬 Movie'}
+                      </span>
+                    )}
+                  </p>
+                )}
+                {universalItem.metadata.address && (
+                  <p className="text-sm text-gray-600 mb-1">
+                    📍 {universalItem.metadata.address}
+                  </p>
+                )}
+                {(universalItem.metadata.rating || universalItem.metadata.priceLevel) && (
+                  <div className="flex items-center space-x-3 text-sm text-gray-600 mb-1">
+                    {universalItem.metadata.rating && (
+                      <span>⭐ {universalItem.metadata.rating}/5</span>
+                    )}
+                    {universalItem.metadata.priceLevel && (
+                      <span className="text-green-600 font-medium">
+                        {'$'.repeat(universalItem.metadata.priceLevel)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="text-xs text-gray-500">
+                  {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : 
+                   universalItem.category === 'movies' ? '🎬 Movies/TV • Auto-filled from TMDb' : 
+                   '📍 Places • Auto-filled from Google Places'}
                 </div>
-              )}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-gray-900 mb-1">
-                {universalItem.title}
-              </h3>
-              {universalItem.metadata.author && (
-                <p className="text-sm text-gray-600 mb-1">
-                  by {universalItem.metadata.author}
-                </p>
-              )}
-              {universalItem.metadata.year && (
-                <p className="text-sm text-gray-600 mb-1">
-                  {universalItem.metadata.year}
-                  {universalItem.metadata.type && (
-                    <span className="ml-2 text-xs bg-gray-100 px-2 py-1 rounded-full">
-                      {universalItem.metadata.type === 'tv' ? '📺 TV Show' : '🎬 Movie'}
-                    </span>
-                  )}
-                </p>
-              )}
-              {universalItem.metadata.address && (
-                <p className="text-sm text-gray-600 mb-1">
-                  📍 {universalItem.metadata.address}
-                </p>
-              )}
-              {(universalItem.metadata.rating || universalItem.metadata.priceLevel) && (
-                <div className="flex items-center space-x-3 text-sm text-gray-600 mb-1">
-                  {universalItem.metadata.rating && (
-                    <span>⭐ {universalItem.metadata.rating}/5</span>
-                  )}
-                  {universalItem.metadata.priceLevel && (
-                    <span className="text-green-600 font-medium">
-                      {'$'.repeat(universalItem.metadata.priceLevel)}
-                    </span>
-                  )}
-                </div>
-              )}
-              <div className="text-xs text-gray-500">
-                {universalItem.category === 'books' ? '📚 Books • Auto-filled from Google Books' : 
-                 universalItem.category === 'movies' ? '🎬 Movies/TV • Auto-filled from TMDb' : 
-                 '📍 Places • Auto-filled from Google Places'}
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Post Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Manual Entry Fields */}
+          {!isStructured && (
+            <>
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+                  Title *
+                </label>
+                <input
+                  id="title"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="What's the title?"
+                  required
+                  maxLength={100}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <div className="text-right text-xs text-gray-500 mt-1">
+                  {title.length}/100 characters
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category *
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['books', 'movies', 'places', 'music', 'other'] as Category[]).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategory(cat)}
+                      className={`p-3 border rounded-lg text-left transition-colors ${
+                        category === cat
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                      }`}
+                    >
+                      <div className="font-medium capitalize">{cat}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Status Selection */}
           <div>
             <div className="grid grid-cols-2 gap-3">
@@ -494,7 +569,7 @@ export default function StructuredPostForm({
             >
               {submitting ? 'Adding...' : 
                !user || !userProfile ? 'Loading...' :
-               postToFeed ? (status === 'completed' ? 'Add & Share' : 'Add & Share') : 'Add to List'}
+               postToFeed ? 'Add & Share' : 'Add to List'}
             </button>
           </div>
         </form>
@@ -511,9 +586,9 @@ export default function StructuredPostForm({
               <h3 className="text-lg font-bold text-gray-900 mb-2">
                 Invite {inviteData.recommenderName}?
               </h3>
-                             <p className="text-gray-600 text-sm">
-                 Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
-               </p>
+              <p className="text-gray-600 text-sm">
+                Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
+              </p>
             </div>
             
             <div className="space-y-3">
@@ -535,4 +610,5 @@ export default function StructuredPostForm({
       )}
     </div>
   );
-} 
+}
+

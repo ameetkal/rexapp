@@ -1,17 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuthStore } from '@/lib/store';
-import { createPostWithNewSystem } from '@/lib/firestore';
-import { Category, PersonalItemStatus, UniversalItem } from '@/lib/types';
-import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
+import { UniversalItem } from '@/lib/types';
 import { BookOpenIcon, FilmIcon, MapPinIcon, PlusIcon } from '@heroicons/react/24/outline';
-import StarRating from './StarRating';
 import BookSearch from './BookSearch';
 import MovieSearch from './MovieSearch';
 import PlacesSearch from './PlacesSearch';
-import StructuredPostForm from './StructuredPostForm';
-import UserTagInput from './UserTagInput';
+import PostForm from './PostForm';
 
 type PostMode = 'selection' | 'book-search' | 'book-form' | 'movie-search' | 'movie-form' | 'places-search' | 'places-form' | 'custom-form';
 
@@ -21,40 +16,12 @@ export default function PostScreen() {
   const [selectedBook, setSelectedBook] = useState<UniversalItem | null>(null);
   const [selectedMovie, setSelectedMovie] = useState<UniversalItem | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<UniversalItem | null>(null);
-  
-  // Existing form state
-  const [category, setCategory] = useState<Category>('places');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<PersonalItemStatus>('want_to_try');
-  const [postToFeed, setPostToFeed] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  
-  // Rating for custom posts
-  const [rating, setRating] = useState(0);
-  
-  // User tagging for recommended by
-  const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
-  const [recommendedByText, setRecommendedByText] = useState(''); // For non-Rex users
-  
-  const { user, userProfile } = useAuthStore();
-
-  // SMS invite state
-  const [showInviteDialog, setShowInviteDialog] = useState(false);
-  const [inviteData, setInviteData] = useState<{
-    recommenderName: string;
-    postTitle: string;
-    postId: string;
-    isPost: boolean;
-  } | null>(null);
 
   // Mode handlers
   const handleBookSearch = () => setMode('book-search');
   const handleMovieSearch = () => setMode('movie-search');
   const handlePlacesSearch = () => setMode('places-search');
   const handleCustomForm = () => {
-    setCategory('other');
     setMode('custom-form');
   };
   const handleBackToSelection = () => {
@@ -84,128 +51,6 @@ export default function PostScreen() {
     setSelectedBook(null);
     setSelectedMovie(null);
     setSelectedPlace(null);
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  // SMS invite handlers
-  const handleSendInvite = () => {
-    if (inviteData && userProfile) {
-      sendSMSInvite(
-        inviteData.recommenderName,
-        userProfile.name,
-        inviteData.postTitle,
-        inviteData.postId,
-        inviteData.isPost
-      );
-      setShowInviteDialog(false);
-      setInviteData(null);
-      
-      // Reset form and show success after sending invite
-      setTitle('');
-      setDescription('');
-      setCategory('places');
-      setStatus('want_to_try');
-      setRecommendedByUser(null);
-      setRecommendedByText('');
-      setPostToFeed(true);
-      setRating(0);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    }
-  };
-
-  const handleSkipInvite = () => {
-    setShowInviteDialog(false);
-    setInviteData(null);
-    
-    // Reset form and show success after skipping invite
-    setTitle('');
-    setDescription('');
-    setCategory('places');
-    setStatus('want_to_try');
-    setRecommendedByUser(null);
-    setRecommendedByText('');
-    setPostToFeed(true);
-    setRating(0);
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !userProfile) return;
-
-    setLoading(true);
-    try {
-      // Prepare enhanced fields
-      const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
-      const enhancedFields = {
-        rating: rating > 0 ? rating : undefined,
-        recommendedBy: recommendedByValue,
-        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
-      };
-
-      // Create with NEW SYSTEM
-      console.log('🚀 Creating post...');
-      const newSystemStatus = status === 'completed' ? 'completed' : 'want_to_try';
-      const result = await createPostWithNewSystem(
-        user.uid,
-        userProfile.name,
-        category,
-        title,
-        description.trim() || undefined,
-        newSystemStatus,
-        postToFeed,
-        enhancedFields
-      );
-      
-      console.log('✅ Created:', result);
-
-      // Check if we should offer SMS invite for non-user recommender
-      if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        if (postToFeed && result.postId) {
-          // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${result.postId}`);
-          setInviteData({
-            recommenderName: recommendedByValue,
-            postTitle: title,
-            postId: result.postId,
-            isPost: true
-          });
-          setShowInviteDialog(true);
-          return;
-        } else if (!postToFeed && result.interactionId) {
-          // For private items, use the interaction ID
-          console.log(`✅ Setting up SMS invite for private item: ${result.interactionId}`);
-          setInviteData({
-            recommenderName: recommendedByValue,
-            postTitle: title,
-            postId: result.interactionId,
-            isPost: false
-          });
-          setShowInviteDialog(true);
-          return;
-        }
-      }
-
-      // Reset form
-      setTitle('');
-      setDescription('');
-      setCategory('places');
-      setStatus('want_to_try');
-      setRecommendedByUser(null);
-      setRecommendedByText('');
-      setPostToFeed(true);
-      setRating(0);
-      setSuccess(true);
-      
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (error) {
-      console.error('Error creating item:', error);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Render different screens based on mode
@@ -220,7 +65,7 @@ export default function PostScreen() {
   
   if (mode === 'book-form' && selectedBook) {
     return (
-      <StructuredPostForm
+      <PostForm
         universalItem={selectedBook}
         onBack={handleBackToSelection}
         onSuccess={handleStructuredSuccess}
@@ -239,7 +84,7 @@ export default function PostScreen() {
   
   if (mode === 'movie-form' && selectedMovie) {
     return (
-      <StructuredPostForm
+      <PostForm
         universalItem={selectedMovie}
         onBack={handleBackToSelection}
         onSuccess={handleStructuredSuccess}
@@ -258,8 +103,17 @@ export default function PostScreen() {
   
   if (mode === 'places-form' && selectedPlace) {
     return (
-      <StructuredPostForm
+      <PostForm
         universalItem={selectedPlace}
+        onBack={handleBackToSelection}
+        onSuccess={handleStructuredSuccess}
+      />
+    );
+  }
+  
+  if (mode === 'custom-form') {
+    return (
+      <PostForm
         onBack={handleBackToSelection}
         onSuccess={handleStructuredSuccess}
       />
@@ -354,205 +208,9 @@ export default function PostScreen() {
             </div>
           )}
 
-          {/* Custom Form */}
-          {mode === 'custom-form' && (
-            <div className="flex-1 overflow-y-auto pb-20">
-              <div className="px-4 py-6">
-                {/* Header */}
-                <div className="flex items-center mb-6">
-                  <button
-                    onClick={handleBackToSelection}
-                    className="mr-4 text-gray-600 hover:text-gray-800"
-                  >
-                    ← Back
-                  </button>
-                  <h2 className="text-xl font-bold text-gray-900">Add to Your List</h2>
-                </div>
-
-                {success && (
-                  <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-green-800 text-center font-medium">
-                      🎉 Successfully added to your list!
-                    </p>
-                  </div>
-                )}
-
-                {/* Title Input */}
-                <div className="mb-6">
-                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
-                    Title
-                  </label>
-                  <input
-                    id="title"
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="What would you like to add?"
-                    required
-                    maxLength={100}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {title.length}/100 characters
-                  </p>
-                </div>
-
-                {/* Post Form */}
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Status Selection */}
-                  <div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setStatus('want_to_try')}
-                        className={`p-4 border rounded-lg text-left transition-colors ${
-                          status === 'want_to_try'
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 hover:border-gray-400 text-gray-700'
-                        }`}
-                      >
-                        <div className="font-medium">📝 To Do</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setStatus('completed')}
-                        className={`p-4 border rounded-lg text-left transition-colors ${
-                          status === 'completed'
-                            ? 'border-green-500 bg-green-50 text-green-700'
-                            : 'border-gray-300 hover:border-gray-400 text-gray-700'
-                        }`}
-                      >
-                        <div className="font-medium">✅ Completed</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Rating (only for completed) */}
-                  {status === 'completed' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-3">
-                        How would you rate it? (optional)
-                      </label>
-                      <StarRating rating={rating} onRatingChange={setRating} />
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  <div>
-                    <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-                      Description <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    <textarea
-                      id="description"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      maxLength={500}
-                      rows={3}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-gray-500"
-                      placeholder="Tell us more about this... (optional)"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      {description.length}/500 characters
-                    </p>
-                  </div>
-
-                  {/* Recommended By */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      🤝 Recommended by <span className="text-gray-400 font-normal">(optional)</span>
-                    </label>
-                    
-                    <UserTagInput
-                      singleUser={true}
-                      selectedUser={recommendedByUser}
-                      textValue={recommendedByText}
-                      onUserSelect={(user) => {
-                        setRecommendedByUser(user);
-                        if (!user) {
-                          // When removing a tagged user, keep any text that was typed
-                          // The textValue will be maintained by the component
-                        }
-                      }}
-                      onTextChange={(text) => setRecommendedByText(text)}
-                      excludeCurrentUser={true}
-                      currentUserId={user?.uid}
-                      placeholder="Enter any name or search for Rex users..."
-                    />
-                  </div>
-
-                  {/* Share Settings */}
-                  <div>
-                    <label className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={postToFeed}
-                        onChange={(e) => setPostToFeed(e.target.checked)}
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">
-                        Share with friends on the feed
-                      </span>
-                    </label>
-                  </div>
-
-                  {/* Submit Buttons */}
-                  <div className="flex space-x-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={handleBackToSelection}
-                      className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || !title.trim()}
-                      className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {loading ? 'Adding...' : 
-                       postToFeed ? (status === 'completed' ? 'Add & Share' : 'Add & Share') : 'Add to List'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
-      {/* SMS Invite Dialog */}
-      {showInviteDialog && inviteData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl">📱</span>
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2">
-                Invite {inviteData.recommenderName}?
-              </h3>
-              <p className="text-gray-600 text-sm">
-                Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              <button
-                onClick={handleSendInvite}
-                className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-              >
-                Send Text Invite
-              </button>
-              <button
-                onClick={handleSkipInvite}
-                className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-              >
-                Skip for Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 

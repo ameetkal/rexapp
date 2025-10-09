@@ -31,13 +31,35 @@ export default function ThingInteractionCard({
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
-  const formatDate = (timestamp: { toDate: () => Date }) => {
-    const date = timestamp.toDate();
+  const formatDate = (timestamp: unknown) => {
+    let date: Date;
+    
+    // Handle different timestamp formats
+    type TimestampLike = { toDate: () => Date };
+    if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp && typeof (timestamp as TimestampLike).toDate === 'function') {
+      // Firestore Timestamp
+      date = (timestamp as TimestampLike).toDate();
+    } else if (timestamp instanceof Date) {
+      // Already a Date object
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      // Unix timestamp
+      date = new Date(timestamp);
+    } else {
+      // Fallback if format is unknown
+      console.warn('Unknown timestamp format:', timestamp);
+      return 'Recently';
+    }
+    
     const now = new Date();
     const diffInMs = now.getTime() - date.getTime();
+    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
     
-    if (diffInDays === 0) return 'Today';
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInDays === 1) return 'Yesterday';
     if (diffInDays < 7) return `${diffInDays}d ago`;
     if (diffInDays < 30) return `${Math.floor(diffInDays / 7)}w ago`;

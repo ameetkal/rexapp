@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { PostV2, Thing, UserThingInteraction } from '@/lib/types';
 import { 
   createUserThingInteraction, 
   deleteUserThingInteraction,
-  createRecommendation
+  createRecommendation,
+  updatePostV2,
+  deletePostV2
 } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
 import { 
   BookmarkIcon, 
   ChatBubbleLeftIcon,
+  CheckCircleIcon,
   EllipsisVerticalIcon,
-  CheckCircleIcon
+  PencilIcon,
+  TrashIcon,
+  ShareIcon
 } from '@heroicons/react/24/outline';
 import CommentSection from './CommentSection';
 import StarRating from './StarRating';
@@ -35,7 +40,17 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
   const [showMenu, setShowMenu] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
+  
+  // Local state to track interaction for immediate UI updates
+  const [localInteraction, setLocalInteraction] = useState<UserThingInteraction | undefined>(userInteraction);
+  
+  // Edit form state
+  const [editContent, setEditContent] = useState(post.content);
+  const [editRating, setEditRating] = useState(post.rating || 0);
+  
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuthStore();
   const { 
@@ -44,9 +59,28 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
     updateUserInteraction
   } = useAppStore();
   
+  const isOwnPost = user?.uid === post.authorId;
+  
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showMenu]);
+  
   const category = CATEGORIES.find(c => c.id === thing.category);
-  const isInBucketList = userInteraction?.state === 'bucketList';
-  const isCompleted = userInteraction?.state === 'completed';
+  
+  // Use local state for immediate UI updates, fallback to prop
+  const currentInteraction = localInteraction || userInteraction;
+  const isInBucketList = currentInteraction?.state === 'bucketList';
+  const isCompleted = currentInteraction?.state === 'completed';
 
   const formatDate = (timestamp: unknown) => {
     let date: Date;
@@ -90,22 +124,18 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
     try {
       if (isInBucketList) {
         // Remove from bucket list
-        if (userInteraction) {
-          await deleteUserThingInteraction(userInteraction.id);
-          removeUserInteraction(userInteraction.id);
+        if (currentInteraction) {
+          // Optimistic update - remove immediately
+          setLocalInteraction(undefined);
+          
+          await deleteUserThingInteraction(currentInteraction.id);
+          removeUserInteraction(currentInteraction.id);
           console.log('🗑️ Removed from bucket list');
         }
       } else if (isCompleted) {
         // Change from completed to bucket list
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          'bucketList',
-          'friends'
-        );
-        
         const newInteraction: UserThingInteraction = {
-          id: interactionId,
+          id: currentInteraction?.id || '',
           userId: user.uid,
           thingId: thing.id,
           state: 'bucketList',
@@ -114,9 +144,23 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
           createdAt: post.createdAt,
         };
         
-        // Update or add the interaction
-        if (userInteraction) {
-          updateUserInteraction(userInteraction.id, { state: 'bucketList' });
+        // Optimistic update - change state immediately
+        setLocalInteraction(newInteraction);
+        
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          thing.id,
+          'bucketList',
+          'friends'
+        );
+        
+        // Update with real ID
+        newInteraction.id = interactionId;
+        setLocalInteraction(newInteraction);
+        
+        // Update store
+        if (currentInteraction) {
+          updateUserInteraction(currentInteraction.id, { state: 'bucketList' });
         } else {
           addUserInteraction(newInteraction);
         }
@@ -134,15 +178,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
         }
       } else {
         // Add to bucket list
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          'bucketList',
-          'friends'
-        );
-        
         const newInteraction: UserThingInteraction = {
-          id: interactionId,
+          id: '', // Will be updated after creation
           userId: user.uid,
           thingId: thing.id,
           state: 'bucketList',
@@ -150,6 +187,20 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
           visibility: 'friends',
           createdAt: post.createdAt,
         };
+        
+        // Optimistic update - add immediately
+        setLocalInteraction(newInteraction);
+        
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          thing.id,
+          'bucketList',
+          'friends'
+        );
+        
+        // Update with real ID
+        newInteraction.id = interactionId;
+        setLocalInteraction(newInteraction);
         
         addUserInteraction(newInteraction);
         console.log('✅ Added to bucket list');
@@ -167,6 +218,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       }
     } catch (error) {
       console.error('Error toggling save:', error);
+      // Revert optimistic update on error
+      setLocalInteraction(userInteraction);
     } finally {
       setLoading(false);
     }
@@ -179,15 +232,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       // Change from completed back to bucket list
       setLoading(true);
       try {
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          'bucketList',
-          'friends'
-        );
-        
         const newInteraction: UserThingInteraction = {
-          id: interactionId,
+          id: currentInteraction?.id || '',
           userId: user.uid,
           thingId: thing.id,
           state: 'bucketList',
@@ -196,15 +242,31 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
           createdAt: post.createdAt,
         };
         
-        // Update or add the interaction
-        if (userInteraction) {
-          updateUserInteraction(userInteraction.id, { state: 'bucketList' });
+        // Optimistic update - change state immediately
+        setLocalInteraction(newInteraction);
+        
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          thing.id,
+          'bucketList',
+          'friends'
+        );
+        
+        // Update with real ID
+        newInteraction.id = interactionId;
+        setLocalInteraction(newInteraction);
+        
+        // Update store
+        if (currentInteraction) {
+          updateUserInteraction(currentInteraction.id, { state: 'bucketList' });
         } else {
           addUserInteraction(newInteraction);
         }
         console.log('✅ Changed back to bucket list');
       } catch (error) {
         console.error('Error updating to bucket list:', error);
+        // Revert optimistic update on error
+        setLocalInteraction(userInteraction);
       } finally {
         setLoading(false);
       }
@@ -222,16 +284,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
-      const interactionId = await createUserThingInteraction(
-        user.uid,
-        thing.id,
-        'completed',
-        'friends',
-        rating
-      );
-      
       const newInteraction: UserThingInteraction = {
-        id: interactionId,
+        id: currentInteraction?.id || '',
         userId: user.uid,
         thingId: thing.id,
         state: 'completed',
@@ -241,9 +295,25 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
         rating
       };
       
-      // Update or add the interaction
-      if (userInteraction) {
-        updateUserInteraction(userInteraction.id, { state: 'completed', rating });
+      // Optimistic update - change state immediately
+      setLocalInteraction(newInteraction);
+      setShowRatingModal(false);
+      
+      const interactionId = await createUserThingInteraction(
+        user.uid,
+        thing.id,
+        'completed',
+        'friends',
+        rating
+      );
+      
+      // Update with real ID
+      newInteraction.id = interactionId;
+      setLocalInteraction(newInteraction);
+      
+      // Update store
+      if (currentInteraction) {
+        updateUserInteraction(currentInteraction.id, { state: 'completed', rating });
       } else {
         addUserInteraction(newInteraction);
       }
@@ -251,10 +321,12 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       
       // Note: No recommendation created for completing items
       
-      setShowRatingModal(false);
       setTempRating(0);
     } catch (error) {
       console.error('Error marking as completed:', error);
+      // Revert optimistic update on error
+      setLocalInteraction(userInteraction);
+      setShowRatingModal(true); // Re-open modal on error
     } finally {
       setLoading(false);
     }
@@ -273,6 +345,70 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
     }
   };
 
+  const handleEditPost = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      await updatePostV2(post.id, {
+        content: editContent,
+        rating: editRating > 0 ? editRating : undefined,
+      });
+      
+      // Update interaction rating if changed
+      if (currentInteraction && editRating !== currentInteraction.rating) {
+        // Update the interaction with new rating
+        await createUserThingInteraction(
+          user.uid,
+          thing.id,
+          currentInteraction.state,
+          'friends',
+          editRating > 0 ? editRating : undefined,
+          currentInteraction.notes
+        );
+        
+        const updatedInteraction = { ...currentInteraction, rating: editRating > 0 ? editRating : undefined };
+        setLocalInteraction(updatedInteraction);
+        updateUserInteraction(currentInteraction.id, { rating: editRating > 0 ? editRating : undefined });
+      }
+      
+      console.log('✅ Post updated');
+      setShowEditModal(false);
+      
+      // Update local state to reflect changes immediately
+      post.content = editContent;
+      post.rating = editRating > 0 ? editRating : undefined;
+      
+      // No page reload needed - changes are reflected immediately
+    } catch (error) {
+      console.error('Error updating post:', error);
+      alert('Failed to update post. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePost = async () => {
+    if (!user) return;
+    
+    if (!confirm(`Are you sure you want to delete "${thing.title}"? This cannot be undone.`)) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await deletePostV2(post.id);
+      console.log('🗑️ Post deleted');
+      
+      // Refresh feed to remove deleted post
+      window.location.reload();
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      alert('Failed to delete post. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
@@ -296,12 +432,78 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
           </div>
         </div>
         
-        <button
-          onClick={() => setShowMenu(!showMenu)}
-          className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-        >
-          <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
-        </button>
+        {/* Menu for own posts only */}
+        {isOwnPost && (
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowMenu(!showMenu)}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
+            </button>
+            
+            {/* Dropdown Menu */}
+            {showMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-10">
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowEditModal(true);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                >
+                  <PencilIcon className="h-4 w-4" />
+                  <span>Edit</span>
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    setShowMenu(false);
+                    if (navigator.share) {
+                      try {
+                        await navigator.share({
+                          title: `Check out ${thing.title}`,
+                          text: post.content,
+                          url: `${window.location.origin}/post/${post.id}`
+                        });
+                      } catch (error: unknown) {
+                        if (error instanceof Error && error.name === 'AbortError') {
+                          console.log('Share cancelled by user');
+                          return;
+                        }
+                        console.error('Error sharing:', error);
+                      }
+                    } else {
+                      try {
+                        await navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+                        alert('Link copied to clipboard!');
+                      } catch (error) {
+                        console.error('Error copying to clipboard:', error);
+                      }
+                    }
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
+                >
+                  <ShareIcon className="h-4 w-4" />
+                  <span>Share</span>
+                </button>
+                
+                <div className="border-t border-gray-100 my-1"></div>
+                
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    handleDeletePost();
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Thing Title (emoji + title only) */}
@@ -431,7 +633,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
             <span className="text-sm font-medium">Save</span>
           </button>
 
-          {/* Complete Button */}
+          {/* Completed Button */}
           <button
             onClick={handleCompleteToggle}
             disabled={loading}
@@ -442,7 +644,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
             }`}
           >
             <CheckCircleIcon className={`h-5 w-5 ${isCompleted ? 'fill-current' : ''}`} />
-            <span className="text-sm font-medium">Complete</span>
+            <span className="text-sm font-medium">Completed</span>
           </button>
         </div>
       </div>
@@ -515,6 +717,89 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
                 className="w-full text-gray-500 py-2 px-4 rounded-lg font-medium hover:text-gray-700 transition-colors disabled:opacity-50"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowEditModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                Edit Post
+              </h3>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <span className="text-lg">{category?.emoji}</span>
+                <span>{thing.title}</span>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Edit Content */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Comments
+                </label>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="Share your thoughts..."
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  rows={4}
+                />
+              </div>
+
+              {/* Edit Rating */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Rating (optional)
+                </label>
+                <div className="flex justify-center">
+                  <StarRating 
+                    rating={editRating} 
+                    onRatingChange={setEditRating}
+                    maxRating={5}
+                    showLabel={true}
+                    size="md"
+                  />
+                </div>
+              </div>
+
+              {/* Note about photos */}
+              {post.photos && post.photos.length > 0 && (
+                <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                  📸 Photo editing coming soon. To change photos, delete and recreate the post.
+                </div>
+              )}
+            </div>
+            
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditContent(post.content);
+                  setEditRating(post.rating || 0);
+                }}
+                disabled={loading}
+                className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditPost}
+                disabled={loading}
+                className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

@@ -1874,6 +1874,62 @@ export const unlikePostV2 = async (postId: string, userId: string): Promise<void
   }
 };
 
+export const updatePostV2 = async (
+  postId: string,
+  updates: {
+    content?: string;
+    rating?: number;
+    photos?: string[];
+  }
+): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    
+    // Build update object with only defined values
+    const updateData: {
+      content?: string;
+      rating?: number;
+      photos?: string[];
+    } = {};
+    
+    if (updates.content !== undefined) updateData.content = updates.content;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.photos !== undefined) updateData.photos = updates.photos;
+    
+    await updateDoc(postRef, updateData);
+    console.log('✏️ Updated post v2:', postId);
+  } catch (error) {
+    console.error('Error updating post v2:', error);
+    throw error;
+  }
+};
+
+export const deletePostV2 = async (postId: string): Promise<void> => {
+  try {
+    const postRef = doc(db, 'posts_v2', postId);
+    await deleteDoc(postRef);
+    console.log('🗑️ Deleted post v2:', postId);
+    
+    // Also delete all comments for this post
+    const commentsQuery = query(
+      collection(db, 'comments'),
+      where('postId', '==', postId)
+    );
+    const commentsSnapshot = await getDocs(commentsQuery);
+    
+    const batch = writeBatch(db);
+    commentsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    
+    console.log(`🗑️ Deleted ${commentsSnapshot.size} comments for post ${postId}`);
+  } catch (error) {
+    console.error('Error deleting post v2:', error);
+    throw error;
+  }
+};
+
 // ============================================================================
 // FEED AND DATA LOADING FUNCTIONS (NEW SYSTEM)
 // ============================================================================
