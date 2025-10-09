@@ -149,12 +149,17 @@ export default function PostForm({
         const newVisibility = postToFeed ? 'public' : 'private';
         
         const interactionRef = doc(db, 'user_thing_interactions', editMode.interaction.id);
-        const updateData: Record<string, unknown> = {
+        
+        // Build update object conditionally (Firestore doesn't allow undefined)
+        const updateData: {
+          state: string;
+          visibility: string;
+          notes?: string;
+        } = {
           state: newState,
           visibility: newVisibility,
         };
         
-        // Only add notes if it has a value (Firestore doesn't allow undefined)
         if (internalNotes.trim()) {
           updateData.notes = internalNotes.trim();
         }
