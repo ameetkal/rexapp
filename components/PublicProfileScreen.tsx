@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
-import { getFeedPosts, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
-import { User, Post } from '@/lib/types';
-import PostCard from './PostCard';
+import { getUserPostsV2, followUser, unfollowUser, getUserRecsGivenCount, getThing, getUserThingInteraction } from '@/lib/firestore';
+import { User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
+import PostCardV2 from './PostCardV2';
 
 interface PublicProfileScreenProps {
   user: User;
@@ -14,8 +13,9 @@ interface PublicProfileScreenProps {
 }
 
 export default function PublicProfileScreen({ user: profileUser, onBack }: PublicProfileScreenProps) {
-  const router = useRouter();
-  const [userPosts, setUserPosts] = useState<Post[]>([]);
+  const [userPosts, setUserPosts] = useState<PostV2[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
+  const [userInteractions, setUserInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
@@ -28,9 +28,26 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     const loadUserData = async () => {
       try {
         // Get all posts from this specific user
-        const allPosts = await getFeedPosts([profileUser.id], profileUser.id);
-        const userOnlyPosts = allPosts.filter(post => post.authorId === profileUser.id);
-        setUserPosts(userOnlyPosts);
+        const posts = await getUserPostsV2(profileUser.id);
+        setUserPosts(posts);
+
+        // Load things for these posts
+        const uniqueThingIds = [...new Set(posts.map(p => p.thingId))];
+        const thingsData: Thing[] = [];
+        const interactionsMap = new Map<string, UserThingInteraction>();
+        
+        for (const thingId of uniqueThingIds) {
+          const thing = await getThing(thingId);
+          if (thing) thingsData.push(thing);
+          
+          if (currentUser) {
+            const interaction = await getUserThingInteraction(currentUser.uid, thingId);
+            if (interaction) interactionsMap.set(thingId, interaction);
+          }
+        }
+        
+        setThings(thingsData);
+        setUserInteractions(interactionsMap);
 
         // Get recs given count
         const recsCount = await getUserRecsGivenCount(profileUser.id);
@@ -43,7 +60,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     };
 
     loadUserData();
-  }, [profileUser.id]);
+  }, [profileUser.id, currentUser]);
 
   const handleFollowToggle = async () => {
     if (!currentUser || !userProfile || followLoading) return;
@@ -72,9 +89,6 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     }
   };
 
-  const handlePostClick = (postId: string) => {
-    router.push(`/post/${postId}?from=profile&userId=${profileUser.id}&userName=${encodeURIComponent(profileUser.name)}`);
-  };
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -183,9 +197,24 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             </div>
           ) : (
             <div className="space-y-4">
-              {userPosts.map((post) => (
-                <PostCard key={post.id} post={post} onPostClick={handlePostClick} />
-              ))}
+              {userPosts.map((post) => {
+                const thing = things.find(t => t.id === post.thingId);
+                const userInteraction = userInteractions.get(post.thingId);
+                
+                if (!thing) {
+                  console.warn('Thing not found for post:', post.id);
+                  return null;
+                }
+                
+                return (
+                  <PostCardV2 
+                    key={post.id} 
+                    post={post}
+                    thing={thing}
+                    userInteraction={userInteraction}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

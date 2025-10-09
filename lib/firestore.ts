@@ -17,9 +17,10 @@ import {
   writeBatch,
   onSnapshot,
   runTransaction,
+  increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2 } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -1461,8 +1462,62 @@ export const createOrGetThing = async (
   createdBy: string
 ): Promise<string> => {
   try {
-    // For API items, always create new (they're unique by API ID)
+    // For API items, check if it exists by unique API ID
     if (universalItem.source !== 'manual') {
+      if (universalItem.source === 'google_places') {
+        // Dedupe by place_id (stored in metadata)
+        const placeId = universalItem.id || universalItem.metadata?.placeId;
+        if (placeId) {
+          // Try to find by stored ID first (most reliable)
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'google_places' && 
+                   (data.id === placeId || data.metadata?.placeId === placeId);
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing Google Place:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      } else if (universalItem.source === 'google_books') {
+        // Dedupe by ISBN
+        const isbn = universalItem.metadata?.isbn;
+        if (isbn) {
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'google_books' && data.metadata?.isbn === isbn;
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing book:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      } else if (universalItem.source === 'tmdb') {
+        // Dedupe by TMDB ID
+        const tmdbId = universalItem.id || universalItem.metadata?.tmdbId;
+        if (tmdbId) {
+          const thingsRef = collection(db, 'things');
+          const snapshot = await getDocs(thingsRef);
+          const existing = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.source === 'tmdb' && 
+                   (data.id === tmdbId || data.metadata?.tmdbId === tmdbId);
+          });
+          
+          if (existing) {
+            console.log('♻️ Using existing movie/TV show:', existing.id, 'for', universalItem.title);
+            return existing.id;
+          }
+        }
+      }
+      
+      // If no existing thing found, create new API thing
       const thingData: Omit<Thing, 'id'> = {
         title: universalItem.title,
         category: universalItem.category,
@@ -1474,12 +1529,14 @@ export const createOrGetThing = async (
         createdBy,
       };
       
-      const docRef = await addDoc(collection(db, 'things'), thingData);
-      console.log('✅ Created new thing:', docRef.id, 'for', universalItem.title);
+      // Clean undefined values before writing to Firestore
+      const cleanedThingData = cleanObject(thingData);
+      const docRef = await addDoc(collection(db, 'things'), cleanedThingData);
+      console.log('✅ Created new API thing:', docRef.id, 'for', universalItem.title, `(${universalItem.source})`);
       return docRef.id;
     }
 
-    // For manual items, check for exact duplicates
+    // For manual items, check for exact duplicates by title + category
     const thingsQuery = query(
       collection(db, 'things'),
       where('title', '==', universalItem.title),
@@ -1491,7 +1548,7 @@ export const createOrGetThing = async (
     
     if (!existingThings.empty) {
       const existingThing = existingThings.docs[0];
-      console.log('♻️ Using existing thing:', existingThing.id, 'for', universalItem.title);
+      console.log('♻️ Using existing manual thing:', existingThing.id, 'for', universalItem.title);
       return existingThing.id;
     }
     
@@ -1507,7 +1564,9 @@ export const createOrGetThing = async (
       createdBy,
     };
     
-    const docRef = await addDoc(collection(db, 'things'), thingData);
+    // Clean undefined values before writing to Firestore
+    const cleanedThingData = cleanObject(thingData);
+    const docRef = await addDoc(collection(db, 'things'), cleanedThingData);
     console.log('✅ Created new manual thing:', docRef.id, 'for', universalItem.title);
     return docRef.id;
   } catch (error) {
@@ -1538,7 +1597,9 @@ export const createUserThingInteraction = async (
   userId: string,
   thingId: string,
   state: UserThingInteractionState,
-  visibility: 'private' | 'friends' | 'public' = 'friends'
+  visibility: 'private' | 'friends' | 'public' = 'friends',
+  rating?: number,
+  notes?: string
 ): Promise<string> => {
   try {
     // Check if user already has an interaction with this thing
@@ -1553,11 +1614,15 @@ export const createUserThingInteraction = async (
     if (!existingInteractions.empty) {
       // Update existing interaction
       const existingDoc = existingInteractions.docs[0];
-      await updateDoc(doc(db, 'user_thing_interactions', existingDoc.id), {
+      const updateData = {
         state,
         date: Timestamp.now(),
         visibility,
-      });
+        ...(rating !== undefined && { rating }),
+        ...(notes !== undefined && { notes }),
+      };
+      
+      await updateDoc(doc(db, 'user_thing_interactions', existingDoc.id), updateData);
       console.log('🔄 Updated existing interaction:', existingDoc.id);
       return existingDoc.id;
     }
@@ -1569,10 +1634,14 @@ export const createUserThingInteraction = async (
       state,
       date: Timestamp.now(),
       visibility,
+      rating,
+      notes,
       createdAt: Timestamp.now(),
     };
     
-    const docRef = await addDoc(collection(db, 'user_thing_interactions'), interactionData);
+    // Clean undefined values
+    const cleanedData = cleanObject(interactionData);
+    const docRef = await addDoc(collection(db, 'user_thing_interactions'), cleanedData);
     console.log('✅ Created new interaction:', docRef.id);
     return docRef.id;
   } catch (error) {
@@ -1746,7 +1815,9 @@ export const createPostV2 = async (
       likedBy: [],
     };
     
-    const docRef = await addDoc(collection(db, 'posts_v2'), postData);
+    // Clean undefined values before writing to Firestore
+    const cleanedPostData = cleanObject(postData);
+    const docRef = await addDoc(collection(db, 'posts_v2'), cleanedPostData);
     console.log('✅ Created post v2:', docRef.id);
     return docRef.id;
   } catch (error) {
@@ -1811,29 +1882,60 @@ export const unlikePostV2 = async (postId: string, userId: string): Promise<void
 export const getFeedPostsV2 = async (following: string[], currentUserId: string): Promise<PostV2[]> => {
   try {
     console.log('📱 Loading feed posts with new system...');
+    console.log('👥 Following:', following.length, 'users');
+    console.log('👤 Current user:', currentUserId);
     
     // Include current user's posts in the feed (like old system)
     const allUserIds = [...new Set([...following, currentUserId])];
+    console.log('📊 Total user IDs to query:', allUserIds.length);
     
-    if (allUserIds.length === 0) return [];
+    if (allUserIds.length === 0) {
+      console.log('⚠️ No user IDs to query');
+      return [];
+    }
     
-    // Get posts from followed users + current user
-    const followingPostsQuery = query(
-      collection(db, 'posts_v2'),
-      where('authorId', 'in', allUserIds),
-      orderBy('createdAt', 'desc'),
-      limit(50)
-    );
-    
-    const followingPostsSnapshot = await getDocs(followingPostsQuery);
     const followingPosts: PostV2[] = [];
     
-    followingPostsSnapshot.forEach((doc) => {
-      followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
-    });
+    try {
+      // Get posts from followed users + current user
+      const followingPostsQuery = query(
+        collection(db, 'posts_v2'),
+        where('authorId', 'in', allUserIds),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      console.log('🔍 Querying posts_v2 collection...');
+      const followingPostsSnapshot = await getDocs(followingPostsQuery);
+      console.log('📦 Query returned', followingPostsSnapshot.size, 'documents');
+      
+      followingPostsSnapshot.forEach((doc) => {
+        followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
+      });
+    } catch (queryError) {
+      console.error('❌ Error with filtered query:', queryError);
+      console.log('🔄 Falling back to all posts query...');
+      
+      // Fallback: get all posts (useful if index isn't created yet)
+      const allPostsQuery = query(
+        collection(db, 'posts_v2'),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      
+      const allPostsSnapshot = await getDocs(allPostsQuery);
+      allPostsSnapshot.forEach((doc) => {
+        const post = { id: doc.id, ...doc.data() } as PostV2;
+        // Filter client-side
+        if (allUserIds.includes(post.authorId)) {
+          followingPosts.push(post);
+        }
+      });
+    }
     
     // If no posts from following, get recent posts from all users
     if (followingPosts.length === 0) {
+      console.log('📭 No posts from followed users, loading all recent posts...');
       const allPostsQuery = query(
         collection(db, 'posts_v2'),
         orderBy('createdAt', 'desc'),
@@ -1841,6 +1943,7 @@ export const getFeedPostsV2 = async (following: string[], currentUserId: string)
       );
       
       const allPostsSnapshot = await getDocs(allPostsQuery);
+      console.log('📦 All posts query returned', allPostsSnapshot.size, 'documents');
       allPostsSnapshot.forEach((doc) => {
         followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
       });
@@ -1849,7 +1952,7 @@ export const getFeedPostsV2 = async (following: string[], currentUserId: string)
     console.log(`✅ Loaded ${followingPosts.length} posts with new system`);
     return followingPosts;
   } catch (error) {
-    console.error('Error loading feed posts v2:', error);
+    console.error('❌ Error loading feed posts v2:', error);
     return [];
   }
 };
@@ -1908,6 +2011,35 @@ export const getUserPostsV2 = async (userId: string): Promise<PostV2[]> => {
   } catch (error) {
     console.error('Error loading user posts v2:', error);
     return [];
+  }
+};
+
+// Get average rating for a thing across all users
+export const getThingAverageRating = async (thingId: string): Promise<number | null> => {
+  try {
+    const interactionsQuery = query(
+      collection(db, 'user_thing_interactions'),
+      where('thingId', '==', thingId),
+      where('rating', '>', 0)
+    );
+    
+    const snapshot = await getDocs(interactionsQuery);
+    
+    if (snapshot.empty) return null;
+    
+    const ratings = snapshot.docs
+      .map(doc => doc.data().rating)
+      .filter((rating): rating is number => rating !== undefined && rating > 0);
+    
+    if (ratings.length === 0) return null;
+    
+    const sum = ratings.reduce((acc, rating) => acc + rating, 0);
+    const average = sum / ratings.length;
+    
+    return Math.round(average * 10) / 10; // Round to 1 decimal
+  } catch (error) {
+    console.error('Error calculating average rating:', error);
+    return null;
   }
 };
 
@@ -2174,6 +2306,106 @@ export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem)
     return { thingId, interactionId, postId };
   } catch (error) {
     console.error('❌ Error migrating personal item:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// COMMENTS COLLECTION FUNCTIONS
+// ============================================================================
+
+export const createComment = async (
+  postId: string,
+  authorId: string,
+  authorName: string,
+  content: string
+): Promise<string> => {
+  try {
+    const commentData: Omit<Comment, 'id'> = {
+      postId,
+      authorId,
+      authorName,
+      content,
+      createdAt: Timestamp.now(),
+      likedBy: [],
+    };
+    
+    const docRef = await addDoc(collection(db, 'comments'), commentData);
+    console.log('✅ Created comment:', docRef.id);
+    
+    // Increment comment count on the post
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      commentCount: increment(1)
+    });
+    
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating comment:', error);
+    throw error;
+  }
+};
+
+export const getCommentsForPost = async (postId: string): Promise<Comment[]> => {
+  try {
+    const q = query(
+      collection(db, 'comments'),
+      where('postId', '==', postId),
+      orderBy('createdAt', 'asc') // Oldest first for natural conversation flow
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const comments: Comment[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      comments.push({ id: doc.id, ...doc.data() } as Comment);
+    });
+    
+    console.log(`✅ Loaded ${comments.length} comments for post ${postId}`);
+    return comments;
+  } catch (error) {
+    console.error('Error getting comments:', error);
+    return [];
+  }
+};
+
+export const deleteComment = async (commentId: string, postId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'comments', commentId));
+    
+    // Decrement comment count on the post
+    const postRef = doc(db, 'posts_v2', postId);
+    await updateDoc(postRef, {
+      commentCount: increment(-1)
+    });
+    
+    console.log('✅ Deleted comment:', commentId);
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    throw error;
+  }
+};
+
+export const likeComment = async (commentId: string, userId: string): Promise<void> => {
+  try {
+    const commentRef = doc(db, 'comments', commentId);
+    await updateDoc(commentRef, {
+      likedBy: arrayUnion(userId)
+    });
+  } catch (error) {
+    console.error('Error liking comment:', error);
+    throw error;
+  }
+};
+
+export const unlikeComment = async (commentId: string, userId: string): Promise<void> => {
+  try {
+    const commentRef = doc(db, 'comments', commentId);
+    await updateDoc(commentRef, {
+      likedBy: arrayRemove(userId)
+    });
+  } catch (error) {
+    console.error('Error unliking comment:', error);
     throw error;
   }
 }; 

@@ -139,7 +139,7 @@ export default function MovieSearch({ onMovieSelect, onBack }: MovieSearchProps)
                           )}
                           {movie.metadata.tmdbRating && (
                             <span className="flex items-center">
-                              ⭐ {movie.metadata.tmdbRating}/10
+                              ⭐ {(movie.metadata.tmdbRating / 2).toFixed(1)}/5
                             </span>
                           )}
                         </div>

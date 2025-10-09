@@ -222,25 +222,27 @@ export default function ThingInteractionCard({
 
         {/* Actions */}
         <div className="flex items-center space-x-2">
-          {/* State Change Buttons */}
-          {interaction.state !== 'inProgress' && (
-            <button
-              onClick={() => handleStateChange('inProgress')}
-              disabled={loading}
-              className="px-3 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              Start
-            </button>
-          )}
-          
+          {/* State Change Buttons - only show if not completed */}
           {interaction.state !== 'completed' && (
-            <button
-              onClick={() => handleStateChange('completed')}
-              disabled={loading}
-              className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              Complete
-            </button>
+            <>
+              {interaction.state !== 'inProgress' && (
+                <button
+                  onClick={() => handleStateChange('inProgress')}
+                  disabled={loading}
+                  className="px-3 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-full transition-colors disabled:opacity-50"
+                >
+                  Start
+                </button>
+              )}
+              
+              <button
+                onClick={() => handleStateChange('completed')}
+                disabled={loading}
+                className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
+              >
+                Complete
+              </button>
+            </>
           )}
 
           {/* Share Button */}

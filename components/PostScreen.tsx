@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuthStore, useAppStore } from '@/lib/store';
-import { createPost, createPersonalItem, createPostWithNewSystem } from '@/lib/firestore';
-import { Category, PersonalItemStatus, PersonalItem, UniversalItem } from '@/lib/types';
-import { Timestamp } from 'firebase/firestore';
+import { useAuthStore } from '@/lib/store';
+import { createPostWithNewSystem } from '@/lib/firestore';
+import { Category, PersonalItemStatus, UniversalItem } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon, PlusIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
@@ -40,7 +39,6 @@ export default function PostScreen() {
   const [recommendedByText, setRecommendedByText] = useState(''); // For non-Rex users
   
   const { user, userProfile } = useAuthStore();
-  const { addPost, addPersonalItem } = useAppStore();
 
   // SMS invite state
   const [showInviteDialog, setShowInviteDialog] = useState(false);
@@ -148,11 +146,10 @@ export default function PostScreen() {
         ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
       };
 
-      // ===== NEW SYSTEM =====
-      console.log('🚀 Creating with NEW system...');
-      // Map old status to new system status
+      // Create with NEW SYSTEM
+      console.log('🚀 Creating post...');
       const newSystemStatus = status === 'completed' ? 'completed' : 'want_to_try';
-      const newSystemResult = await createPostWithNewSystem(
+      const result = await createPostWithNewSystem(
         user.uid,
         userProfile.name,
         category,
@@ -163,117 +160,32 @@ export default function PostScreen() {
         enhancedFields
       );
       
-      console.log('✅ New system result:', newSystemResult);
-
-      // ===== OLD SYSTEM (for backward compatibility) =====
-      console.log('🔄 Also creating with OLD system...');
-      let postId: string | null = null;
-      
-      // Always create a personal item
-      const personalItemId = await createPersonalItem(
-        user.uid,
-        category,
-        title,
-        description.trim() || undefined,
-        enhancedFields,
-        undefined // No post linking for manual items
-      );
-      
-      // Create personal item for local store
-      const personalItem: PersonalItem = {
-        id: personalItemId,
-        userId: user.uid,
-        category,
-        title,
-        description: description.trim() || '',
-        status,
-        createdAt: Timestamp.now(),
-        source: 'personal',
-        // Include enhanced fields
-        ...(recommendedByValue && { recommendedBy: recommendedByValue }),
-        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
-        ...(rating > 0 && { rating }),
-      };
-      
-      // If user wants to post to feed, create a post too
-      if (postToFeed) {
-        postId = await createPost(
-          user.uid,
-          userProfile.name,
-          category,
-          title,
-          description.trim() || undefined,
-          enhancedFields
-        );
-        
-        // Add to posts store
-        const newPost = {
-          id: postId,
-          authorId: user.uid,
-          authorName: userProfile.name,
-          category,
-          title,
-          description: description.trim() || '',
-          createdAt: Timestamp.now(),
-          savedBy: [],
-          postType: 'manual' as const,
-          ...(recommendedByValue && { recommendedBy: recommendedByValue }),
-          ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
-        };
-        addPost(newPost);
-        
-        // Update personal item with shared post ID if completed
-        if (status === 'completed') {
-          personalItem.sharedPostId = postId;
-          personalItem.status = 'shared';
-        }
-      }
-      
-      // Add personal item to store
-      addPersonalItem(personalItem);
-      
-      console.log('✅ Old system result:', { personalItemId, postId });
+      console.log('✅ Created:', result);
 
       // Check if we should offer SMS invite for non-user recommender
-      console.log(`🔍 SMS Invite Debug:`, {
-        recommendedBy: recommendedByValue,
-        shouldOffer: shouldOfferSMSInvite(recommendedByValue || ''),
-        newSystemPostId: newSystemResult.postId,
-        oldSystemPostId: postId,
-        postToFeed,
-        personalItemId
-      });
-      
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        // Use new system post ID if available, fallback to old system
-        const finalPostId = newSystemResult.postId || postId;
-        
-        if (postToFeed && finalPostId) {
+        if (postToFeed && result.postId) {
           // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${finalPostId}`);
+          console.log(`✅ Setting up SMS invite for shared post: ${result.postId}`);
           setInviteData({
             recommenderName: recommendedByValue,
             postTitle: title,
-            postId: finalPostId,
+            postId: result.postId,
             isPost: true
           });
           setShowInviteDialog(true);
-          // Don't reset form yet - wait for invite dialog to be handled
           return;
-        } else if (!postToFeed) {
-          // For private items, use the personal item ID
-          console.log(`✅ Setting up SMS invite for private item: ${personalItemId}`);
+        } else if (!postToFeed && result.interactionId) {
+          // For private items, use the interaction ID
+          console.log(`✅ Setting up SMS invite for private item: ${result.interactionId}`);
           setInviteData({
             recommenderName: recommendedByValue,
             postTitle: title,
-            postId: personalItemId,
+            postId: result.interactionId,
             isPost: false
           });
           setShowInviteDialog(true);
-          // Don't reset form yet - wait for invite dialog to be handled
           return;
-        } else {
-          console.log(`❌ SMS Invite: postToFeed=true but no postId`);
         }
       }
 
@@ -285,11 +197,9 @@ export default function PostScreen() {
       setRecommendedByUser(null);
       setRecommendedByText('');
       setPostToFeed(true);
-      // Reset enhanced fields
       setRating(0);
       setSuccess(true);
       
-      // Hide success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       console.error('Error creating item:', error);

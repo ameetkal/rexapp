@@ -15,7 +15,7 @@ interface StarRatingProps {
 export default function StarRating({ 
   rating, 
   onRatingChange, 
-  maxRating = 10,
+  maxRating = 5,
   showLabel = true,
   size = 'md'
 }: StarRatingProps) {

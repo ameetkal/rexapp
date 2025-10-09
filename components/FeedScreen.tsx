@@ -1,11 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuthStore, useAppStore } from '@/lib/store';
-import { getFeedPosts, universalSearch, followUser, unfollowUser, getFeedPostsV2, getThing } from '@/lib/firestore';
-import { Post, User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
-import PostCard from './PostCard';
+import { useAuthStore } from '@/lib/store';
+import { universalSearch, followUser, unfollowUser, getFeedPostsV2, getThing, getUserThingInteraction, getThingAverageRating } from '@/lib/firestore';
+import { User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
 import PostCardV2 from './PostCardV2';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
@@ -15,39 +13,30 @@ interface FeedScreenProps {
 }
 
 export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: FeedScreenProps = {}) {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<{ posts: Post[]; users: User[] }>({ posts: [], users: [] });
+  const [searchResults, setSearchResults] = useState<{ users: User[] }>({ users: [] });
   const [searching, setSearching] = useState(false);
   const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
-  // NEW SYSTEM STATE
   const [postsV2, setPostsV2] = useState<PostV2[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
-  const [userInteractions] = useState<UserThingInteraction[]>([]);
-  const [useNewSystem, setUseNewSystem] = useState(false); // Toggle between old and new
+  const [userInteractions, setUserInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
+  const [avgRatings, setAvgRatings] = useState<Map<string, number>>(new Map());
   
   const { user, userProfile, setUserProfile } = useAuthStore();
-  const { posts, setPosts } = useAppStore();
 
   const loadFeedPosts = useCallback(async () => {
     if (!userProfile || !user) return;
     
     try {
-      // Load OLD system posts
-      console.log('📱 Loading OLD system feed...');
-      const feedPosts = await getFeedPosts(userProfile.following, user.uid);
-      setPosts(feedPosts);
-      
-      // Load NEW system posts
-      console.log('🚀 Loading NEW system feed...');
+      console.log('📱 Loading feed...');
       const feedPostsV2 = await getFeedPostsV2(userProfile.following, user.uid);
       setPostsV2(feedPostsV2);
       
-      // Load things data for new posts
+      // Load things data for posts
       const uniqueThingIds = [...new Set(feedPostsV2.map(post => post.thingId))];
       const thingsData: Thing[] = [];
       for (const thingId of uniqueThingIds) {
@@ -58,13 +47,38 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
       }
       setThings(thingsData);
       
-      console.log(`✅ Loaded ${feedPosts.length} old posts and ${feedPostsV2.length} new posts`);
+      // Load user interactions for these things
+      const interactionsMap = new Map<string, UserThingInteraction>();
+      for (const thingId of uniqueThingIds) {
+        const interaction = await getUserThingInteraction(user.uid, thingId);
+        if (interaction) {
+          interactionsMap.set(thingId, interaction);
+        }
+      }
+      setUserInteractions(interactionsMap);
+      
+      // Load average ratings for all things in parallel
+      console.log('📊 Loading average ratings...');
+      const avgRatingsResults = await Promise.all(
+        uniqueThingIds.map(thingId => getThingAverageRating(thingId))
+      );
+      
+      const avgRatingsMap = new Map<string, number>();
+      uniqueThingIds.forEach((thingId, index) => {
+        const avgRating = avgRatingsResults[index];
+        if (avgRating !== null) {
+          avgRatingsMap.set(thingId, avgRating);
+        }
+      });
+      setAvgRatings(avgRatingsMap);
+      
+      console.log(`✅ Loaded ${feedPostsV2.length} posts with ${avgRatingsMap.size} avg ratings`);
     } catch (error) {
       console.error('Error loading feed posts:', error);
     } finally {
       setLoading(false);
     }
-  }, [userProfile, user, setPosts]);
+  }, [userProfile, user]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -74,7 +88,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
 
   const performSearch = async (term: string) => {
     if (!term.trim() || !user) {
-      setSearchResults({ posts: [], users: [] });
+      setSearchResults({ users: [] });
       setShowingSearchResults(false);
       return;
     }
@@ -84,11 +98,9 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     try {
       const results = await universalSearch(term);
       // Filter out current user from user results
-      const filteredResults = {
-        ...results,
+      setSearchResults({
         users: results.users.filter(u => u.id !== user.uid)
-      };
-      setSearchResults(filteredResults);
+      });
     } catch (error) {
       console.error('Error searching:', error);
     } finally {
@@ -102,7 +114,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
 
   const clearSearch = () => {
     setSearchTerm('');
-    setSearchResults({ posts: [], users: [] });
+    setSearchResults({ users: [] });
     setShowingSearchResults(false);
   };
 
@@ -150,9 +162,6 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     return userProfile?.following.includes(userId) || false;
   };
 
-  const handlePostClick = (postId: string) => {
-    router.push(`/post/${postId}?from=feed`);
-  };
 
   useEffect(() => {
     if (userProfile && user) {
@@ -179,7 +188,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
       if (searchTerm.trim()) {
         performSearch(searchTerm);
       } else {
-        setSearchResults({ posts: [], users: [] });
+        setSearchResults({ users: [] });
         setShowingSearchResults(false);
       }
     }, 300); // 300ms debounce
@@ -303,22 +312,8 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </div>
             )}
 
-            {/* Posts Results */}
-            {searchResults.posts.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-3">
-                  📝 POSTS ({searchResults.posts.length})
-                </h4>
-                <div className="space-y-4">
-                  {searchResults.posts.map((post) => (
-                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* No Results */}
-            {searchResults.users.length === 0 && searchResults.posts.length === 0 && !searching && (
+            {searchResults.users.length === 0 && !searching && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -345,33 +340,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </button>
             </div>
 
-            {/* System Toggle */}
-            <div className="mb-4 flex justify-center">
-              <div className="bg-gray-100 rounded-lg p-1 flex">
-                <button
-                  onClick={() => setUseNewSystem(false)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    !useNewSystem 
-                      ? 'bg-white text-gray-900 shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Old System
-                </button>
-                <button
-                  onClick={() => setUseNewSystem(true)}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    useNewSystem 
-                      ? 'bg-white text-gray-900 shadow-sm' 
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  New System
-                </button>
-              </div>
-            </div>
-
-            {(!useNewSystem ? posts.length === 0 : postsV2.length === 0) ? (
+            {postsV2.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -390,34 +359,26 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </div>
             ) : (
               <div className="space-y-4">
-                {useNewSystem ? (
-                  // NEW SYSTEM POSTS
-                  postsV2.map((post) => {
-                    const thing = things.find(t => t.id === post.thingId);
-                    const userInteraction = userInteractions.find(i => i.thingId === post.thingId);
-                    
-                    if (!thing) {
-                      console.warn('Thing not found for post:', post.id, 'thingId:', post.thingId);
-                      return null;
-                    }
-                    
-                    return (
-                      <PostCardV2
-                        key={post.id}
-                        post={post}
-                        thing={thing}
-                        userInteraction={userInteraction}
-                        onAuthorClick={onUserProfileClick}
-                        onPostClick={handlePostClick}
-                      />
-                    );
-                  })
-                ) : (
-                  // OLD SYSTEM POSTS
-                  posts.map((post) => (
-                    <PostCard key={post.id} post={post} onAuthorClick={onUserProfileClick} onPostClick={handlePostClick} />
-                  ))
-                )}
+                {postsV2.map((post) => {
+                  const thing = things.find(t => t.id === post.thingId);
+                  const userInteraction = userInteractions.get(post.thingId);
+                  
+                  if (!thing) {
+                    console.warn('Thing not found for post:', post.id, 'thingId:', post.thingId);
+                    return null;
+                  }
+                  
+                  return (
+                    <PostCardV2
+                      key={post.id}
+                      post={post}
+                      thing={thing}
+                      userInteraction={userInteraction}
+                      avgRating={avgRatings.get(post.thingId) || null}
+                      onAuthorClick={onUserProfileClick}
+                    />
+                  );
+                })}
               </div>
             )}
           </>

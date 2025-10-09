@@ -2,12 +2,12 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
-import { useAuthStore, useAppStore } from '@/lib/store';
-import { createStructuredPost, createPersonalItem } from '@/lib/firestore';
-import { UniversalItem, PersonalItem, Post } from '@/lib/types';
+import { useAuthStore } from '@/lib/store';
+import { createOrGetThing, createUserThingInteraction, createPostV2 } from '@/lib/firestore';
+import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
+import { UniversalItem } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
-import { BookOpenIcon, FilmIcon, MapPinIcon } from '@heroicons/react/24/outline';
-import { Timestamp } from 'firebase/firestore';
+import { BookOpenIcon, FilmIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
 import UserTagInput from './UserTagInput';
 
@@ -25,7 +25,7 @@ export default function StructuredPostForm({
   const [rating, setRating] = useState(0);
   const [status, setStatus] = useState<'completed' | 'want_to_try'>('want_to_try');
   const [postToFeed, setPostToFeed] = useState(true);
-  const [description, setDescription] = useState(universalItem.description || '');
+  const [description, setDescription] = useState(''); // No pre-fill
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
   const [recommendedByText, setRecommendedByText] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -37,8 +37,49 @@ export default function StructuredPostForm({
     isPost: boolean;
   } | null>(null);
   
+  // More Info state
+  const [showMoreInfo, setShowMoreInfo] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoPreviewUrls, setPhotoPreviewUrls] = useState<string[]>([]);
+  const [internalNotes, setInternalNotes] = useState('');
+  const [photoError, setPhotoError] = useState('');
+  
   const { user, userProfile } = useAuthStore();
-  const { addPost, addPersonalItem } = useAppStore();
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    
+    setPhotoError('');
+    const newPhotos = Array.from(files);
+    
+    // Check if adding these would exceed max
+    if (photos.length + newPhotos.length > MAX_PHOTOS) {
+      setPhotoError(`Maximum ${MAX_PHOTOS} photos allowed`);
+      return;
+    }
+    
+    // Validate each file
+    for (const file of newPhotos) {
+      const validation = validatePhotoFile(file);
+      if (!validation.valid) {
+        setPhotoError(validation.error || 'Invalid file');
+        return;
+      }
+    }
+    
+    // Add photos and create previews
+    setPhotos(prev => [...prev, ...newPhotos]);
+    const urls = newPhotos.map(file => URL.createObjectURL(file));
+    setPhotoPreviewUrls(prev => [...prev, ...urls]);
+  };
+
+  const removePhoto = (index: number) => {
+    setPhotos(prev => prev.filter((_, i) => i !== index));
+    URL.revokeObjectURL(photoPreviewUrls[index]);
+    setPhotoPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    setPhotoError('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,123 +106,77 @@ export default function StructuredPostForm({
     setSubmitting(true);
     try {
       const recommendedByValue = recommendedByUser?.name || recommendedByText.trim() || undefined;
-      const enhancedFields = {
-        rating: rating > 0 ? rating : undefined,
-        recommendedBy: recommendedByValue,
-        ...(recommendedByUser && { recommendedByUserId: recommendedByUser.id }),
-      };
 
-      let createdPostId: string | null = null;
+      // Upload photos if any
+      let photoUrls: string[] = [];
+      if (photos.length > 0) {
+        console.log('📸 Uploading photos...');
+        photoUrls = await uploadPhotos(photos, user.uid);
+        console.log('✅ Photos uploaded:', photoUrls.length);
+      }
 
+      // Create structured post
+      console.log('🚀 Creating structured post...');
+      
+      // 1. Create or get the thing
+      const thingId = await createOrGetThing(universalItem, user.uid);
+      console.log('✅ Thing created/found:', thingId);
+      
+      // 2. Create user interaction (with rating and notes)
+      const interactionState = status === 'completed' ? 'completed' : 'bucketList';
+      const interactionId = await createUserThingInteraction(
+        user.uid,
+        thingId,
+        interactionState as 'completed' | 'bucketList',
+        'friends',
+        rating > 0 ? rating : undefined,
+        internalNotes.trim() || undefined
+      );
+      console.log('✅ User interaction created:', interactionId);
+      
+      let newSystemPostId: string | undefined;
+      
+      // 3. If posting to feed, create post (with photos)
       if (postToFeed) {
-        // Create both post and personal item
-        const finalDescription = description.trim();
-        const { postId, personalItemId } = await createStructuredPost(
+        newSystemPostId = await createPostV2(
           user.uid,
           userProfile.name,
-          universalItem,
-          status,
-          finalDescription || undefined,
-          enhancedFields
+          thingId,
+          description.trim() || '',
+          {
+            rating: rating > 0 ? rating : undefined,
+            photos: photoUrls.length > 0 ? photoUrls : undefined,
+          }
         );
-        
-        createdPostId = postId;
-
-        // Add post to store
-        const newPost: Post = {
-          id: postId,
-          authorId: user.uid,
-          authorName: userProfile.name,
-          category: universalItem.category,
-          title: universalItem.title,
-          description: finalDescription || '',
-          createdAt: Timestamp.now(),
-          savedBy: [],
-          universalItem,
-          postType: 'structured',
-          ...enhancedFields,
-        };
-        addPost(newPost);
-
-        // Add personal item to store
-        const personalItem: PersonalItem = {
-          id: personalItemId,
-          userId: user.uid,
-          category: universalItem.category,
-          title: universalItem.title,
-          description: finalDescription || '',
-          status: status === 'completed' ? 'shared' : 'want_to_try',
-          createdAt: Timestamp.now(),
-          source: 'personal',
-          sharedPostId: postId, // Always set for structured posts so edits sync
-          ...(status === 'completed' && { completedAt: Timestamp.now() }),
-          ...enhancedFields,
-        };
-        addPersonalItem(personalItem);
-      } else {
-        // Only create personal item
-        const finalDescription = description.trim();
-        createdPostId = await createPersonalItem(
-          user.uid,
-          universalItem.category,
-          universalItem.title,
-          finalDescription || undefined,
-          enhancedFields,
-          undefined // No post linking for standalone personal items
-        );
-
-        const personalItem: PersonalItem = {
-          id: createdPostId,
-          userId: user.uid,
-          category: universalItem.category,
-          title: universalItem.title,
-          description: finalDescription || '',
-          status: status,
-          createdAt: Timestamp.now(),
-          source: 'personal',
-          ...(status === 'completed' && { completedAt: Timestamp.now() }),
-          ...enhancedFields,
-        };
-        addPersonalItem(personalItem);
+        console.log('✅ Post V2 created:', newSystemPostId);
       }
       
-      console.log(`✅ Successfully ${postToFeed ? 'posted and added' : 'added'} "${universalItem.title}" to list`);
+      console.log('✅ Created:', { thingId, interactionId, postId: newSystemPostId });
       
       // Check if we should offer SMS invite for non-user recommender
-      console.log(`🔍 SMS Invite Debug:`, {
-        recommendedBy: recommendedByValue,
-        shouldOffer: shouldOfferSMSInvite(recommendedByValue || ''),
-        createdPostId,
-        postToFeed
-      });
-      
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
-        if (postToFeed && createdPostId) {
+        if (postToFeed && newSystemPostId) {
           // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${createdPostId}`);
+          console.log(`✅ Setting up SMS invite for shared post: ${newSystemPostId}`);
           setInviteData({
             recommenderName: recommendedByValue,
             postTitle: universalItem.title,
-            postId: createdPostId,
+            postId: newSystemPostId,
             isPost: true
           });
           setShowInviteDialog(true);
-          // Don't call onSuccess() yet - wait for invite dialog to be handled
           return;
-        } else if (!postToFeed) {
-          // For private items, use the personal item ID
-          console.log(`✅ Setting up SMS invite for private item: ${createdPostId}`);
+        } else if (!postToFeed && interactionId) {
+          // For private items, use the interaction ID
+          console.log(`✅ Setting up SMS invite for private item: ${interactionId}`);
           setInviteData({
             recommenderName: recommendedByValue,
             postTitle: universalItem.title,
-            postId: createdPostId,
+            postId: interactionId,
             isPost: false
           });
           setShowInviteDialog(true);
-          // Don't call onSuccess() yet - wait for invite dialog to be handled
           return;
-        } else {
-          console.log(`❌ SMS Invite: postToFeed=true but no createdPostId`);
         }
       }
       
@@ -329,30 +324,11 @@ export default function StructuredPostForm({
             </div>
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              📄 Description <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What would you like to share about this?"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-              rows={3}
-            />
-            {universalItem.description && description === universalItem.description && (
-              <p className="text-xs text-gray-500 mt-1">
-                Auto-filled from database. You can edit this description.
-              </p>
-            )}
-          </div>
-
           {/* Rating (only for completed) */}
           {status === 'completed' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">
-                How would you rate it? (optional)
+                ⭐ How would you rate it? <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <StarRating rating={rating} onRatingChange={setRating} />
             </div>
@@ -371,14 +347,27 @@ export default function StructuredPostForm({
               onUserSelect={(user) => {
                 setRecommendedByUser(user);
                 if (!user) {
-                  // When removing a tagged user, keep any text that was typed
-                  // The textValue will be maintained by the component
+                  setRecommendedByText('');
                 }
               }}
               onTextChange={(text) => setRecommendedByText(text)}
               excludeCurrentUser={true}
               currentUserId={user?.uid}
               placeholder="Enter any name or search for Rex users..."
+            />
+          </div>
+
+          {/* Comments for Post */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              💬 Comments for Post <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Share your thoughts..."
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              rows={3}
             />
           </div>
 
@@ -392,9 +381,101 @@ export default function StructuredPostForm({
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">
-                Share with friends on the feed
+                Share to feed
               </span>
             </label>
+          </div>
+
+          {/* More Info Expandable Section */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowMoreInfo(!showMoreInfo)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <span className="text-sm font-medium text-gray-700 flex items-center space-x-2">
+                {showMoreInfo ? <ChevronUpIcon className="h-4 w-4" /> : <ChevronDownIcon className="h-4 w-4" />}
+                <span>Add More Info (Optional)</span>
+              </span>
+              {(photos.length > 0 || internalNotes.trim()) && (
+                <span className="text-xs text-blue-600 font-medium">
+                  {[
+                    photos.length > 0 && `${photos.length} photo${photos.length > 1 ? 's' : ''}`,
+                    internalNotes.trim() && 'Notes added'
+                  ].filter(Boolean).join(', ')}
+                </span>
+              )}
+            </button>
+
+            {showMoreInfo && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+                {/* Photo Upload */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📸 Photos <span className="text-xs text-gray-500">({photos.length}/{MAX_PHOTOS} max, 5MB each)</span>
+                  </label>
+                  
+                  {photoError && (
+                    <div className="mb-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                      {photoError}
+                    </div>
+                  )}
+                  
+                  {/* Upload Button */}
+                  {photos.length < MAX_PHOTOS && (
+                    <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handlePhotoChange}
+                        className="hidden"
+                      />
+                      <PhotoIcon className="h-4 w-4 mr-2" />
+                      <span>Choose Photos</span>
+                    </label>
+                  )}
+                  
+                  {/* Photo Previews */}
+                  {photoPreviewUrls.length > 0 && (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {photoPreviewUrls.map((url, index) => (
+                        <div key={index} className="relative group">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePhoto(index)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                          >
+                            <XMarkIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Internal Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📝 Internal Notes
+                    <span className="text-xs text-gray-500 ml-2">(Private - only you can see)</span>
+                  </label>
+                  <textarea
+                    value={internalNotes}
+                    onChange={(e) => setInternalNotes(e.target.value)}
+                    placeholder="Your private notes..."
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Submit Buttons */}

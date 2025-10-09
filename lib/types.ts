@@ -17,10 +17,12 @@ export interface UniversalItem {
     // Movies/TV
     director?: string;
     year?: number;
+    tmdbId?: string | number;  // For deduplication
     tmdbRating?: number;
     type?: 'movie' | 'tv';
     // Places
     address?: string;
+    placeId?: string;  // For deduplication
     rating?: number;
     priceLevel?: 1 | 2 | 3 | 4;
     phoneNumber?: string;
@@ -33,32 +35,59 @@ export interface UniversalItem {
   source: 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual';
 }
 
+// LEGACY: Keep for backward compatibility with old invite links
 export interface Post {
   id: string;
   authorId: string;
-  authorName: string; // Denormalized for better UX
+  authorName: string;
   category: Category;
   title: string;
   description: string;
   createdAt: Timestamp;
-  savedBy: string[]; // userIds who saved this
-  recommendedBy?: string; // Who recommended this item
-  recommendedByUserId?: string; // User ID if recommendedBy is a Rex user
-  
-  // Enhanced optional fields
-  rating?: number; // 1-10
-  photos?: string[]; // image URLs
+  savedBy: string[];
+  recommendedBy?: string;
+  recommendedByUserId?: string;
+  rating?: number;
+  photos?: string[];
   location?: string;
   priceRange?: '$' | '$$' | '$$$' | '$$$$';
   customPrice?: number;
   tags?: string[];
   experienceDate?: Timestamp;
-  taggedUsers?: string[]; // userIds of tagged people
-  taggedNonUsers?: { name: string; email?: string }[]; // for invites
-  
-  // Universal item reference
+  taggedUsers?: string[];
+  taggedNonUsers?: { name: string; email?: string }[];
   universalItem?: UniversalItem;
-  postType: 'structured' | 'manual'; // Track which creation method was used
+  postType: 'structured' | 'manual';
+}
+
+// LEGACY: Keep for backward compatibility with old personal invite links
+export type PersonalItemStatus = 'want_to_try' | 'completed' | 'shared';
+
+export interface PersonalItem {
+  id: string;
+  userId: string;
+  category: Category;
+  title: string;
+  description: string;
+  status: PersonalItemStatus;
+  createdAt: Timestamp;
+  completedAt?: Timestamp;
+  sharedPostId?: string;
+  source: 'personal' | 'saved_from_post';
+  originalPostId?: string;
+  originalAuthorId?: string;
+  originalAuthorName?: string;
+  recommendedBy?: string;
+  recommendedByUserId?: string;
+  rating?: number;
+  photos?: string[];
+  location?: string;
+  priceRange?: '$' | '$$' | '$$$' | '$$$$';
+  customPrice?: number;
+  tags?: string[];
+  experienceDate?: Timestamp;
+  taggedUsers?: string[];
+  taggedNonUsers?: { name: string; email?: string }[];
 }
 
 export interface User {
@@ -76,37 +105,6 @@ export interface CategoryInfo {
   id: Category;
   name: string;
   emoji: string;
-}
-
-export type PersonalItemStatus = 'want_to_try' | 'completed' | 'shared';
-
-export interface PersonalItem {
-  id: string;
-  userId: string;
-  category: Category;
-  title: string;
-  description: string;
-  status: PersonalItemStatus;
-  createdAt: Timestamp;
-  completedAt?: Timestamp;
-  sharedPostId?: string;
-  source: 'personal' | 'saved_from_post';
-  originalPostId?: string;
-  originalAuthorId?: string;
-  originalAuthorName?: string;
-  recommendedBy?: string; // Who recommended this item
-  recommendedByUserId?: string; // User ID if recommendedBy is a Rex user
-  
-  // Enhanced optional fields (same as Post)
-  rating?: number; // 1-10
-  photos?: string[]; // image URLs
-  location?: string;
-  priceRange?: '$' | '$$' | '$$$' | '$$$$';
-  customPrice?: number;
-  tags?: string[];
-  experienceDate?: Timestamp;
-  taggedUsers?: string[]; // userIds of tagged people
-  taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
 
 export interface Notification {
@@ -175,8 +173,11 @@ export interface UserThingInteraction {
   userId: string;
   thingId: string;
   state: UserThingInteractionState;
-  date: Timestamp;
+  date: Timestamp; // Last state change date
   visibility: 'private' | 'friends' | 'public';
+  rating?: number; // 1-5 star rating (only for completed items)
+  notes?: string;  // Private notes
+  linkedPostId?: string; // If user posted about it publicly
   createdAt: Timestamp;
 }
 
@@ -196,10 +197,10 @@ export interface PostV2 {
   authorName: string; // Denormalized for better UX
   thingId: string;    // Links to the thing
   content: string;    // User's description/review
-  rating?: number;    // 1-10 user rating
+  rating?: number;    // 1-5 star rating
   createdAt: Timestamp;
   likedBy: string[];  // userIds who liked this post
-  comments?: Comment[];
+  commentCount?: number; // Denormalized count for performance
   
   // Enhanced optional fields
   photos?: string[]; // image URLs
@@ -212,12 +213,16 @@ export interface PostV2 {
   taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
 
+// Comments on posts
 export interface Comment {
   id: string;
-  userId: string;
-  userName: string;
+  postId: string;         // Which post this comment is on
+  authorId: string;       // User who wrote the comment
+  authorName: string;     // Denormalized for display
   content: string;
   createdAt: Timestamp;
+  likedBy: string[];      // userIds who liked this comment
+  parentCommentId?: string; // For threaded replies (future)
 }
 
 
