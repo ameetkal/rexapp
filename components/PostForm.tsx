@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createPostV2, createRecommendation } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createRecommendation } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
 import { Category, PersonalItemStatus, UniversalItem } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
@@ -126,36 +126,26 @@ export default function PostForm({
       const thingId = await createOrGetThing(itemToCreate, user.uid);
       console.log('✅ Thing created/found:', thingId);
       
-      // 2. Create user interaction (with rating and notes)
+      // 2. Create user interaction (with all fields including content/photos if sharing)
       const interactionState = status === 'completed' ? 'completed' : 'bucketList';
+      const visibility = postToFeed ? 'public' : 'friends'; // Public if sharing to feed
+      
       const interactionId = await createUserThingInteraction(
         user.uid,
+        userProfile.name, // userName for feed display
         thingId,
         interactionState as 'completed' | 'bucketList',
-        'friends',
-        rating > 0 ? rating : undefined,
-        internalNotes.trim() || undefined
+        visibility,
+        {
+          rating: rating > 0 ? rating : undefined,
+          notes: internalNotes.trim() || undefined,
+          content: postToFeed ? description.trim() || undefined : undefined, // Only add content if sharing
+          photos: postToFeed ? (photoUrls.length > 0 ? photoUrls : undefined) : undefined, // Only add photos if sharing
+        }
       );
       console.log('✅ User interaction created:', interactionId);
       
-      let newSystemPostId: string | undefined;
-      
-      // 3. If posting to feed, create post (with photos)
-      if (postToFeed) {
-        newSystemPostId = await createPostV2(
-          user.uid,
-          userProfile.name,
-          thingId,
-          description.trim() || '',
-          {
-            rating: rating > 0 ? rating : undefined,
-            photos: photoUrls.length > 0 ? photoUrls : undefined,
-          }
-        );
-        console.log('✅ Post V2 created:', newSystemPostId);
-      }
-      
-      // 4. Create recommendation if applicable
+      // 3. Create recommendation if applicable
       if (recommendedByUser && recommendedByUser.id !== user.uid) {
         await createRecommendation(
           recommendedByUser.id,
@@ -166,7 +156,7 @@ export default function PostForm({
         console.log('✅ Recommendation created');
       }
       
-      const result = { thingId, interactionId, postId: newSystemPostId };
+      const result = { thingId, interactionId, postId: postToFeed ? interactionId : undefined };
       
       console.log('✅ Created:', result);
 

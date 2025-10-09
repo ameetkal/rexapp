@@ -3,13 +3,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { PostV2, Thing, UserThingInteraction } from '@/lib/types';
+import { Thing, UserThingInteraction } from '@/lib/types';
 import { 
   createUserThingInteraction, 
   deleteUserThingInteraction,
   createRecommendation,
-  updatePostV2,
-  deletePostV2
+  updateInteractionContent
 } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
@@ -26,15 +25,15 @@ import CommentSection from './CommentSection';
 import StarRating from './StarRating';
 
 interface PostCardV2Props {
-  post: PostV2;
+  interaction: UserThingInteraction; // The interaction being displayed (could be anyone's)
   thing: Thing;
-  userInteraction?: UserThingInteraction;
+  myInteraction?: UserThingInteraction; // Current user's interaction with this thing (for button states)
   avgRating?: number | null;
+  isOwnInteraction?: boolean; // Whether current user owns the displayed interaction
   onAuthorClick?: (userId: string) => void;
-  onPostClick?: (postId: string) => void;
 }
 
-export default function PostCardV2({ post, thing, userInteraction, avgRating, onAuthorClick }: PostCardV2Props) {
+export default function PostCardV2({ interaction, thing, myInteraction, avgRating, isOwnInteraction, onAuthorClick }: PostCardV2Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -43,23 +42,23 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
   const [showEditModal, setShowEditModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
   
-  // Local state to track interaction for immediate UI updates
-  const [localInteraction, setLocalInteraction] = useState<UserThingInteraction | undefined>(userInteraction);
+  // Local state to track MY interaction for immediate UI updates (button highlighting)
+  const [localMyInteraction, setLocalMyInteraction] = useState<UserThingInteraction | undefined>(myInteraction);
   
-  // Edit form state
-  const [editContent, setEditContent] = useState(post.content);
-  const [editRating, setEditRating] = useState(post.rating || 0);
+  // Edit form state (for editing the displayed interaction if it's yours)
+  const [editContent, setEditContent] = useState(interaction.content || '');
+  const [editRating, setEditRating] = useState(interaction.rating || 0);
   
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { user } = useAuthStore();
+  const { user, userProfile } = useAuthStore();
   const { 
     addUserInteraction, 
     removeUserInteraction,
     updateUserInteraction
   } = useAppStore();
   
-  const isOwnPost = user?.uid === post.authorId;
+  const isOwnPost = isOwnInteraction || (user?.uid === interaction.userId);
   
   // Close menu when clicking outside
   useEffect(() => {
@@ -77,19 +76,25 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
-  // Use local state for immediate UI updates, fallback to prop
-  const currentInteraction = localInteraction || userInteraction;
-  const isInBucketList = currentInteraction?.state === 'bucketList';
-  const isCompleted = currentInteraction?.state === 'completed';
+  // Use myInteraction to determine button states (what YOU have done with this thing)
+  const currentMyInteraction = localMyInteraction || myInteraction;
+  const isInBucketList = currentMyInteraction?.state === 'bucketList';
+  const isCompleted = currentMyInteraction?.state === 'completed';
 
   const formatDate = (timestamp: unknown) => {
     let date: Date;
     
     // Handle different timestamp formats
     type TimestampLike = { toDate: () => Date };
+    type TimestampObject = { seconds: number; nanoseconds: number };
+    
     if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp && typeof (timestamp as TimestampLike).toDate === 'function') {
-      // Firestore Timestamp
+      // Firestore Timestamp with toDate method
       date = (timestamp as TimestampLike).toDate();
+    } else if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp && 'nanoseconds' in timestamp) {
+      // Firestore Timestamp object (raw format)
+      const ts = timestamp as TimestampObject;
+      date = new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
     } else if (timestamp instanceof Date) {
       // Already a Date object
       date = timestamp;
@@ -118,58 +123,42 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
   };
 
   const handleSaveToggle = async () => {
-    if (!user) return;
+    if (!user || !userProfile) return;
     
     setLoading(true);
     try {
       if (isInBucketList) {
         // Remove from bucket list
-        if (currentInteraction) {
+        if (currentMyInteraction) {
           // Optimistic update - remove immediately
-          setLocalInteraction(undefined);
+          setLocalMyInteraction(undefined);
           
-          await deleteUserThingInteraction(currentInteraction.id);
-          removeUserInteraction(currentInteraction.id);
+          await deleteUserThingInteraction(currentMyInteraction.id);
+          removeUserInteraction(currentMyInteraction.id);
           console.log('🗑️ Removed from bucket list');
         }
       } else if (isCompleted) {
-        // Change from completed to bucket list
-        const newInteraction: UserThingInteraction = {
-          id: currentInteraction?.id || '',
-          userId: user.uid,
-          thingId: thing.id,
-          state: 'bucketList',
-          date: post.createdAt,
-          visibility: 'friends',
-          createdAt: post.createdAt,
-        };
-        
-        // Optimistic update - change state immediately
-        setLocalInteraction(newInteraction);
-        
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          'bucketList',
-          'friends'
-        );
-        
-        // Update with real ID
-        newInteraction.id = interactionId;
-        setLocalInteraction(newInteraction);
-        
-        // Update store
-        if (currentInteraction) {
-          updateUserInteraction(currentInteraction.id, { state: 'bucketList' });
-        } else {
-          addUserInteraction(newInteraction);
+        // Change YOUR interaction from completed to bucket list
+        if (currentMyInteraction) {
+          const updated = { ...currentMyInteraction, state: 'bucketList' as const };
+          setLocalMyInteraction(updated);
+          
+          await createUserThingInteraction(
+            user.uid,
+            userProfile.name,
+            thing.id,
+            'bucketList',
+            'private'
+          );
+          
+          updateUserInteraction(currentMyInteraction.id, { state: 'bucketList' });
+          console.log('✅ Changed to bucket list');
         }
-        console.log('✅ Changed to bucket list');
         
         // Create recommendation (post author recommended to you)
-        if (post.authorId !== user.uid) {
+        if (interaction.userId !== user.uid) {
           await createRecommendation(
-            post.authorId,
+            interaction.userId,
             user.uid,
             thing.id,
             'Saved from feed'
@@ -177,156 +166,136 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
           console.log('🎁 Recommendation created');
         }
       } else {
-        // Add to bucket list
+        // Create YOUR interaction (private, bucket list)
         const newInteraction: UserThingInteraction = {
-          id: '', // Will be updated after creation
+          id: '',
           userId: user.uid,
+          userName: userProfile.name,
           thingId: thing.id,
           state: 'bucketList',
-          date: post.createdAt,
-          visibility: 'friends',
-          createdAt: post.createdAt,
+          date: interaction.createdAt,
+          visibility: 'private', // Private - not shown in feed
+          createdAt: interaction.createdAt,
+          likedBy: [],
+          commentCount: 0,
         };
         
-        // Optimistic update - add immediately
-        setLocalInteraction(newInteraction);
+        // Optimistic update
+        setLocalMyInteraction(newInteraction);
         
         const interactionId = await createUserThingInteraction(
           user.uid,
+          userProfile.name,
           thing.id,
           'bucketList',
-          'friends'
+          'private'
         );
         
-        // Update with real ID
         newInteraction.id = interactionId;
-        setLocalInteraction(newInteraction);
-        
+        setLocalMyInteraction(newInteraction);
         addUserInteraction(newInteraction);
-        console.log('✅ Added to bucket list');
+        console.log('✅ Added to your bucket list (private)');
         
-        // Create recommendation (post author recommended to you)
-        if (post.authorId !== user.uid) {
+        // Create recommendation: the original poster recommended this to you
+        if (interaction.userId !== user.uid) {
           await createRecommendation(
-            post.authorId,
-            user.uid,
+            interaction.userId, // FROM: the person who posted it
+            user.uid,          // TO: you (the person saving it)
             thing.id,
             'Saved from feed'
           );
-          console.log('🎁 Recommendation created');
+          console.log('🎁 Recommendation created: ' + interaction.userName + ' → You');
         }
       }
     } catch (error) {
       console.error('Error toggling save:', error);
-      // Revert optimistic update on error
-      setLocalInteraction(userInteraction);
+      setLocalMyInteraction(myInteraction);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCompleteToggle = async () => {
-    if (!user) return;
+    if (!user || !userProfile) return;
     
     if (isCompleted) {
-      // Change from completed back to bucket list
+      // Change YOUR interaction back to bucket list
       setLoading(true);
       try {
-        const newInteraction: UserThingInteraction = {
-          id: currentInteraction?.id || '',
-          userId: user.uid,
-          thingId: thing.id,
-          state: 'bucketList',
-          date: post.createdAt,
-          visibility: 'friends',
-          createdAt: post.createdAt,
-        };
-        
-        // Optimistic update - change state immediately
-        setLocalInteraction(newInteraction);
-        
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          'bucketList',
-          'friends'
-        );
-        
-        // Update with real ID
-        newInteraction.id = interactionId;
-        setLocalInteraction(newInteraction);
-        
-        // Update store
-        if (currentInteraction) {
-          updateUserInteraction(currentInteraction.id, { state: 'bucketList' });
-        } else {
-          addUserInteraction(newInteraction);
+        if (currentMyInteraction) {
+          const updated = { ...currentMyInteraction, state: 'bucketList' as const };
+          setLocalMyInteraction(updated);
+          
+          await createUserThingInteraction(
+            user.uid,
+            userProfile.name,
+            thing.id,
+            'bucketList',
+            'private'
+          );
+          
+          updateUserInteraction(currentMyInteraction.id, { state: 'bucketList' });
+          console.log('✅ Changed back to bucket list');
         }
-        console.log('✅ Changed back to bucket list');
       } catch (error) {
-        console.error('Error updating to bucket list:', error);
-        // Revert optimistic update on error
-        setLocalInteraction(userInteraction);
+        console.error('Error updating:', error);
+        setLocalMyInteraction(myInteraction);
       } finally {
         setLoading(false);
       }
     } else {
-      // Show rating modal
+      // Show rating modal to mark as completed
       setTempRating(0);
       setShowRatingModal(true);
     }
   };
 
   const handleRatingSubmit = async (skipRating = false) => {
-    if (!user) return;
+    if (!user || !userProfile) return;
     
     setLoading(true);
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
       const newInteraction: UserThingInteraction = {
-        id: currentInteraction?.id || '',
+        id: currentMyInteraction?.id || '',
         userId: user.uid,
+        userName: userProfile.name,
         thingId: thing.id,
         state: 'completed',
-        date: post.createdAt,
-        visibility: 'friends',
-        createdAt: post.createdAt,
-        rating
+        date: interaction.createdAt,
+        visibility: 'private', // Private by default
+        rating,
+        createdAt: currentMyInteraction?.createdAt || interaction.createdAt,
+        likedBy: [],
+        commentCount: 0,
       };
       
-      // Optimistic update - change state immediately
-      setLocalInteraction(newInteraction);
+      // Optimistic update
+      setLocalMyInteraction(newInteraction);
       setShowRatingModal(false);
       
-      const interactionId = await createUserThingInteraction(
+      await createUserThingInteraction(
         user.uid,
+        userProfile.name,
         thing.id,
         'completed',
-        'friends',
-        rating
+        'private',
+        { rating }
       );
       
-      // Update with real ID
-      newInteraction.id = interactionId;
-      setLocalInteraction(newInteraction);
-      
-      // Update store
-      if (currentInteraction) {
-        updateUserInteraction(currentInteraction.id, { state: 'completed', rating });
+      if (currentMyInteraction) {
+        updateUserInteraction(currentMyInteraction.id, { state: 'completed', rating });
       } else {
         addUserInteraction(newInteraction);
       }
+      
       console.log('✅ Marked as completed', rating ? `with rating ${rating}/5` : '');
-      
-      // Note: No recommendation created for completing items
-      
       setTempRating(0);
     } catch (error) {
       console.error('Error marking as completed:', error);
-      // Revert optimistic update on error
-      setLocalInteraction(userInteraction);
-      setShowRatingModal(true); // Re-open modal on error
+      setLocalMyInteraction(myInteraction);
+      setShowRatingModal(true);
     } finally {
       setLoading(false);
     }
@@ -339,9 +308,9 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
 
   const handleAuthorClick = () => {
     if (onAuthorClick) {
-      onAuthorClick(post.authorId);
+      onAuthorClick(interaction.userId);
     } else {
-      router.push(`/user/${post.authorId}`);
+      router.push(`/user/${interaction.userId}`);
     }
   };
 
@@ -350,39 +319,30 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
     
     setLoading(true);
     try {
-      await updatePostV2(post.id, {
+      await updateInteractionContent(interaction.id, {
         content: editContent,
         rating: editRating > 0 ? editRating : undefined,
       });
       
-      // Update interaction rating if changed
-      if (currentInteraction && editRating !== currentInteraction.rating) {
-        // Update the interaction with new rating
-        await createUserThingInteraction(
-          user.uid,
-          thing.id,
-          currentInteraction.state,
-          'friends',
-          editRating > 0 ? editRating : undefined,
-          currentInteraction.notes
-        );
-        
-        const updatedInteraction = { ...currentInteraction, rating: editRating > 0 ? editRating : undefined };
-        setLocalInteraction(updatedInteraction);
-        updateUserInteraction(currentInteraction.id, { rating: editRating > 0 ? editRating : undefined });
+      // Update myInteraction if this is in your list
+      if (currentMyInteraction) {
+        setLocalMyInteraction({
+          ...currentMyInteraction,
+          rating: editRating > 0 ? editRating : undefined
+        });
+        updateUserInteraction(currentMyInteraction.id, { 
+          rating: editRating > 0 ? editRating : undefined 
+        });
       }
       
-      console.log('✅ Post updated');
+      console.log('✅ Interaction updated');
       setShowEditModal(false);
       
-      // Update local state to reflect changes immediately
-      post.content = editContent;
-      post.rating = editRating > 0 ? editRating : undefined;
-      
-      // No page reload needed - changes are reflected immediately
+      // Refresh to show updated content (since we mutated the prop)
+      window.location.reload();
     } catch (error) {
-      console.error('Error updating post:', error);
-      alert('Failed to update post. Please try again.');
+      console.error('Error updating interaction:', error);
+      alert('Failed to update. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -391,20 +351,21 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
   const handleDeletePost = async () => {
     if (!user) return;
     
-    if (!confirm(`Are you sure you want to delete "${thing.title}"? This cannot be undone.`)) {
+    if (!confirm(`Are you sure you want to delete "${thing.title}"? This will remove it from your list and the feed. This cannot be undone.`)) {
       return;
     }
     
     setLoading(true);
     try {
-      await deletePostV2(post.id);
-      console.log('🗑️ Post deleted');
+      await deleteUserThingInteraction(interaction.id);
+      removeUserInteraction(interaction.id);
+      console.log('🗑️ Interaction deleted');
       
-      // Refresh feed to remove deleted post
+      // Refresh feed to remove deleted interaction
       window.location.reload();
     } catch (error) {
-      console.error('Error deleting post:', error);
-      alert('Failed to delete post. Please try again.');
+      console.error('Error deleting interaction:', error);
+      alert('Failed to delete. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -415,20 +376,20 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
-          <button
+          <button 
             onClick={handleAuthorClick}
             className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm hover:bg-blue-200 transition-colors"
           >
-            {post.authorName.charAt(0).toUpperCase()}
+            {(interaction.userName || 'User').charAt(0).toUpperCase()}
           </button>
           <div>
             <button
               onClick={handleAuthorClick}
               className="font-medium text-gray-900 hover:text-blue-600 transition-colors"
             >
-              {post.authorName}
+              {interaction.userName || 'User'}
             </button>
-            <p className="text-xs text-gray-500">{formatDate(post.createdAt)}</p>
+            <p className="text-xs text-gray-500">{formatDate(interaction.createdAt)}</p>
           </div>
         </div>
         
@@ -463,8 +424,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
                       try {
                         await navigator.share({
                           title: `Check out ${thing.title}`,
-                          text: post.content,
-                          url: `${window.location.origin}/post/${post.id}`
+                          text: interaction.content,
+                          url: `${window.location.origin}/post/${interaction.id}`
                         });
                       } catch (error: unknown) {
                         if (error instanceof Error && error.name === 'AbortError') {
@@ -475,7 +436,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
                       }
                     } else {
                       try {
-                        await navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+                        await navigator.clipboard.writeText(`${window.location.origin}/post/${interaction.id}`);
                         alert('Link copied to clipboard!');
                       } catch (error) {
                         console.error('Error copying to clipboard:', error);
@@ -515,17 +476,17 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       </div>
 
       {/* Ratings */}
-      {(post.rating || avgRating) && (
+      {(interaction.rating || avgRating) && (
         <div className="mb-3 space-y-1.5">
           {/* User's Rating */}
-          {post.rating && post.rating > 0 && (
+          {interaction.rating && interaction.rating > 0 && (
             <div className="flex items-center space-x-2">
               <div className="flex items-center">
                 {[...Array(5)].map((_, i) => (
                   <span
                     key={i}
                     className={`text-lg ${
-                      i < post.rating! ? 'text-yellow-400' : 'text-gray-300'
+                      i < interaction.rating! ? 'text-yellow-400' : 'text-gray-300'
                     }`}
                   >
                     ★
@@ -533,7 +494,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
                 ))}
               </div>
               <span className="text-sm font-medium text-gray-900">
-                {post.rating}/5
+                {interaction.rating}/5
               </span>
               <span className="text-xs text-gray-500">(You)</span>
             </div>
@@ -570,19 +531,19 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
       )}
 
       {/* Post Content */}
-      {post.content && (
+      {interaction.content && (
         <div className="mb-4">
-          <p className="text-gray-700 leading-relaxed">{post.content}</p>
+          <p className="text-gray-700 leading-relaxed">{interaction.content}</p>
         </div>
       )}
 
       {/* Photos */}
-      {post.photos && post.photos.length > 0 && (
+      {interaction.photos && interaction.photos.length > 0 && (
         <div className="mb-4">
-          {post.photos.length === 1 ? (
+          {interaction.photos.length === 1 ? (
             <div className="relative w-full h-96 rounded-lg overflow-hidden">
               <Image
-                src={post.photos[0]}
+                src={interaction.photos[0]}
                 alt="Post photo"
                 fill
                 className="object-cover"
@@ -591,7 +552,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {post.photos.map((photo, index) => (
+              {interaction.photos.map((photo, index) => (
                 <div key={index} className="relative w-full h-48 rounded-lg overflow-hidden">
                   <Image
                     src={photo}
@@ -616,7 +577,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
             className="flex items-center space-x-1 px-3 py-2 rounded-full text-gray-500 hover:text-blue-500 hover:bg-blue-50 transition-colors"
           >
             <ChatBubbleLeftIcon className="h-5 w-5" />
-            <span className="text-sm font-medium">{post.commentCount || 0}</span>
+            <span className="text-sm font-medium">{interaction.commentCount || 0}</span>
           </button>
 
           {/* Save Button */}
@@ -651,7 +612,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
 
       {/* Comments Section */}
       {showComments && (
-        <CommentSection postId={post.id} />
+        <CommentSection interactionId={interaction.id} />
       )}
 
       {/* Rating Modal */}
@@ -775,7 +736,7 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
               </div>
 
               {/* Note about photos */}
-              {post.photos && post.photos.length > 0 && (
+              {interaction.photos && interaction.photos.length > 0 && (
                 <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
                   📸 Photo editing coming soon. To change photos, delete and recreate the post.
                 </div>
@@ -786,8 +747,8 @@ export default function PostCardV2({ post, thing, userInteraction, avgRating, on
               <button
                 onClick={() => {
                   setShowEditModal(false);
-                  setEditContent(post.content);
-                  setEditRating(post.rating || 0);
+                  setEditContent(interaction.content || '');
+                  setEditRating(interaction.rating || 0);
                 }}
                 disabled={loading}
                 className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"

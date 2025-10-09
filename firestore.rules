@@ -51,19 +51,9 @@ service cloud.firestore {
         request.auth.uid == resource.data.fromUserId;
     }
     
-    // Posts V2 - anyone can read, authors can write
+    // DEPRECATED: Posts V2 - read-only (replaced by UserThingInteraction)
     match /posts_v2/{postId} {
       allow read: if true;
-      allow create: if request.auth != null && 
-        request.auth.uid == request.resource.data.authorId;
-      allow update: if request.auth != null && (
-        request.auth.uid == resource.data.authorId ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'commentCount'])
-      );
-      allow delete: if request.auth != null && 
-        request.auth.uid == resource.data.authorId;
     }
     
     // Comments - anyone can read, users can create/delete their own

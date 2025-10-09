@@ -5,7 +5,7 @@ import { Timestamp } from 'firebase/firestore';
 import { Comment } from '@/lib/types';
 import { 
   createComment, 
-  getCommentsForPost, 
+  getCommentsForInteraction, 
   deleteComment,
   likeComment,
   unlikeComment 
@@ -19,10 +19,10 @@ import {
 import { HeartIcon as HeartIconFilled } from '@heroicons/react/24/solid';
 
 interface CommentSectionProps {
-  postId: string;
+  interactionId: string;
 }
 
-export default function CommentSection({ postId }: CommentSectionProps) {
+export default function CommentSection({ interactionId }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
@@ -32,7 +32,7 @@ export default function CommentSection({ postId }: CommentSectionProps) {
   const loadComments = async () => {
     setLoading(true);
     try {
-      const loadedComments = await getCommentsForPost(postId);
+      const loadedComments = await getCommentsForInteraction(interactionId);
       setComments(loadedComments);
     } catch (error) {
       console.error('Error loading comments:', error);
@@ -44,7 +44,7 @@ export default function CommentSection({ postId }: CommentSectionProps) {
   useEffect(() => {
     loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postId]);
+  }, [interactionId]);
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +53,7 @@ export default function CommentSection({ postId }: CommentSectionProps) {
     setSubmitting(true);
     try {
       const commentId = await createComment(
-        postId,
+        interactionId,
         user.uid,
         userProfile.name,
         newComment.trim()
@@ -62,7 +62,7 @@ export default function CommentSection({ postId }: CommentSectionProps) {
       // Add comment to local state
       const newCommentObj: Comment = {
         id: commentId,
-        postId,
+        interactionId,
         authorId: user.uid,
         authorName: userProfile.name,
         content: newComment.trim(),
@@ -83,7 +83,7 @@ export default function CommentSection({ postId }: CommentSectionProps) {
     if (!confirm('Delete this comment?')) return;
 
     try {
-      await deleteComment(commentId, postId);
+      await deleteComment(commentId, interactionId);
       setComments(prev => prev.filter(c => c.id !== commentId));
     } catch (error) {
       console.error('Error deleting comment:', error);

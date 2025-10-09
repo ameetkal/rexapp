@@ -15,6 +15,7 @@ import SettingsScreen from './SettingsScreen';
 import { User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { PlusIcon } from '@heroicons/react/24/outline';
+import { cleanupDuplicateInteractions } from '@/lib/firestore';
 
 type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
 type AppScreenType = 'notifications' | 'main';
@@ -30,6 +31,20 @@ export default function MainApp() {
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
   
   const { user, loading } = useAuthStore();
+
+  // Expose cleanup function to window for debugging
+  useEffect(() => {
+    if (typeof window !== 'undefined' && user) {
+      (window as Window & typeof globalThis & { cleanupDuplicates?: () => Promise<void> }).cleanupDuplicates = async () => {
+        try {
+          await cleanupDuplicateInteractions(user.uid);
+        } catch (error) {
+          console.error('Cleanup failed:', error);
+          alert('Cleanup failed. Check console for details.');
+        }
+      };
+    }
+  }, [user]);
 
   // Handle URL parameters for profile navigation
   useEffect(() => {

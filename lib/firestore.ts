@@ -1595,11 +1595,16 @@ export const getThing = async (thingId: string): Promise<Thing | null> => {
 
 export const createUserThingInteraction = async (
   userId: string,
+  userName: string,
   thingId: string,
   state: UserThingInteractionState,
   visibility: 'private' | 'friends' | 'public' = 'friends',
-  rating?: number,
-  notes?: string
+  options?: {
+    rating?: number;
+    notes?: string;
+    content?: string;      // Public comments (for feed display)
+    photos?: string[];     // Photos (for feed display)
+  }
 ): Promise<string> => {
   try {
     // Check if user already has an interaction with this thing
@@ -1614,13 +1619,18 @@ export const createUserThingInteraction = async (
     if (!existingInteractions.empty) {
       // Update existing interaction
       const existingDoc = existingInteractions.docs[0];
-      const updateData = {
+      const updateData: Partial<UserThingInteraction> = {
         state,
         date: Timestamp.now(),
         visibility,
-        ...(rating !== undefined && { rating }),
-        ...(notes !== undefined && { notes }),
+        updatedAt: Timestamp.now(),
       };
+      
+      // Add optional fields if provided
+      if (options?.rating !== undefined) updateData.rating = options.rating;
+      if (options?.notes !== undefined) updateData.notes = options.notes;
+      if (options?.content !== undefined) updateData.content = options.content;
+      if (options?.photos !== undefined) updateData.photos = options.photos;
       
       await updateDoc(doc(db, 'user_thing_interactions', existingDoc.id), updateData);
       console.log('🔄 Updated existing interaction:', existingDoc.id);
@@ -1630,13 +1640,19 @@ export const createUserThingInteraction = async (
     // Create new interaction
     const interactionData: Omit<UserThingInteraction, 'id'> = {
       userId,
+      userName,
       thingId,
       state,
       date: Timestamp.now(),
       visibility,
-      rating,
-      notes,
+      rating: options?.rating,
+      notes: options?.notes,
+      content: options?.content,
+      photos: options?.photos,
+      likedBy: [],
+      commentCount: 0,
       createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
     };
     
     // Clean undefined values
@@ -1699,10 +1715,81 @@ export const getUserThingInteraction = async (
 
 export const deleteUserThingInteraction = async (interactionId: string): Promise<void> => {
   try {
+    // Delete the interaction
     await deleteDoc(doc(db, 'user_thing_interactions', interactionId));
-    console.log('🗑️ Deleted interaction:', interactionId);
+    console.log('✅ Deleted user thing interaction:', interactionId);
+    
+    // Also delete all comments for this interaction
+    const commentsQuery = query(
+      collection(db, 'comments'),
+      where('interactionId', '==', interactionId)
+    );
+    const commentsSnapshot = await getDocs(commentsQuery);
+    
+    const batch = writeBatch(db);
+    commentsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    
+    console.log(`🗑️ Deleted ${commentsSnapshot.size} comments for interaction ${interactionId}`);
   } catch (error) {
     console.error('Error deleting user thing interaction:', error);
+    throw error;
+  }
+};
+
+// Like/unlike interactions (for feed engagement)
+export const likeInteraction = async (interactionId: string, userId: string): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      likedBy: arrayUnion(userId),
+    });
+    console.log('❤️ Liked interaction:', interactionId);
+  } catch (error) {
+    console.error('Error liking interaction:', error);
+    throw error;
+  }
+};
+
+export const unlikeInteraction = async (interactionId: string, userId: string): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
+      likedBy: arrayRemove(userId),
+    });
+    console.log('💔 Unliked interaction:', interactionId);
+  } catch (error) {
+    console.error('Error unliking interaction:', error);
+    throw error;
+  }
+};
+
+// Update interaction content/photos (for editing)
+export const updateInteractionContent = async (
+  interactionId: string,
+  updates: {
+    content?: string;
+    rating?: number;
+    photos?: string[];
+  }
+): Promise<void> => {
+  try {
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    
+    const updateData: Partial<UserThingInteraction> = {
+      updatedAt: Timestamp.now(),
+    };
+    
+    if (updates.content !== undefined) updateData.content = updates.content;
+    if (updates.rating !== undefined) updateData.rating = updates.rating;
+    if (updates.photos !== undefined) updateData.photos = updates.photos;
+    
+    await updateDoc(interactionRef, updateData);
+    console.log('✏️ Updated interaction content:', interactionId);
+  } catch (error) {
+    console.error('Error updating interaction content:', error);
     throw error;
   }
 };
@@ -1935,13 +2022,14 @@ export const deletePostV2 = async (postId: string): Promise<void> => {
 // ============================================================================
 
 // Get feed posts using new system (posts_v2 with things data)
-export const getFeedPostsV2 = async (following: string[], currentUserId: string): Promise<PostV2[]> => {
+// Get feed interactions (replaces getFeedPostsV2)
+export const getFeedInteractions = async (following: string[], currentUserId: string): Promise<UserThingInteraction[]> => {
   try {
-    console.log('📱 Loading feed posts with new system...');
+    console.log('📱 Loading feed interactions...');
     console.log('👥 Following:', following.length, 'users');
     console.log('👤 Current user:', currentUserId);
     
-    // Include current user's posts in the feed (like old system)
+    // Include current user's interactions in the feed
     const allUserIds = [...new Set([...following, currentUserId])];
     console.log('📊 Total user IDs to query:', allUserIds.length);
     
@@ -1950,65 +2038,94 @@ export const getFeedPostsV2 = async (following: string[], currentUserId: string)
       return [];
     }
     
-    const followingPosts: PostV2[] = [];
+    const feedInteractions: UserThingInteraction[] = [];
     
     try {
-      // Get posts from followed users + current user
-      const followingPostsQuery = query(
-        collection(db, 'posts_v2'),
-        where('authorId', 'in', allUserIds),
+      // Get public/friends interactions from followed users + current user
+      const interactionsQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('userId', 'in', allUserIds),
+        where('visibility', 'in', ['public', 'friends']),
         orderBy('createdAt', 'desc'),
         limit(50)
       );
       
-      console.log('🔍 Querying posts_v2 collection...');
-      const followingPostsSnapshot = await getDocs(followingPostsQuery);
-      console.log('📦 Query returned', followingPostsSnapshot.size, 'documents');
+      console.log('🔍 Querying user_thing_interactions collection...');
+      const snapshot = await getDocs(interactionsQuery);
+      console.log('📦 Query returned', snapshot.size, 'documents');
       
-      followingPostsSnapshot.forEach((doc) => {
-        followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
+      snapshot.forEach((doc) => {
+        feedInteractions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
       });
     } catch (queryError) {
       console.error('❌ Error with filtered query:', queryError);
-      console.log('🔄 Falling back to all posts query...');
+      console.log('🔄 Falling back to all public interactions...');
       
-      // Fallback: get all posts (useful if index isn't created yet)
-      const allPostsQuery = query(
-        collection(db, 'posts_v2'),
+      // Fallback: get all public interactions
+      const allPublicQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('visibility', 'in', ['public', 'friends']),
         orderBy('createdAt', 'desc'),
         limit(50)
       );
       
-      const allPostsSnapshot = await getDocs(allPostsQuery);
-      allPostsSnapshot.forEach((doc) => {
-        const post = { id: doc.id, ...doc.data() } as PostV2;
+      const allSnapshot = await getDocs(allPublicQuery);
+      allSnapshot.forEach((doc) => {
+        const interaction = { id: doc.id, ...doc.data() } as UserThingInteraction;
         // Filter client-side
-        if (allUserIds.includes(post.authorId)) {
-          followingPosts.push(post);
+        if (allUserIds.includes(interaction.userId)) {
+          feedInteractions.push(interaction);
         }
       });
     }
     
-    // If no posts from following, get recent posts from all users
-    if (followingPosts.length === 0) {
-      console.log('📭 No posts from followed users, loading all recent posts...');
-      const allPostsQuery = query(
-        collection(db, 'posts_v2'),
+    // If no interactions from following, get recent public interactions
+    if (feedInteractions.length === 0) {
+      console.log('📭 No interactions from followed users, loading all recent public...');
+      const allPublicQuery = query(
+        collection(db, 'user_thing_interactions'),
+        where('visibility', '==', 'public'),
         orderBy('createdAt', 'desc'),
         limit(20)
       );
       
-      const allPostsSnapshot = await getDocs(allPostsQuery);
-      console.log('📦 All posts query returned', allPostsSnapshot.size, 'documents');
-      allPostsSnapshot.forEach((doc) => {
-        followingPosts.push({ id: doc.id, ...doc.data() } as PostV2);
+      const allSnapshot = await getDocs(allPublicQuery);
+      console.log('📦 All public query returned', allSnapshot.size, 'documents');
+      allSnapshot.forEach((doc) => {
+        feedInteractions.push({ id: doc.id, ...doc.data() } as UserThingInteraction);
       });
     }
     
-    console.log(`✅ Loaded ${followingPosts.length} posts with new system`);
-    return followingPosts;
+    console.log(`✅ Loaded ${feedInteractions.length} feed interactions`);
+    return feedInteractions;
   } catch (error) {
-    console.error('❌ Error loading feed posts v2:', error);
+    console.error('❌ Error loading feed interactions:', error);
+    return [];
+  }
+};
+
+// LEGACY: Keep for backwards compatibility during migration
+export const getFeedPostsV2 = async (following: string[], currentUserId: string): Promise<PostV2[]> => {
+  try {
+    console.log('⚠️ getFeedPostsV2 is deprecated, use getFeedInteractions instead');
+    const allUserIds = [...new Set([...following, currentUserId])];
+    
+    const followingPostsQuery = query(
+      collection(db, 'posts_v2'),
+      where('authorId', 'in', allUserIds),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    
+    const snapshot = await getDocs(followingPostsQuery);
+    const posts: PostV2[] = [];
+    snapshot.forEach((doc) => {
+      posts.push({ id: doc.id, ...doc.data() } as PostV2);
+    });
+    
+    return posts;
+  } catch (error) {
+    console.error('Error loading feed posts v2:', error);
     return [];
   }
 };
@@ -2185,11 +2302,13 @@ export const createPostWithNewSystem = async (
     
     // 3. Create user interaction
     const interactionState: UserThingInteractionState = status === 'completed' ? 'completed' : 'bucketList';
+    const visibility = postToFeed ? 'public' : 'private';
     const interactionId = await createUserThingInteraction(
       authorId,
+      authorName,
       thingId,
       interactionState,
-      'friends'
+      visibility
     );
     console.log('✅ User interaction created:', interactionId);
     
@@ -2266,9 +2385,10 @@ export const migratePostToNewSystem = async (post: Post): Promise<{
     // Create user interaction (assume bucketList since it was posted)
     const interactionId = await createUserThingInteraction(
       post.authorId,
+      post.authorName,
       thingId,
       'bucketList',
-      'friends'
+      'friends' // Keep as friends for old posts
     );
     
     // Create new post
@@ -2325,11 +2445,13 @@ export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem)
       personalItem.status === 'completed' ? 'completed' : 'bucketList';
     
     // Create user interaction
+    // For old personal items, we don't have userName, so use empty string  
     const interactionId = await createUserThingInteraction(
       personalItem.userId,
+      '', // No userName in old PersonalItem
       thingId,
       interactionState,
-      'friends'
+      'private' // Old personal items were private
     );
     
     let postId: string | undefined;
@@ -2371,14 +2493,14 @@ export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem)
 // ============================================================================
 
 export const createComment = async (
-  postId: string,
+  interactionId: string,
   authorId: string,
   authorName: string,
   content: string
 ): Promise<string> => {
   try {
     const commentData: Omit<Comment, 'id'> = {
-      postId,
+      interactionId,
       authorId,
       authorName,
       content,
@@ -2389,9 +2511,9 @@ export const createComment = async (
     const docRef = await addDoc(collection(db, 'comments'), commentData);
     console.log('✅ Created comment:', docRef.id);
     
-    // Increment comment count on the post
-    const postRef = doc(db, 'posts_v2', postId);
-    await updateDoc(postRef, {
+    // Increment comment count on the interaction
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
       commentCount: increment(1)
     });
     
@@ -2402,11 +2524,11 @@ export const createComment = async (
   }
 };
 
-export const getCommentsForPost = async (postId: string): Promise<Comment[]> => {
+export const getCommentsForInteraction = async (interactionId: string): Promise<Comment[]> => {
   try {
     const q = query(
       collection(db, 'comments'),
-      where('postId', '==', postId),
+      where('interactionId', '==', interactionId),
       orderBy('createdAt', 'asc') // Oldest first for natural conversation flow
     );
     
@@ -2417,7 +2539,7 @@ export const getCommentsForPost = async (postId: string): Promise<Comment[]> => 
       comments.push({ id: doc.id, ...doc.data() } as Comment);
     });
     
-    console.log(`✅ Loaded ${comments.length} comments for post ${postId}`);
+    console.log(`✅ Loaded ${comments.length} comments for interaction ${interactionId}`);
     return comments;
   } catch (error) {
     console.error('Error getting comments:', error);
@@ -2425,13 +2547,19 @@ export const getCommentsForPost = async (postId: string): Promise<Comment[]> => 
   }
 };
 
-export const deleteComment = async (commentId: string, postId: string): Promise<void> => {
+// LEGACY: Keep for backwards compatibility
+export const getCommentsForPost = async (postId: string): Promise<Comment[]> => {
+  console.log('⚠️ getCommentsForPost is deprecated, use getCommentsForInteraction instead');
+  return getCommentsForInteraction(postId);
+};
+
+export const deleteComment = async (commentId: string, interactionId: string): Promise<void> => {
   try {
     await deleteDoc(doc(db, 'comments', commentId));
     
-    // Decrement comment count on the post
-    const postRef = doc(db, 'posts_v2', postId);
-    await updateDoc(postRef, {
+    // Decrement comment count on the interaction
+    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
+    await updateDoc(interactionRef, {
       commentCount: increment(-1)
     });
     
@@ -2462,6 +2590,118 @@ export const unlikeComment = async (commentId: string, userId: string): Promise<
     });
   } catch (error) {
     console.error('Error unliking comment:', error);
+    throw error;
+  }
+};
+
+// ===== MIGRATION HELPERS =====
+
+/**
+ * Cleanup: Remove duplicate user_thing_interactions
+ * Keeps the most recent one for each user+thing combination
+ */
+export const cleanupDuplicateInteractions = async (userId: string): Promise<void> => {
+  try {
+    console.log('🔄 Starting duplicate cleanup for user:', userId);
+    
+    // Get all interactions for this user
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(interactionsRef, where('userId', '==', userId));
+    const snapshot = await getDocs(q);
+    
+    // Group by thingId
+    type InteractionDoc = { id: string; data: Record<string, unknown> };
+    const thingMap = new Map<string, InteractionDoc[]>();
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const thingId = data.thingId as string;
+      if (!thingMap.has(thingId)) {
+        thingMap.set(thingId, []);
+      }
+      thingMap.get(thingId)!.push({ id: doc.id, data });
+    });
+    
+    // Find and delete duplicates (keep most recent)
+    let deletedCount = 0;
+    for (const [thingId, interactions] of thingMap.entries()) {
+      if (interactions.length > 1) {
+        console.log(`⚠️ Found ${interactions.length} interactions for thing: ${thingId}`);
+        
+        // Sort by createdAt (most recent first)
+        interactions.sort((a, b) => {
+          const aCreatedAt = a.data.createdAt as { seconds: number } | undefined;
+          const bCreatedAt = b.data.createdAt as { seconds: number } | undefined;
+          const aTime = aCreatedAt?.seconds || 0;
+          const bTime = bCreatedAt?.seconds || 0;
+          return bTime - aTime;
+        });
+        
+        // Keep first (most recent), delete rest
+        for (let i = 1; i < interactions.length; i++) {
+          await deleteDoc(doc(db, 'user_thing_interactions', interactions[i].id));
+          console.log(`🗑️ Deleted duplicate: ${interactions[i].id}`);
+          deletedCount++;
+        }
+      }
+    }
+    
+    console.log(`✅ Cleanup complete! Deleted ${deletedCount} duplicate(s)`);
+    if (deletedCount > 0) {
+      alert(`Removed ${deletedCount} duplicate interaction(s). Refresh the page.`);
+    } else {
+      alert('No duplicates found!');
+    }
+  } catch (error) {
+    console.error('❌ Cleanup failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Migration: Add userName to existing user_thing_interactions
+ * Run this once to populate missing userName fields
+ */
+export const migrateAddUserNameToInteractions = async (): Promise<void> => {
+  try {
+    console.log('🔄 Starting migration: Adding userName to interactions...');
+    
+    // Get all interactions
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const snapshot = await getDocs(interactionsRef);
+    
+    console.log(`📊 Found ${snapshot.size} interactions to check`);
+    
+    let updated = 0;
+    let skipped = 0;
+    
+    // Get all users for lookup
+    const usersRef = collection(db, 'users');
+    const usersSnapshot = await getDocs(usersRef);
+    const usersMap = new Map<string, string>();
+    usersSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      usersMap.set(doc.id, data.name || 'User');
+    });
+    
+    // Update each interaction that's missing userName
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
+      
+      if (!data.userName) {
+        const userName = usersMap.get(data.userId) || 'User';
+        await updateDoc(doc(db, 'user_thing_interactions', docSnap.id), {
+          userName
+        });
+        updated++;
+        console.log(`✅ Updated ${docSnap.id} with userName: ${userName}`);
+      } else {
+        skipped++;
+      }
+    }
+    
+    console.log(`✅ Migration complete! Updated: ${updated}, Skipped: ${skipped}`);
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
     throw error;
   }
 }; 

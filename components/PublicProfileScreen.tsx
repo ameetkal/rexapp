@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
-import { getUserPostsV2, followUser, unfollowUser, getUserRecsGivenCount, getThing, getUserThingInteraction } from '@/lib/firestore';
-import { User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
+import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount, getUserThingInteraction } from '@/lib/firestore';
+import { User, Thing, UserThingInteraction } from '@/lib/types';
 import PostCardV2 from './PostCardV2';
 
 interface PublicProfileScreenProps {
@@ -13,9 +13,9 @@ interface PublicProfileScreenProps {
 }
 
 export default function PublicProfileScreen({ user: profileUser, onBack }: PublicProfileScreenProps) {
-  const [userPosts, setUserPosts] = useState<PostV2[]>([]);
+  const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
-  const [userInteractions, setUserInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
+  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
@@ -27,27 +27,29 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
   useEffect(() => {
     const loadUserData = async () => {
       try {
-        // Get all posts from this specific user
-        const posts = await getUserPostsV2(profileUser.id);
-        setUserPosts(posts);
-
-        // Load things for these posts
-        const uniqueThingIds = [...new Set(posts.map(p => p.thingId))];
-        const thingsData: Thing[] = [];
-        const interactionsMap = new Map<string, UserThingInteraction>();
+        // Get this user's public/friends interactions with things
+        const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(profileUser.id);
         
-        for (const thingId of uniqueThingIds) {
-          const thing = await getThing(thingId);
-          if (thing) thingsData.push(thing);
-          
-          if (currentUser) {
-            const interaction = await getUserThingInteraction(currentUser.uid, thingId);
-            if (interaction) interactionsMap.set(thingId, interaction);
-          }
-        }
+        // Filter to only public/friends visibility (respect privacy)
+        const visibleInteractions = interactions.filter(i => 
+          i.visibility === 'public' || i.visibility === 'friends'
+        );
         
+        setUserInteractions(visibleInteractions);
         setThings(thingsData);
-        setUserInteractions(interactionsMap);
+
+        // Load current user's interactions for button states
+        if (currentUser) {
+          const uniqueThingIds = [...new Set(visibleInteractions.map(i => i.thingId))];
+          const myInteractionsMap = new Map<string, UserThingInteraction>();
+          
+          for (const thingId of uniqueThingIds) {
+            const myInteraction = await getUserThingInteraction(currentUser.uid, thingId);
+            if (myInteraction) myInteractionsMap.set(thingId, myInteraction);
+          }
+          
+          setMyInteractions(myInteractionsMap);
+        }
 
         // Get recs given count
         const recsCount = await getUserRecsGivenCount(profileUser.id);
@@ -122,7 +124,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
               <div className="text-sm text-gray-500">Following</div>
             </div>
             <div className="text-center">
-              <div className="text-xl font-bold text-gray-900">{userPosts.length || 0}</div>
+              <div className="text-xl font-bold text-gray-900">{userInteractions.filter(i => i.state === 'completed').length}</div>
               <div className="text-sm text-gray-500">Completed</div>
             </div>
             <div className="text-center">
@@ -185,7 +187,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
                 </div>
               ))}
             </div>
-          ) : userPosts.length === 0 ? (
+          ) : userInteractions.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-2xl">📝</span>
@@ -197,21 +199,23 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             </div>
           ) : (
             <div className="space-y-4">
-              {userPosts.map((post) => {
-                const thing = things.find(t => t.id === post.thingId);
-                const userInteraction = userInteractions.get(post.thingId);
+              {userInteractions.map((interaction) => {
+                const thing = things.find(t => t.id === interaction.thingId);
+                const myInteraction = myInteractions.get(interaction.thingId);
                 
                 if (!thing) {
-                  console.warn('Thing not found for post:', post.id);
+                  console.warn('Thing not found for interaction:', interaction.id);
                   return null;
                 }
                 
                 return (
                   <PostCardV2 
-                    key={post.id} 
-                    post={post}
+                    key={interaction.id} 
+                    interaction={interaction}
                     thing={thing}
-                    userInteraction={userInteraction}
+                    myInteraction={myInteraction}
+                    avgRating={undefined}
+                    isOwnInteraction={currentUser?.uid === interaction.userId}
                   />
                 );
               })}

@@ -171,14 +171,25 @@ export type UserThingInteractionState = 'bucketList' | 'inProgress' | 'completed
 export interface UserThingInteraction {
   id: string;
   userId: string;
+  userName: string; // Denormalized for feed display
   thingId: string;
   state: UserThingInteractionState;
   date: Timestamp; // Last state change date
   visibility: 'private' | 'friends' | 'public';
-  rating?: number; // 1-5 star rating (only for completed items)
-  notes?: string;  // Private notes
-  linkedPostId?: string; // If user posted about it publicly
+  
+  // Personal tracking (always present)
+  rating?: number; // 1-5 star rating
+  notes?: string;  // Private notes (never shown to others)
+  
+  // Public sharing fields (when visibility = public/friends)
+  content?: string;        // Public comments/review (shown in feed)
+  photos?: string[];       // Photo URLs (shown in feed)
+  likedBy?: string[];      // userIds who liked (for feed engagement)
+  commentCount?: number;   // Number of comments (denormalized)
+  
+  // Metadata
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface Recommendation {
@@ -216,7 +227,7 @@ export interface PostV2 {
 // Comments on posts
 export interface Comment {
   id: string;
-  postId: string;         // Which post this comment is on
+  interactionId: string;  // Links to UserThingInteraction (must have visibility: public/friends)
   authorId: string;       // User who wrote the comment
   authorName: string;     // Denormalized for display
   content: string;

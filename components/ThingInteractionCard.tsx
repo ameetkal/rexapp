@@ -1,16 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Thing, UserThingInteraction } from '@/lib/types';
-import { deleteUserThingInteraction, createUserThingInteraction } from '@/lib/firestore';
+import { deleteUserThingInteraction } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { 
   BookmarkIcon, 
   CheckCircleIcon,
   PlayIcon,
-  EllipsisVerticalIcon,
-  ShareIcon
+  EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
 
 interface ThingInteractionCardProps {
@@ -24,10 +25,26 @@ export default function ThingInteractionCard({
   interaction
 }: ThingInteractionCardProps) {
   const [loading, setLoading] = useState(false);
+  const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
   const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuthStore();
   const { removeUserInteraction, updateUserInteraction } = useAppStore();
+  
+  // Click outside to close menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showMenu]);
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
@@ -36,9 +53,15 @@ export default function ThingInteractionCard({
     
     // Handle different timestamp formats
     type TimestampLike = { toDate: () => Date };
+    type TimestampObject = { seconds: number; nanoseconds: number };
+    
     if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp && typeof (timestamp as TimestampLike).toDate === 'function') {
-      // Firestore Timestamp
+      // Firestore Timestamp with toDate method
       date = (timestamp as TimestampLike).toDate();
+    } else if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp && 'nanoseconds' in timestamp) {
+      // Firestore Timestamp object (raw format)
+      const ts = timestamp as TimestampObject;
+      date = new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
     } else if (timestamp instanceof Date) {
       // Already a Date object
       date = timestamp;
@@ -71,30 +94,23 @@ export default function ThingInteractionCard({
     
     setLoading(true);
     try {
-      // Delete old interaction
-      await deleteUserThingInteraction(interaction.id);
-      removeUserInteraction(interaction.id);
-      
-      // Create new interaction with new state
-      const newInteractionId = await createUserThingInteraction(
-        user.uid,
-        thing.id,
-        newState,
-        'friends'
-      );
-      
-      const newInteraction: UserThingInteraction = {
-        id: newInteractionId,
-        userId: user.uid,
-        thingId: thing.id,
+      // Update the existing interaction's state (don't delete/recreate)
+      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      await updateDoc(interactionRef, {
         state: newState,
-        date: interaction.date,
-        visibility: 'friends',
-        createdAt: interaction.createdAt,
-      };
+        date: Timestamp.now()
+      });
       
-      updateUserInteraction(interaction.id, newInteraction);
+      // Update local store
+      updateUserInteraction(interaction.id, { 
+        state: newState,
+        date: Timestamp.now()
+      });
+      
       console.log(`✅ Changed state to: ${newState}`);
+      
+      // Reload to reflect changes
+      window.location.reload();
     } catch (error) {
       console.error('Error changing state:', error);
     } finally {
@@ -102,32 +118,81 @@ export default function ThingInteractionCard({
     }
   };
 
-  const handleRemove = async () => {
+  const handleEdit = () => {
+    // TODO: Open edit modal with rating, notes, photos
+    alert('Edit functionality coming soon!');
+    setShowMenu(false);
+  };
+
+  const handleDelete = async () => {
     if (!user) return;
+    
+    if (!confirm(`Are you sure you want to delete "${thing.title}" from your list? This cannot be undone.`)) {
+      return;
+    }
     
     setLoading(true);
     try {
       await deleteUserThingInteraction(interaction.id);
       removeUserInteraction(interaction.id);
-      console.log('🗑️ Removed from list');
+      console.log('🗑️ Deleted from list');
+      window.location.reload();
     } catch (error) {
-      console.error('Error removing item:', error);
+      console.error('Error deleting item:', error);
+      alert('Failed to delete. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTogglePostToFeed = async () => {
+    if (!user) return;
+    
+    const newVisibility = localVisibility === 'public' ? 'private' : 'public';
+    
+    // Optimistic update
+    setLocalVisibility(newVisibility);
+    setShowMenu(false);
+    setLoading(true);
+    
+    try {
+      console.log(`🔄 Toggling visibility from ${localVisibility} to ${newVisibility}`);
+      
+      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      await updateDoc(interactionRef, {
+        visibility: newVisibility
+      });
+      
+      updateUserInteraction(interaction.id, { visibility: newVisibility });
+      
+      console.log(`✅ Visibility changed to: ${newVisibility}`);
+    } catch (error) {
+      console.error('❌ Error toggling visibility:', error);
+      // Revert on error
+      setLocalVisibility(localVisibility);
+      alert(`Failed to change visibility: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleShare = () => {
+    setShowMenu(false);
     if (navigator.share) {
       navigator.share({
         title: `Check out ${thing.title}`,
         text: `I want to try ${thing.title}!`,
         url: `${window.location.origin}/thing/${thing.id}`
+      }).catch(err => {
+        // User cancelled share, ignore
+        if (err.name !== 'AbortError') {
+          console.error('Share failed:', err);
+        }
       });
     } else {
       // Fallback to copying URL
       navigator.clipboard.writeText(`${window.location.origin}/thing/${thing.id}`);
-      // You could show a toast notification here
+      alert('Link copied to clipboard!');
     }
   };
 
@@ -182,12 +247,56 @@ export default function ThingInteractionCard({
           </div>
         </div>
         
-        <button
-          onClick={() => setShowMenu(!showMenu)}
-          className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-        >
-          <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
+          </button>
+          
+          {/* Dropdown Menu */}
+          {showMenu && (
+            <div 
+              ref={menuRef}
+              className="absolute right-0 top-8 z-10 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2"
+            >
+              <button
+                onClick={handleEdit}
+                disabled={loading}
+                className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <span>✏️</span> Edit
+              </button>
+              <button
+                onClick={handleShare}
+                disabled={loading}
+                className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <span>🔗</span> Share
+              </button>
+              <button
+                onClick={handleTogglePostToFeed}
+                disabled={loading}
+                className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {localVisibility === 'public' ? (
+                  <><span>👁️‍🗨️</span> Hide from Feed</>
+                ) : (
+                  <><span>📢</span> Post to Feed</>
+                )}
+              </button>
+              <div className="border-t border-gray-100 my-1"></div>
+              <button
+                onClick={handleDelete}
+                disabled={loading}
+                className="w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <span>🗑️</span> Delete
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Thing Description */}
@@ -266,31 +375,8 @@ export default function ThingInteractionCard({
               </button>
             </>
           )}
-
-          {/* Share Button */}
-          <button
-            onClick={handleShare}
-            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <ShareIcon className="h-4 w-4" />
-          </button>
         </div>
       </div>
-
-      {/* Menu */}
-      {showMenu && (
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="flex space-x-2">
-            <button
-              onClick={handleRemove}
-              disabled={loading}
-              className="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              Remove
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

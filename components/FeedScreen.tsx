@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { universalSearch, followUser, unfollowUser, getFeedPostsV2, getThing, getUserThingInteraction, getThingAverageRating } from '@/lib/firestore';
-import { User, PostV2, Thing, UserThingInteraction } from '@/lib/types';
+import { universalSearch, followUser, unfollowUser, getFeedInteractions, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
+import { getUserProfile } from '@/lib/auth';
+import { User, Thing, UserThingInteraction } from '@/lib/types';
 import PostCardV2 from './PostCardV2';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
@@ -21,10 +22,11 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
   const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
-  const [postsV2, setPostsV2] = useState<PostV2[]>([]);
+  const [feedInteractions, setFeedInteractions] = useState<UserThingInteraction[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
-  const [userInteractions, setUserInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
+  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [avgRatings, setAvgRatings] = useState<Map<string, number>>(new Map());
+  const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
   
   const { user, userProfile, setUserProfile } = useAuthStore();
 
@@ -33,11 +35,22 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     
     try {
       console.log('📱 Loading feed...');
-      const feedPostsV2 = await getFeedPostsV2(userProfile.following, user.uid);
-      setPostsV2(feedPostsV2);
+      const interactions = await getFeedInteractions(userProfile.following, user.uid);
+      setFeedInteractions(interactions);
       
-      // Load things data for posts
-      const uniqueThingIds = [...new Set(feedPostsV2.map(post => post.thingId))];
+      // Load users data for interactions (to get userNames)
+      const uniqueUserIds = [...new Set(interactions.map(int => int.userId))];
+      const usersData = new Map<string, User>();
+      for (const userId of uniqueUserIds) {
+        const userProfile = await getUserProfile(userId);
+        if (userProfile) {
+          usersData.set(userId, userProfile);
+        }
+      }
+      setUsersMap(usersData);
+      
+      // Load things data for interactions
+      const uniqueThingIds = [...new Set(interactions.map(int => int.thingId))];
       const thingsData: Thing[] = [];
       for (const thingId of uniqueThingIds) {
         const thing = await getThing(thingId);
@@ -47,15 +60,14 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
       }
       setThings(thingsData);
       
-      // Load user interactions for these things
-      const interactionsMap = new Map<string, UserThingInteraction>();
-      for (const thingId of uniqueThingIds) {
-        const interaction = await getUserThingInteraction(user.uid, thingId);
-        if (interaction) {
-          interactionsMap.set(thingId, interaction);
-        }
-      }
-      setUserInteractions(interactionsMap);
+      // Load current user's interactions for these things (for button highlighting)
+      console.log('👤 Loading your interactions for button states...');
+      const myInteractionsData = await getUserThingInteractions(user.uid);
+      const myInteractionsMap = new Map<string, UserThingInteraction>();
+      myInteractionsData.forEach(int => {
+        myInteractionsMap.set(int.thingId, int);
+      });
+      setMyInteractions(myInteractionsMap);
       
       // Load average ratings for all things in parallel
       console.log('📊 Loading average ratings...');
@@ -72,9 +84,9 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
       });
       setAvgRatings(avgRatingsMap);
       
-      console.log(`✅ Loaded ${feedPostsV2.length} posts with ${avgRatingsMap.size} avg ratings`);
+      console.log(`✅ Loaded ${interactions.length} interactions with ${avgRatingsMap.size} avg ratings`);
     } catch (error) {
-      console.error('Error loading feed posts:', error);
+      console.error('Error loading feed:', error);
     } finally {
       setLoading(false);
     }
@@ -340,7 +352,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </button>
             </div>
 
-            {postsV2.length === 0 ? (
+            {feedInteractions.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -359,22 +371,32 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
               </div>
             ) : (
               <div className="space-y-4">
-                {postsV2.map((post) => {
-                  const thing = things.find(t => t.id === post.thingId);
-                  const userInteraction = userInteractions.get(post.thingId);
+                {feedInteractions.map((interaction) => {
+                  const thing = things.find(t => t.id === interaction.thingId);
                   
                   if (!thing) {
-                    console.warn('Thing not found for post:', post.id, 'thingId:', post.thingId);
+                    console.warn('Thing not found for interaction:', interaction.id, 'thingId:', interaction.thingId);
                     return null;
                   }
                   
+                  const isOwnInteraction = user?.uid === interaction.userId;
+                  const myInteraction = myInteractions.get(interaction.thingId);
+                  const interactionUser = usersMap.get(interaction.userId);
+                  
+                  // Populate userName from loaded user data
+                  const interactionWithUser = {
+                    ...interaction,
+                    userName: interactionUser?.username || interactionUser?.name || interaction.userName || 'User'
+                  };
+                  
                   return (
                     <PostCardV2
-                      key={post.id}
-                      post={post}
+                      key={interaction.id}
+                      interaction={interactionWithUser}
                       thing={thing}
-                      userInteraction={userInteraction}
-                      avgRating={avgRatings.get(post.thingId) || null}
+                      myInteraction={myInteraction}
+                      avgRating={avgRatings.get(interaction.thingId) || null}
+                      isOwnInteraction={isOwnInteraction}
                       onAuthorClick={onUserProfileClick}
                     />
                   );
