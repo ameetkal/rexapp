@@ -15,6 +15,7 @@ import {
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
 import InteractionDetailModal from './InteractionDetailModal';
+import StarRating from './StarRating';
 
 interface ThingInteractionCardProps {
   thing: Thing;
@@ -32,6 +33,8 @@ export default function ThingInteractionCard({
   const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
   const [showMenu, setShowMenu] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [tempRating, setTempRating] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuthStore();
@@ -97,6 +100,12 @@ export default function ThingInteractionCard({
   const handleStateChange = async (newState: 'bucketList' | 'inProgress' | 'completed') => {
     if (!user || newState === interaction.state) return;
     
+    // If marking as completed, show rating modal first
+    if (newState === 'completed') {
+      setShowRatingModal(true);
+      return;
+    }
+    
     setLoading(true);
     try {
       // Update the existing interaction's state (don't delete/recreate)
@@ -114,10 +123,41 @@ export default function ThingInteractionCard({
       
       console.log(`✅ Changed state to: ${newState}`);
       
-      // Reload to reflect changes
-      window.location.reload();
+      // No reload needed - state updated in store
     } catch (error) {
       console.error('Error changing state:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRatingSubmit = async (skipRating = false) => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
+      
+      // Update to completed with rating
+      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      await updateDoc(interactionRef, {
+        state: 'completed',
+        rating: rating || null,
+        date: Timestamp.now()
+      });
+      
+      // Update local store
+      updateUserInteraction(interaction.id, { 
+        state: 'completed',
+        rating,
+        date: Timestamp.now()
+      });
+      
+      console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
+      setShowRatingModal(false);
+      setTempRating(0);
+    } catch (error) {
+      console.error('Error marking as completed:', error);
     } finally {
       setLoading(false);
     }
@@ -383,33 +423,18 @@ export default function ThingInteractionCard({
 
         {/* Actions */}
         <div className="flex items-center space-x-2">
-          {/* State Change Buttons - only show if not completed */}
-          {interaction.state !== 'completed' && (
-            <>
-              {interaction.state !== 'inProgress' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStateChange('inProgress');
-                  }}
-                  disabled={loading}
-                  className="px-3 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-full transition-colors disabled:opacity-50"
-                >
-                  Start
-                </button>
-              )}
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleStateChange('completed');
-                }}
-                disabled={loading}
-                className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
-              >
-                Complete
-              </button>
-            </>
+          {/* Complete Button - only show if in bucket list */}
+          {interaction.state === 'bucketList' && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStateChange('completed');
+              }}
+              disabled={loading}
+              className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
+            >
+              Mark Complete
+            </button>
           )}
         </div>
       </div>
@@ -427,6 +452,48 @@ export default function ThingInteractionCard({
             onEdit?.(interaction, thing);
           }}
         />
+      )}
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowRatingModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Rate {thing.title}
+            </h3>
+            
+            <div className="mb-6">
+              <StarRating
+                rating={tempRating}
+                onRatingChange={setTempRating}
+                size="lg"
+              />
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => handleRatingSubmit(true)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                Skip
+              </button>
+              <button
+                onClick={() => handleRatingSubmit(false)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Save Rating'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

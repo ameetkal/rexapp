@@ -12,16 +12,20 @@ interface AuthState {
 }
 
 interface AppState {
+  // DEPRECATED: postsV2 no longer used - replaced by userInteractions with visibility field
   postsV2: PostV2[];
+  
   things: Thing[];
   userInteractions: UserThingInteraction[];
   recommendations: Recommendation[];
   
+  // DEPRECATED: postsV2 setters no longer used
   setPostsV2: (posts: PostV2[]) => void;
+  addPostV2: (post: PostV2) => void;
+  
   setThings: (things: Thing[]) => void;
   setUserInteractions: (interactions: UserThingInteraction[]) => void;
   setRecommendations: (recommendations: Recommendation[]) => void;
-  addPostV2: (post: PostV2) => void;
   addThing: (thing: Thing) => void;
   addUserInteraction: (interaction: UserThingInteraction) => void;
   addRecommendation: (recommendation: Recommendation) => void;

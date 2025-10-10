@@ -13,14 +13,12 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
 import { 
   BookmarkIcon, 
-  ChatBubbleLeftIcon,
   CheckCircleIcon,
   EllipsisVerticalIcon,
   PencilIcon,
   TrashIcon,
   ShareIcon
 } from '@heroicons/react/24/outline';
-import CommentSection from './CommentSection';
 import StarRating from './StarRating';
 import InteractionDetailModal from './InteractionDetailModal';
 
@@ -38,7 +36,6 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [showComments, setShowComments] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
@@ -125,8 +122,12 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
     setLoading(true);
     try {
       if (isInBucketList) {
-        // Remove from bucket list
+        // Remove from bucket list (with confirmation)
         if (currentMyInteraction) {
+          if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
+            return;
+          }
+          
           // Optimistic update - remove immediately
           setLocalMyInteraction(undefined);
           
@@ -145,7 +146,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
             userProfile.name,
             thing.id,
             'bucketList',
-            'private'
+            'public' // Keep public when changing state
           );
           
           updateUserInteraction(currentMyInteraction.id, { state: 'bucketList' });
@@ -163,7 +164,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
           console.log('🎁 Recommendation created');
         }
       } else {
-        // Create YOUR interaction (private, bucket list)
+        // Create YOUR interaction (public by default for feed saves)
         const newInteraction: UserThingInteraction = {
           id: '',
           userId: user.uid,
@@ -171,7 +172,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
           thingId: thing.id,
           state: 'bucketList',
           date: interaction.createdAt,
-          visibility: 'private', // Private - not shown in feed
+          visibility: 'public', // Public by default
           createdAt: interaction.createdAt,
           likedBy: [],
           commentCount: 0,
@@ -185,13 +186,13 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
           userProfile.name,
           thing.id,
           'bucketList',
-          'private'
+          'public' // Default to public for feed saves
         );
         
         newInteraction.id = interactionId;
         setLocalMyInteraction(newInteraction);
         addUserInteraction(newInteraction);
-        console.log('✅ Added to your bucket list (private)');
+        console.log('✅ Added to your bucket list (public)');
         
         // Create recommendation: the original poster recommended this to you
         if (interaction.userId !== user.uid) {
@@ -261,7 +262,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
         thingId: thing.id,
         state: 'completed',
         date: interaction.createdAt,
-        visibility: 'private', // Private by default
+        visibility: 'public', // Public by default
         rating,
         createdAt: currentMyInteraction?.createdAt || interaction.createdAt,
         likedBy: [],
@@ -277,7 +278,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
         userProfile.name,
         thing.id,
         'completed',
-        'private',
+        'public', // Default to public for feed completes
         { rating }
       );
       
@@ -298,10 +299,6 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
     }
   };
 
-  const handlePostClick = () => {
-    // Toggle comments section instead of navigating
-    setShowComments(!showComments);
-  };
 
   const handleAuthorClick = () => {
     if (onAuthorClick) {
@@ -554,18 +551,6 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
       {/* Actions */}
       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
         <div className="flex items-center space-x-1">
-          {/* Comment Button */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handlePostClick();
-            }}
-            className="flex items-center space-x-1 px-3 py-2 rounded-full text-gray-500 hover:text-blue-500 hover:bg-blue-50 transition-colors"
-          >
-            <ChatBubbleLeftIcon className="h-5 w-5" />
-            <span className="text-sm font-medium">{interaction.commentCount || 0}</span>
-          </button>
-
           {/* Save Button */}
           <button
             onClick={(e) => {
@@ -601,11 +586,6 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
           </button>
         </div>
       </div>
-
-      {/* Comments Section */}
-      {showComments && (
-        <CommentSection interactionId={interaction.id} />
-      )}
 
       {/* Rating Modal */}
       {showRatingModal && (

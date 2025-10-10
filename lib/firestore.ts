@@ -20,7 +20,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -943,6 +943,10 @@ const cleanObject = <T>(obj: T): Partial<T> => {
   return cleaned;
 };
 
+// DEPRECATED: Old structured post creation - replaced by createOrGetThing + createUserThingInteraction
+// This function was part of the dual-system implementation
+// Can be safely removed after confirming production stability
+
 // Enhanced post creation with universal items that also creates personal items
 export const createStructuredPost = async (
   authorId: string,
@@ -1864,7 +1868,10 @@ export const getRecommendationsGiven = async (userId: string): Promise<Recommend
   }
 };
 
-// POSTS V2 COLLECTION FUNCTIONS
+// ===== POSTS V2 COLLECTION FUNCTIONS =====
+// DEPRECATED: PostsV2 collection replaced by UserThingInteraction with visibility field
+// Keeping these functions for reference but they are no longer used in the app
+// Can be safely removed after confirming production stability
 
 export const createPostV2 = async (
   authorId: string,
@@ -2020,6 +2027,104 @@ export const deletePostV2 = async (postId: string): Promise<void> => {
 // ============================================================================
 // FEED AND DATA LOADING FUNCTIONS (NEW SYSTEM)
 // ============================================================================
+
+/**
+ * Get feed things - groups interactions by thing for cleaner feed display
+ * Shows one card per thing with all friends who've interacted with it
+ */
+export const getFeedThings = async (
+  following: string[],
+  currentUserId: string
+): Promise<FeedThing[]> => {
+  try {
+    console.log('📱 Loading feed things (grouped by thing)...');
+    console.log('👥 Following:', following.length, 'users');
+    console.log('👤 Current user:', currentUserId);
+    
+    const allUserIds = [...following, currentUserId];
+    console.log('📊 Total user IDs to query:', allUserIds.length);
+    
+    if (allUserIds.length === 0) {
+      console.log('⚠️ No users to query (not following anyone)');
+      return [];
+    }
+    
+    // Get all public interactions from followed users + yourself
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(
+      interactionsRef,
+      where('userId', 'in', allUserIds),
+      where('visibility', 'in', ['public', 'friends']),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+    
+    console.log('🔍 Querying user_thing_interactions collection...');
+    const snapshot = await getDocs(q);
+    console.log('📦 Query returned', snapshot.size, 'documents');
+    
+    const interactions = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as UserThingInteraction));
+    
+    // Group by thingId
+    const thingsMap = new Map<string, UserThingInteraction[]>();
+    interactions.forEach(int => {
+      if (!thingsMap.has(int.thingId)) {
+        thingsMap.set(int.thingId, []);
+      }
+      thingsMap.get(int.thingId)!.push(int);
+    });
+    
+    console.log(`📊 Grouped into ${thingsMap.size} unique things`);
+    
+    // Build FeedThing objects
+    const feedThings: FeedThing[] = [];
+    
+    for (const [thingId, ints] of thingsMap.entries()) {
+      const thing = await getThing(thingId);
+      if (!thing) {
+        console.warn('⚠️ Thing not found:', thingId);
+        continue;
+      }
+      
+      // Sort interactions by createdAt (earliest first for display order)
+      ints.sort((a, b) => {
+        const aTime = (a.createdAt as Timestamp)?.seconds || 0;
+        const bTime = (b.createdAt as Timestamp)?.seconds || 0;
+        return aTime - bTime;
+      });
+      
+      // Find most recent interaction for sorting feed
+      const mostRecent = ints[ints.length - 1];
+      
+      feedThings.push({
+        thing,
+        interactions: {
+          completed: ints.filter(i => i.state === 'completed'),
+          saved: ints.filter(i => i.state === 'bucketList')
+        },
+        myInteraction: ints.find(i => i.userId === currentUserId),
+        avgRating: await getThingAverageRating(thingId),
+        mostRecentUpdate: mostRecent.createdAt
+      });
+    }
+    
+    // Sort by most recent update
+    feedThings.sort((a, b) => {
+      const aTime = (a.mostRecentUpdate as Timestamp)?.seconds || 0;
+      const bTime = (b.mostRecentUpdate as Timestamp)?.seconds || 0;
+      return bTime - aTime;
+    });
+    
+    console.log(`✅ Loaded ${feedThings.length} feed things`);
+    return feedThings;
+  } catch (error) {
+    console.error('Error loading feed things:', error);
+    return [];
+  }
+};
 
 // Get feed posts using new system (posts_v2 with things data)
 // Get feed interactions (replaces getFeedPostsV2)
@@ -2250,6 +2355,10 @@ export const getRecommendationsWithThings = async (userId: string): Promise<{
 // ============================================================================
 // DUAL SYSTEM POST CREATION (NEW + OLD)
 // ============================================================================
+// DEPRECATED: Old dual-system implementation - no longer used
+// Replaced by direct calls to createOrGetThing + createUserThingInteraction
+// Can be safely removed after confirming production stability
+// ============================================================================
 
 export const createPostWithNewSystem = async (
   authorId: string,
@@ -2358,6 +2467,12 @@ export const createPostWithNewSystem = async (
     throw error;
   }
 };
+
+// ===== MIGRATION FUNCTIONS =====
+// DEPRECATED: One-time migration helpers - no longer needed
+// Used during initial migration from posts/personal_items to new system
+// Can be safely removed after confirming all data is migrated
+// ============================================================================
 
 // Helper function to convert old Post to new system data
 export const migratePostToNewSystem = async (post: Post): Promise<{
@@ -2595,6 +2710,39 @@ export const unlikeComment = async (commentId: string, userId: string): Promise<
 };
 
 // ===== MIGRATION HELPERS =====
+
+/**
+ * Migration: Convert all inProgress interactions to bucketList
+ * Run this once to clean up the removed state
+ */
+export const migrateInProgressToBucketList = async (userId: string): Promise<void> => {
+  try {
+    console.log('🔄 Migrating inProgress → bucketList for user:', userId);
+    
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(interactionsRef, where('userId', '==', userId), where('state', '==', 'inProgress'));
+    const snapshot = await getDocs(q);
+    
+    let updated = 0;
+    for (const docSnap of snapshot.docs) {
+      await updateDoc(doc(db, 'user_thing_interactions', docSnap.id), {
+        state: 'bucketList'
+      });
+      updated++;
+      console.log(`✅ Updated ${docSnap.id}: inProgress → bucketList`);
+    }
+    
+    console.log(`✅ Migration complete! Updated ${updated} interaction(s)`);
+    if (updated > 0) {
+      alert(`Converted ${updated} in-progress item(s) to bucket list. Refresh the page.`);
+    } else {
+      alert('No in-progress items found!');
+    }
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    throw error;
+  }
+};
 
 /**
  * Cleanup: Remove duplicate user_thing_interactions

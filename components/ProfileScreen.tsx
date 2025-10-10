@@ -2,58 +2,93 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { getUserThingInteractionsWithThings, getUserRecsGivenCount } from '@/lib/firestore';
-import { UserThingInteraction, Thing, Category, CATEGORIES } from '@/lib/types';
-import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
+import { getUserThingInteractionsWithThings, getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore';
+import { getUserProfile } from '@/lib/auth';
+import { UserThingInteraction, Thing, Category, CATEGORIES, User } from '@/lib/types';
+import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, PencilSquareIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import ThingInteractionCard from './ThingInteractionCard';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
 import EditProfileModal from './EditProfileModal';
 
 interface ProfileScreenProps {
-  onShowFollowingList: () => void;
+  viewingUserId?: string; // If provided, shows that user's profile; otherwise shows own profile
+  onShowFollowingList?: () => void;
   onUserClick?: (userId: string) => void;
-  onSettingsClick: () => void;
+  onSettingsClick?: () => void;
   onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
+  onBack?: () => void; // For going back when viewing other's profile
 }
 
-export default function ProfileScreen({ onShowFollowingList, onSettingsClick, onEditInteraction }: ProfileScreenProps) {
+export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
+  const [viewingUserProfile, setViewingUserProfile] = useState<User | null>(null);
+  const [followLoading, setFollowLoading] = useState(false);
   
-  // NEW: State and Category filters
-  const [selectedState, setSelectedState] = useState<'all' | 'bucketList' | 'inProgress' | 'completed'>('all');
+  // State and Category filters (removed 'inProgress')
+  const [selectedState, setSelectedState] = useState<'all' | 'bucketList' | 'completed'>('all');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   
-  const { user, userProfile } = useAuthStore();
+  const { user, userProfile, setUserProfile } = useAuthStore();
   const { isInstalled, isLoading } = usePWAInstallStatus();
+  
+  // Determine if viewing own profile or someone else's
+  const isOwnProfile = !viewingUserId || viewingUserId === user?.uid;
+  const displayedProfile = isOwnProfile ? userProfile : viewingUserProfile;
+  const displayedUserId = isOwnProfile ? user?.uid : viewingUserId;
+
+  // Load viewing user's profile data (if viewing someone else)
+  useEffect(() => {
+    const loadViewingUser = async () => {
+      if (!viewingUserId || viewingUserId === user?.uid) {
+        setViewingUserProfile(null);
+        return;
+      }
+      
+      try {
+        const profile = await getUserProfile(viewingUserId);
+        setViewingUserProfile(profile);
+      } catch (error) {
+        console.error('Error loading viewing user profile:', error);
+      }
+    };
+    
+    loadViewingUser();
+  }, [viewingUserId, user]);
 
   const loadUserActivity = useCallback(async () => {
-    if (!user) return;
+    if (!displayedUserId) return;
     
     try {
-      const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(user.uid);
-      setUserInteractions(interactions);
+      const { interactions, things: thingsData } = await getUserThingInteractionsWithThings(displayedUserId);
+      
+      // If viewing someone else's profile, filter to only public/friends visibility
+      const visibleInteractions = isOwnProfile 
+        ? interactions 
+        : interactions.filter(i => i.visibility === 'public' || i.visibility === 'friends');
+      
+      setUserInteractions(visibleInteractions);
       setThings(thingsData);
     } catch (error) {
       console.error('Error loading user activity:', error);
     }
-  }, [user]);
+  }, [displayedUserId, isOwnProfile]);
 
   const loadRecsGivenCount = useCallback(async () => {
-    if (!user) return;
+    if (!displayedUserId) return;
     
     try {
-      const count = await getUserRecsGivenCount(user.uid);
+      const count = await getUserRecsGivenCount(displayedUserId);
       setRecsGivenCount(count);
     } catch (error) {
       console.error('Error loading recs given count:', error);
     }
-  }, [user]);
+  }, [displayedUserId]);
 
   useEffect(() => {
     loadUserActivity();
@@ -63,6 +98,38 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick, on
 
 
 
+
+  // Follow/Unfollow handlers
+  const handleFollowToggle = async () => {
+    if (!user || !userProfile || !viewingUserProfile) return;
+    
+    setFollowLoading(true);
+    try {
+      const isFollowing = userProfile.following.includes(viewingUserProfile.id);
+      
+      if (isFollowing) {
+        await unfollowUser(user.uid, viewingUserProfile.id);
+        setUserProfile({
+          ...userProfile,
+          following: userProfile.following.filter(id => id !== viewingUserProfile.id)
+        });
+      } else {
+        await followUser(user.uid, viewingUserProfile.id);
+        setUserProfile({
+          ...userProfile,
+          following: [...userProfile.following, viewingUserProfile.id]
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling follow:', error);
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
+  const isFollowing = userProfile && viewingUserProfile 
+    ? userProfile.following.includes(viewingUserProfile.id) 
+    : false;
 
   // Filter interactions by state, category, and search
   const filteredInteractions = userInteractions.filter(interaction => {
@@ -92,7 +159,7 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick, on
   });
   
   // Helper to get count for each state
-  const getStateCount = (state: 'all' | 'bucketList' | 'inProgress' | 'completed') => {
+  const getStateCount = (state: 'all' | 'bucketList' | 'completed') => {
     if (state === 'all') return userInteractions.length;
     return userInteractions.filter(i => i.state === state).length;
   };
@@ -118,42 +185,59 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick, on
       <div className="px-4 py-6">
         {/* User Profile Section */}
         <div className="relative text-center mb-8">
-          <div className="absolute top-0 right-0 flex space-x-2">
-            <button
-              onClick={() => setShowEditProfile(true)}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              title="Edit Profile"
-            >
-              <PencilSquareIcon className="h-6 w-6 text-gray-600" />
-            </button>
-            <button
-              onClick={onSettingsClick}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              title="Settings"
-            >
-              <CogIcon className="h-6 w-6 text-gray-600" />
-            </button>
-          </div>
+          {/* Back Button - Top Left (for other's profile) */}
+          {!isOwnProfile && (
+            <div className="absolute top-0 left-0">
+              <button
+                onClick={onBack}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Back"
+              >
+                <ArrowLeftIcon className="h-6 w-6 text-gray-600" />
+              </button>
+            </div>
+          )}
+          
+          {/* Edit/Settings - Top Right (for own profile) */}
+          {isOwnProfile && (
+            <div className="absolute top-0 right-0 flex space-x-2">
+              <button
+                onClick={() => setShowEditProfile(true)}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Edit Profile"
+              >
+                <PencilSquareIcon className="h-6 w-6 text-gray-600" />
+              </button>
+              <button
+                onClick={onSettingsClick}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title="Settings"
+              >
+                <CogIcon className="h-6 w-6 text-gray-600" />
+              </button>
+            </div>
+          )}
+          
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mx-auto mb-4">
-            {userProfile?.name.charAt(0).toUpperCase()}
+            {displayedProfile?.name.charAt(0).toUpperCase()}
           </div>
-          <h2 className="text-xl font-bold text-gray-900">{userProfile?.name}</h2>
+          <h2 className="text-xl font-bold text-gray-900">{displayedProfile?.name}</h2>
           <p className="text-gray-600 text-sm">
-            {userProfile?.username ? `@${userProfile.username}` : 'Setting up...'}
+            {displayedProfile?.username ? `@${displayedProfile.username}` : 'Setting up...'}
           </p>
           <div className="flex justify-center space-x-4 mt-4">
             <div className="text-center">
-              {(userProfile?.following.length || 0) > 0 ? (
+              {(displayedProfile?.following.length || 0) > 0 && onShowFollowingList && isOwnProfile ? (
                 <button
                   onClick={onShowFollowingList}
                   className="text-center hover:opacity-75 transition-opacity"
                 >
-                  <div className="text-xl font-bold text-blue-600">{userProfile?.following.length || 0}</div>
+                  <div className="text-xl font-bold text-blue-600">{displayedProfile?.following.length || 0}</div>
                   <div className="text-sm text-gray-500">Following</div>
                 </button>
               ) : (
                 <div className="text-center">
-                  <div className="text-xl font-bold text-gray-900">{userProfile?.following.length || 0}</div>
+                  <div className="text-xl font-bold text-gray-900">{displayedProfile?.following.length || 0}</div>
                   <div className="text-sm text-gray-500">Following</div>
                 </div>
               )}
@@ -171,10 +255,39 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick, on
               <div className="text-sm text-gray-500">Recs Given</div>
             </div>
           </div>
+          
+          {/* Follow/Unfollow Button - Below Stats (for other's profile) */}
+          {!isOwnProfile && (
+            <div className="mt-4">
+              <button
+                onClick={handleFollowToggle}
+                disabled={followLoading}
+                className={`w-full max-w-xs mx-auto px-6 py-2.5 rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center ${
+                  isFollowing
+                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {followLoading ? (
+                  'Loading...'
+                ) : isFollowing ? (
+                  <>
+                    <UserMinusIcon className="h-5 w-5 mr-2" />
+                    Unfollow
+                  </>
+                ) : (
+                  <>
+                    <UserPlusIcon className="h-5 w-5 mr-2" />
+                    Follow
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* PWA Install Prompt - Only show when not installed */}
-        {!isLoading && !isInstalled && (
+        {/* PWA Install Prompt - Only show for own profile when not installed */}
+        {isOwnProfile && !isLoading && !isInstalled && (
           <div className="mb-8">
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100 border rounded-xl p-4">
               <div className="flex items-center justify-between">
@@ -213,14 +326,13 @@ export default function ProfileScreen({ onShowFollowingList, onSettingsClick, on
             {[
               { id: 'all', label: 'All', icon: '📋' },
               { id: 'bucketList', label: 'To Do', icon: '📝' },
-              { id: 'inProgress', label: 'In Progress', icon: '▶️' },
               { id: 'completed', label: 'Completed', icon: '✅' },
             ].map((state) => {
-              const count = getStateCount(state.id as 'all' | 'bucketList' | 'inProgress' | 'completed');
+              const count = getStateCount(state.id as 'all' | 'bucketList' | 'completed');
               return (
                 <button
                   key={state.id}
-                  onClick={() => setSelectedState(state.id as 'all' | 'bucketList' | 'inProgress' | 'completed')}
+                  onClick={() => setSelectedState(state.id as 'all' | 'bucketList' | 'completed')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                     selectedState === state.id
                       ? 'bg-blue-600 text-white shadow-sm'

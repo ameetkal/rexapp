@@ -201,7 +201,21 @@ export interface Recommendation {
   message?: string;   // Optional message with the recommendation
 }
 
-// Updated Post interface to link to things
+// Feed data structure - groups interactions by thing
+export interface FeedThing {
+  thing: Thing;
+  interactions: {
+    completed: UserThingInteraction[];
+    saved: UserThingInteraction[];
+  };
+  myInteraction?: UserThingInteraction;
+  avgRating: number | null;
+  mostRecentUpdate: Timestamp;
+}
+
+// DEPRECATED: PostV2 replaced by UserThingInteraction with visibility field
+// This type is kept for backwards compatibility with store.ts
+// Can be removed once postsV2 is removed from store
 export interface PostV2 {
   id: string;
   authorId: string;

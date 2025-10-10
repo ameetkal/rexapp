@@ -52,7 +52,7 @@ export default function InteractionDetailModal({
         thingId: thing.id,
         state: 'bucketList',
         date: interaction.createdAt,
-        visibility: 'private',
+        visibility: 'public',
         createdAt: interaction.createdAt,
         likedBy: [],
         commentCount: 0,
@@ -63,7 +63,7 @@ export default function InteractionDetailModal({
         userProfile.name,
         thing.id,
         'bucketList',
-        'private'
+        'public' // Default to public
       );
       
       newInteraction.id = interactionId;
@@ -107,7 +107,7 @@ export default function InteractionDetailModal({
         thingId: thing.id,
         state: 'completed',
         date: interaction.createdAt,
-        visibility: 'private',
+        visibility: 'public',
         rating,
         createdAt: interaction.createdAt,
         likedBy: [],
@@ -119,7 +119,7 @@ export default function InteractionDetailModal({
         userProfile.name,
         thing.id,
         'completed',
-        'private',
+        'public', // Default to public
         { rating }
       );
       

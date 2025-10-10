@@ -51,11 +51,6 @@ service cloud.firestore {
         request.auth.uid == resource.data.fromUserId;
     }
     
-    // DEPRECATED: Posts V2 - read-only (replaced by UserThingInteraction)
-    match /posts_v2/{postId} {
-      allow read: if true;
-    }
-    
     // Comments - anyone can read, users can create/delete their own
     match /comments/{commentId} {
       allow read: if true;
@@ -67,15 +62,6 @@ service cloud.firestore {
       );
       allow delete: if request.auth != null && 
         request.auth.uid == resource.data.authorId;
-    }
-    
-    // LEGACY: Keep old collections read-only for backward compatibility with existing invite links
-    match /posts/{postId} {
-      allow read: if true;
-    }
-    
-    match /personal_items/{itemId} {
-      allow read: if true;
     }
     
     // Fallback - allow authenticated users to read all for search
