@@ -1,15 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Image from 'next/image';
-import { FeedThing, UserThingInteraction, Thing } from '@/lib/types';
+import { FeedThing, UserThingInteraction, Thing, User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
-import { useEffect } from 'react';
-import { User } from '@/lib/types';
 import { CATEGORIES } from '@/lib/types';
 import { BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
+import StarRating from './StarRating';
 import { Timestamp } from 'firebase/firestore';
+import { useAuthStore } from '@/lib/store';
+import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 
 interface ThingFeedCardProps {
   feedThing: FeedThing;
@@ -18,13 +20,31 @@ interface ThingFeedCardProps {
 }
 
 export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingFeedCardProps) {
-  const { thing, interactions, myInteraction, avgRating } = feedThing;
+  const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [tempRating, setTempRating] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
+  const [localMyInteraction, setLocalMyInteraction] = useState<UserThingInteraction | undefined>(myInteraction);
+  
+  const { user, userProfile } = useAuthStore();
   
   const category = CATEGORIES.find(c => c.id === thing.category);
-  const allInteractions = [...interactions.completed, ...interactions.saved];
-  const totalPeople = allInteractions.length;
+  const allInteractions = useMemo(
+    () => [...interactions.completed, ...interactions.saved],
+    [interactions.completed, interactions.saved]
+  );
+
+  // Sync local interaction with prop
+  useEffect(() => {
+    setLocalMyInteraction(myInteraction);
+  }, [myInteraction]);
+
+  // Determine button states
+  const currentMyInteraction = localMyInteraction;
+  const isInBucketList = currentMyInteraction?.state === 'bucketList';
+  const isCompleted = currentMyInteraction?.state === 'completed';
 
   // Load user data for all interactions
   useEffect(() => {
@@ -75,6 +95,116 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
 
   const handleCardClick = () => {
     setShowDetailModal(true);
+  };
+
+  // Calculate friends average rating from completed interactions in this card
+  const friendsAvgRating = useMemo(() => {
+    const completedWithRatings = interactions.completed.filter(i => i.rating && i.rating > 0);
+    if (completedWithRatings.length === 0) return null;
+    const sum = completedWithRatings.reduce((acc, i) => acc + (i.rating || 0), 0);
+    return sum / completedWithRatings.length;
+  }, [interactions.completed]);
+
+  // Handle Save/Unsave
+  const handleSaveToggle = async () => {
+    if (!user || !userProfile) return;
+    
+    setLoading(true);
+    try {
+      if (isInBucketList && currentMyInteraction) {
+        // Remove from bucket list
+        if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
+          setLoading(false);
+          return;
+        }
+        
+        setLocalMyInteraction(undefined);
+        await deleteUserThingInteraction(currentMyInteraction.id);
+        console.log('🗑️ Removed from bucket list');
+      } else {
+        // Add to bucket list
+        const newInteraction: UserThingInteraction = {
+          id: '',
+          userId: user.uid,
+          userName: userProfile.name,
+          thingId: thing.id,
+          state: 'bucketList',
+          date: Timestamp.now(),
+          visibility: 'public',
+          createdAt: Timestamp.now(),
+          likedBy: [],
+          commentCount: 0,
+        };
+        
+        setLocalMyInteraction(newInteraction);
+        
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thing.id,
+          'bucketList',
+          'public'
+        );
+        
+        newInteraction.id = interactionId;
+        setLocalMyInteraction(newInteraction);
+        console.log('✅ Added to your bucket list');
+      }
+    } catch (error) {
+      console.error('Error toggling save:', error);
+      setLocalMyInteraction(currentMyInteraction); // Revert on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle Complete (shows rating modal first)
+  const handleCompleteToggle = () => {
+    if (!user || !userProfile) return;
+    setShowRatingModal(true);
+  };
+
+  // Handle rating submission after Complete clicked
+  const handleRatingSubmit = async (skipRating = false) => {
+    if (!user || !userProfile) return;
+    
+    setLoading(true);
+    try {
+      const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
+      
+      const newInteraction: UserThingInteraction = {
+        id: currentMyInteraction?.id || '',
+        userId: user.uid,
+        userName: userProfile.name,
+        thingId: thing.id,
+        state: 'completed',
+        date: Timestamp.now(),
+        visibility: 'public',
+        rating,
+        createdAt: currentMyInteraction?.createdAt || Timestamp.now(),
+        likedBy: [],
+        commentCount: 0,
+      };
+      
+      setLocalMyInteraction(newInteraction);
+      setShowRatingModal(false);
+      
+      await createUserThingInteraction(
+        user.uid,
+        userProfile.name,
+        thing.id,
+        'completed',
+        'public',
+        { rating }
+      );
+      
+      console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
+      setTempRating(0);
+    } catch (error) {
+      console.error('Error marking as completed:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -136,6 +266,11 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                 )}
               </span>
               <span className="text-xs text-gray-500 ml-1">completed</span>
+              {friendsAvgRating && (
+                <span className="text-xs text-gray-600 ml-2">
+                  ★ {friendsAvgRating.toFixed(1)} avg
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -183,38 +318,92 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         </div>
       )}
 
-      {/* Rating Info */}
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center space-x-4">
-          {/* First person's rating (or yours) */}
-          {(myInteraction?.rating || allInteractions[0]?.rating) && (
-            <div className="flex items-center space-x-1">
-              <span className="text-yellow-400">★</span>
-              <span className="text-gray-700 font-medium">
-                {myInteraction?.rating || allInteractions[0]?.rating}/5
-              </span>
-              <span className="text-gray-500 text-xs">
-                ({myInteraction ? 'You' : users.get(allInteractions[0].userId)?.username || 'User'})
-              </span>
-            </div>
+      {/* Action Bar */}
+      <div className="flex items-center space-x-1 pt-3 border-t border-gray-100">
+        {/* Save Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSaveToggle();
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            isInBucketList
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+          }`}
+        >
+          {isInBucketList ? (
+            <BookmarkIconSolid className="h-5 w-5" />
+          ) : (
+            <BookmarkIcon className="h-5 w-5" />
           )}
-          
-          {/* Rex Average */}
-          {avgRating && (
-            <div className="flex items-center space-x-1">
-              <span className="text-gray-400">★</span>
-              <span className="text-gray-600 text-xs">
-                {avgRating.toFixed(1)} Rex avg
-              </span>
-            </div>
+          <span className="text-sm font-medium">Save</span>
+        </button>
+
+        {/* Completed Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            handleCompleteToggle();
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            isCompleted
+              ? 'bg-green-50 text-green-600 hover:bg-green-100'
+              : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+          }`}
+        >
+          {isCompleted ? (
+            <CheckCircleIconSolid className="h-5 w-5" />
+          ) : (
+            <CheckCircleIcon className="h-5 w-5" />
           )}
-        </div>
-        
-        {/* Total people count */}
-        <span className="text-xs text-gray-500">
-          {totalPeople} {totalPeople === 1 ? 'person' : 'people'}
-        </span>
+          <span className="text-sm font-medium">Completed</span>
+        </button>
       </div>
+
+      {/* Rating Modal */}
+      {showRatingModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowRatingModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 max-w-sm w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Rate {thing.title}
+            </h3>
+            
+            <div className="mb-6">
+              <StarRating
+                rating={tempRating}
+                onRatingChange={setTempRating}
+                size="lg"
+              />
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => handleRatingSubmit(true)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                Skip
+              </button>
+              <button
+                onClick={() => handleRatingSubmit(false)}
+                disabled={loading}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Save Rating'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail Modal */}
       {showDetailModal && (
