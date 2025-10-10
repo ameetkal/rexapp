@@ -1366,7 +1366,7 @@ export const reserveUsername = async (userId: string, username: string): Promise
 
 export const updateUserWithUsername = async (
   userId: string, 
-  updates: { name?: string; email?: string; username?: string }
+  updates: { name?: string; email?: string; username?: string; phoneNumber?: string }
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     if (updates.username) {

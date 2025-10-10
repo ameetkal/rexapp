@@ -1,20 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useUser, useAuth } from '@clerk/nextjs';
 import { useAuthStore } from '@/lib/store';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth as firebaseAuth } from '@/lib/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
 import { User } from '@/lib/types';
 
 /**
  * ClerkAuthProvider - Syncs Clerk authentication with Zustand store and Firestore
- * Replaces the old Firebase Auth-based AuthProvider
+ * Creates Firebase custom tokens from Clerk sessions so Firestore rules work
  */
 export default function ClerkAuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, user: clerkUser } = useUser();
   const { userId } = useAuth();
   const { setUser, setUserProfile, setLoading } = useAuthStore();
+  const [firebaseSignedIn, setFirebaseSignedIn] = useState(false);
 
   useEffect(() => {
     const syncUserToFirestore = async () => {
@@ -28,11 +30,29 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
         setUser(null);
         setUserProfile(null);
         setLoading(false);
+        setFirebaseSignedIn(false);
         return;
       }
 
       try {
         console.log('🔐 Clerk user authenticated:', userId);
+        
+        // Step 1: Get Firebase custom token from our API
+        if (!firebaseSignedIn) {
+          console.log('🔑 Getting Firebase token...');
+          const response = await fetch('/api/auth/firebase-token');
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.error || 'Failed to get Firebase token');
+          }
+          
+          // Step 2: Sign in to Firebase with the custom token
+          console.log('🔥 Signing in to Firebase...');
+          await signInWithCustomToken(firebaseAuth, data.token);
+          setFirebaseSignedIn(true);
+          console.log('✅ Firebase authenticated');
+        }
         
         // Set the basic user object for Zustand
         setUser({ uid: userId });
@@ -79,7 +99,7 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
     };
 
     syncUserToFirestore();
-  }, [isLoaded, isSignedIn, clerkUser, userId, setUser, setUserProfile, setLoading]);
+  }, [isLoaded, isSignedIn, clerkUser, userId, setUser, setUserProfile, setLoading, firebaseSignedIn]);
 
   return <>{children}</>;
 }
