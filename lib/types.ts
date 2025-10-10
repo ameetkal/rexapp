@@ -95,6 +95,7 @@ export interface User {
   name: string;
   email: string;
   username: string; // Required - auto-generated for new users
+  phoneNumber?: string; // Optional - user's phone number
   following: string[]; // userIds
   followers: string[];
   createdAt: Timestamp;

@@ -1,12 +1,16 @@
 import { create } from 'zustand';
-import { User as FirebaseUser } from 'firebase/auth';
 import { User, Thing, UserThingInteraction, PostV2, Recommendation } from './types';
 
+// Simple auth user type (works with both Firebase and Clerk)
+export interface AuthUser {
+  uid: string;
+}
+
 interface AuthState {
-  user: FirebaseUser | null;
+  user: AuthUser | null;
   userProfile: User | null;
   loading: boolean;
-  setUser: (user: FirebaseUser | null) => void;
+  setUser: (user: AuthUser | null) => void;
   setUserProfile: (profile: User | null) => void;
   setLoading: (loading: boolean) => void;
 }
