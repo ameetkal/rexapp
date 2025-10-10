@@ -11,9 +11,10 @@ import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/rea
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
   onNavigateToAdd?: () => void;
+  onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
-export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: FeedScreenProps = {}) {
+export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEditInteraction }: FeedScreenProps = {}) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -398,6 +399,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
                       avgRating={avgRatings.get(interaction.thingId) || null}
                       isOwnInteraction={isOwnInteraction}
                       onAuthorClick={onUserProfileClick}
+                      onEdit={onEditInteraction}
                     />
                   );
                 })}

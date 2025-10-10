@@ -192,7 +192,16 @@ export default function MainApp() {
     // Handle main app screens
     switch (activeTab) {
       case 'feed':
-        return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
+        return (
+          <FeedScreen 
+            onUserProfileClick={handleProfileClickFromFeed} 
+            onNavigateToAdd={() => setActiveTab('post')}
+            onEditInteraction={(interaction, thing) => {
+              setEditingInteraction({ interaction, thing });
+              setActiveTab('post');
+            }}
+          />
+        );
       case 'post':
         return (
           <PostScreen 

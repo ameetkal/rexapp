@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Thing, UserThingInteraction } from '@/lib/types';
 import { deleteUserThingInteraction } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
@@ -13,6 +14,7 @@ import {
   PlayIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
+import InteractionDetailModal from './InteractionDetailModal';
 
 interface ThingInteractionCardProps {
   thing: Thing;
@@ -29,6 +31,7 @@ export default function ThingInteractionCard({
   const [loading, setLoading] = useState(false);
   const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
   const [showMenu, setShowMenu] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { user } = useAuthStore();
@@ -238,21 +241,30 @@ export default function ThingInteractionCard({
     }
   };
 
+  const handleCardClick = () => {
+    setShowDetailModal(true);
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+    <div 
+      className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer"
+      onClick={handleCardClick}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <span className="text-2xl">{category?.emoji}</span>
           <div>
             <h3 className="font-semibold text-gray-900 text-lg">{thing.title}</h3>
-            <p className="text-sm text-gray-600">{category?.name}</p>
           </div>
         </div>
         
         <div className="relative">
           <button
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
             className="p-1 hover:bg-gray-100 rounded-full transition-colors"
           >
             <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
@@ -302,41 +314,56 @@ export default function ThingInteractionCard({
         </div>
       </div>
 
-      {/* Thing Description */}
-      {thing.description && (
-        <div className="mb-4">
-          <p className="text-gray-700 leading-relaxed">{thing.description}</p>
+      {/* Your Rating */}
+      {interaction.rating && interaction.rating > 0 && (
+        <div className="mb-3">
+          <div className="flex items-center space-x-1">
+            {[...Array(5)].map((_, i) => (
+              <span
+                key={i}
+                className={`text-lg ${
+                  i < interaction.rating! ? 'text-yellow-400' : 'text-gray-300'
+                }`}
+              >
+                ★
+              </span>
+            ))}
+            <span className="ml-2 text-sm text-gray-600">
+              {interaction.rating}/5
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Thing Metadata */}
-      {thing.metadata && (
-        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {thing.metadata.author && (
-              <div>
-                <span className="text-gray-500">Author:</span>
-                <span className="ml-1 text-gray-900">{thing.metadata.author}</span>
-              </div>
-            )}
-            {thing.metadata.director && (
-              <div>
-                <span className="text-gray-500">Director:</span>
-                <span className="ml-1 text-gray-900">{thing.metadata.director}</span>
-              </div>
-            )}
-            {thing.metadata.year && (
-              <div>
-                <span className="text-gray-500">Year:</span>
-                <span className="ml-1 text-gray-900">{thing.metadata.year}</span>
-              </div>
-            )}
-            {thing.metadata.placeType && (
-              <div>
-                <span className="text-gray-500">Type:</span>
-                <span className="ml-1 text-gray-900 capitalize">{thing.metadata.placeType.replace('_', ' ')}</span>
-              </div>
-            )}
+      {/* Your Content/Comments */}
+      {interaction.content && (
+        <div className="mb-3">
+          <p className="text-gray-700 leading-relaxed">{interaction.content}</p>
+        </div>
+      )}
+
+      {/* Your Private Notes */}
+      {interaction.notes && (
+        <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-xs text-yellow-700 font-medium mb-1">🔒 Private Notes</p>
+          <p className="text-sm text-gray-700">{interaction.notes}</p>
+        </div>
+      )}
+
+      {/* Your Photos */}
+      {interaction.photos && interaction.photos.length > 0 && (
+        <div className="mb-3">
+          <div className="grid grid-cols-3 gap-2">
+            {interaction.photos.map((photoUrl, index) => (
+              <Image
+                key={index}
+                src={photoUrl}
+                alt={`Photo ${index + 1}`}
+                width={100}
+                height={100}
+                className="w-full h-24 object-cover rounded-lg"
+              />
+            ))}
           </div>
         </div>
       )}
@@ -361,7 +388,10 @@ export default function ThingInteractionCard({
             <>
               {interaction.state !== 'inProgress' && (
                 <button
-                  onClick={() => handleStateChange('inProgress')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStateChange('inProgress');
+                  }}
                   disabled={loading}
                   className="px-3 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 hover:bg-yellow-100 rounded-full transition-colors disabled:opacity-50"
                 >
@@ -370,7 +400,10 @@ export default function ThingInteractionCard({
               )}
               
               <button
-                onClick={() => handleStateChange('completed')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStateChange('completed');
+                }}
                 disabled={loading}
                 className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
               >
@@ -380,6 +413,21 @@ export default function ThingInteractionCard({
           )}
         </div>
       </div>
+
+      {/* Detail Modal */}
+      {showDetailModal && (
+        <InteractionDetailModal
+          interaction={interaction}
+          thing={thing}
+          myInteraction={interaction}
+          isOwnInteraction={true}
+          onClose={() => setShowDetailModal(false)}
+          onEdit={() => {
+            setShowDetailModal(false);
+            onEdit?.(interaction, thing);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -7,8 +7,7 @@ import { Thing, UserThingInteraction } from '@/lib/types';
 import { 
   createUserThingInteraction, 
   deleteUserThingInteraction,
-  createRecommendation,
-  updateInteractionContent
+  createRecommendation
 } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
@@ -23,6 +22,7 @@ import {
 } from '@heroicons/react/24/outline';
 import CommentSection from './CommentSection';
 import StarRating from './StarRating';
+import InteractionDetailModal from './InteractionDetailModal';
 
 interface PostCardV2Props {
   interaction: UserThingInteraction; // The interaction being displayed (could be anyone's)
@@ -31,23 +31,20 @@ interface PostCardV2Props {
   avgRating?: number | null;
   isOwnInteraction?: boolean; // Whether current user owns the displayed interaction
   onAuthorClick?: (userId: string) => void;
+  onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
-export default function PostCardV2({ interaction, thing, myInteraction, avgRating, isOwnInteraction, onAuthorClick }: PostCardV2Props) {
+export default function PostCardV2({ interaction, thing, myInteraction, avgRating, isOwnInteraction, onAuthorClick, onEdit }: PostCardV2Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
   
   // Local state to track MY interaction for immediate UI updates (button highlighting)
   const [localMyInteraction, setLocalMyInteraction] = useState<UserThingInteraction | undefined>(myInteraction);
-  
-  // Edit form state (for editing the displayed interaction if it's yours)
-  const [editContent, setEditContent] = useState(interaction.content || '');
-  const [editRating, setEditRating] = useState(interaction.rating || 0);
   
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -314,37 +311,10 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
     }
   };
 
-  const handleEditPost = async () => {
-    if (!user) return;
-    
-    setLoading(true);
-    try {
-      await updateInteractionContent(interaction.id, {
-        content: editContent,
-        rating: editRating > 0 ? editRating : undefined,
-      });
-      
-      // Update myInteraction if this is in your list
-      if (currentMyInteraction) {
-        setLocalMyInteraction({
-          ...currentMyInteraction,
-          rating: editRating > 0 ? editRating : undefined
-        });
-        updateUserInteraction(currentMyInteraction.id, { 
-          rating: editRating > 0 ? editRating : undefined 
-        });
-      }
-      
-      console.log('✅ Interaction updated');
-      setShowEditModal(false);
-      
-      // Refresh to show updated content (since we mutated the prop)
-      window.location.reload();
-    } catch (error) {
-      console.error('Error updating interaction:', error);
-      alert('Failed to update. Please try again.');
-    } finally {
-      setLoading(false);
+  const handleEditPost = () => {
+    setShowMenu(false);
+    if (onEdit) {
+      onEdit(interaction, thing);
     }
   };
 
@@ -371,20 +341,33 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
     }
   };
 
+  const handleCardClick = () => {
+    setShowDetailModal(true);
+  };
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+    <div 
+      className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow cursor-pointer"
+      onClick={handleCardClick}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-3">
           <button 
-            onClick={handleAuthorClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleAuthorClick();
+            }}
             className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-sm hover:bg-blue-200 transition-colors"
           >
             {(interaction.userName || 'User').charAt(0).toUpperCase()}
           </button>
           <div>
             <button
-              onClick={handleAuthorClick}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAuthorClick();
+              }}
               className="font-medium text-gray-900 hover:text-blue-600 transition-colors"
             >
               {interaction.userName || 'User'}
@@ -396,10 +379,13 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
         {/* Menu for own posts only */}
         {isOwnPost && (
           <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-            >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+          >
               <EllipsisVerticalIcon className="h-5 w-5 text-gray-400" />
             </button>
             
@@ -407,10 +393,7 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
             {showMenu && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-10">
                 <button
-                  onClick={() => {
-                    setShowMenu(false);
-                    setShowEditModal(true);
-                  }}
+                  onClick={handleEditPost}
                   className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center space-x-2"
                 >
                   <PencilIcon className="h-4 w-4" />
@@ -573,7 +556,10 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
         <div className="flex items-center space-x-1">
           {/* Comment Button */}
           <button
-            onClick={handlePostClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePostClick();
+            }}
             className="flex items-center space-x-1 px-3 py-2 rounded-full text-gray-500 hover:text-blue-500 hover:bg-blue-50 transition-colors"
           >
             <ChatBubbleLeftIcon className="h-5 w-5" />
@@ -582,7 +568,10 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
 
           {/* Save Button */}
           <button
-            onClick={handleSaveToggle}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSaveToggle();
+            }}
             disabled={loading}
             className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
               isInBucketList
@@ -596,7 +585,10 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
 
           {/* Completed Button */}
           <button
-            onClick={handleCompleteToggle}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCompleteToggle();
+            }}
             disabled={loading}
             className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
               isCompleted
@@ -684,87 +676,19 @@ export default function PostCardV2({ interaction, thing, myInteraction, avgRatin
         </div>
       )}
 
-      {/* Edit Modal */}
-      {showEditModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowEditModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-2">
-                Edit Post
-              </h3>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <span className="text-lg">{category?.emoji}</span>
-                <span>{thing.title}</span>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Edit Content */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Comments
-                </label>
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="Share your thoughts..."
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                  rows={4}
-                />
-              </div>
-
-              {/* Edit Rating */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Rating (optional)
-                </label>
-                <div className="flex justify-center">
-                  <StarRating 
-                    rating={editRating} 
-                    onRatingChange={setEditRating}
-                    maxRating={5}
-                    showLabel={true}
-                    size="md"
-                  />
-                </div>
-              </div>
-
-              {/* Note about photos */}
-              {interaction.photos && interaction.photos.length > 0 && (
-                <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-                  📸 Photo editing coming soon. To change photos, delete and recreate the post.
-                </div>
-              )}
-            </div>
-            
-            <div className="flex space-x-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditContent(interaction.content || '');
-                  setEditRating(interaction.rating || 0);
-                }}
-                disabled={loading}
-                className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleEditPost}
-                disabled={loading}
-                className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Detail Modal */}
+      {showDetailModal && (
+        <InteractionDetailModal
+          interaction={interaction}
+          thing={thing}
+          myInteraction={myInteraction}
+          isOwnInteraction={isOwnInteraction || false}
+          onClose={() => setShowDetailModal(false)}
+          onEdit={isOwnInteraction ? () => {
+            setShowDetailModal(false);
+            onEdit?.(interaction, thing);
+          } : undefined}
+        />
       )}
     </div>
   );
