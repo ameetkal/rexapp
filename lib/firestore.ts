@@ -77,11 +77,8 @@ export const createPost = async (
       }
     }
 
-    // Create notification for recommended by user
-    if (enhancedFields?.recommendedByUserId) {
-      const postId = docRef.id;
-      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, title);
-    }
+    // NOTE: Recommendation notifications are now handled automatically in createRecommendation()
+    // when someone saves a post/item from another user
     
     return docRef.id;
   } catch (error) {
@@ -1008,10 +1005,7 @@ export const createStructuredPost = async (
       }
     }
 
-    // Create notification for recommended by user
-    if (enhancedFields?.recommendedByUserId) {
-      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, universalItem.title);
-    }
+    // NOTE: Recommendation notifications are now handled automatically in createRecommendation()
 
     // Now create the personal item linked to the post
     const personalItemId = await createPersonalItem(
@@ -1123,7 +1117,7 @@ export const unsharePost = async (
 // Notification functions
 export const createNotification = async (
   userId: string,
-  type: 'tagged' | 'tag_accepted' | 'mentioned' | 'followed' | 'post_liked',
+  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed',
   title: string,
   message: string,
   data: {
@@ -1138,6 +1132,19 @@ export const createNotification = async (
   }
 ) => {
   try {
+    // Check user's notification preferences
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const prefs = userData.notificationPreferences;
+      
+      // If user has preferences set, check if this notification type is enabled
+      if (prefs && prefs[type] === false) {
+        console.log(`🔕 Notification skipped (user preference): ${type} for user ${userId}`);
+        return null;
+      }
+    }
+
     const notification = {
       userId,
       type,
@@ -1261,38 +1268,8 @@ export const notifyTaggedUser = async (
   }
 };
 
-// Create notification when user is mentioned as recommender
-export const notifyRecommendedBy = async (
-  recommendedByUserId: string,
-  fromUserId: string,
-  fromUserName: string,
-  postId: string,
-  postTitle: string
-) => {
-  try {
-    // Check if user wants to receive mentioned notifications (default to true if not set)
-    const userDoc = await getDoc(doc(db, 'users', recommendedByUserId));
-    const userProfile = userDoc.exists() ? userDoc.data() as User : null;
-    if (userProfile?.notificationPreferences?.mentioned === false) {
-      console.log('User has disabled mentioned notifications');
-      return;
-    }
-
-    await createNotification(
-      recommendedByUserId,
-      'mentioned',
-      `${fromUserName} mentioned you recommended something!`,
-      `In "${postTitle}"`,
-      {
-        postId,
-        fromUserId,
-        fromUserName
-      }
-    );
-  } catch (error) {
-    console.error('Error notifying recommended by user:', error);
-  }
-};
+// DEPRECATED: Old notification function - no longer used
+// Recommendations now trigger 'rec_given' notifications directly in createRecommendation()
 
 // Real-time notification listener
 export const subscribeToNotifications = (
@@ -1822,6 +1799,29 @@ export const createRecommendation = async (
     
     const docRef = await addDoc(collection(db, 'recommendations'), recommendationData);
     console.log('✅ Created recommendation:', docRef.id);
+    
+    // Notify the fromUser (person who made the rec) that someone saved it
+    // Get thing title for notification
+    const thingDoc = await getDoc(doc(db, 'things', thingId));
+    const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'an item';
+    
+    // Get toUser's name
+    const toUserDoc = await getDoc(doc(db, 'users', toUserId));
+    const toUserName = toUserDoc.exists() ? toUserDoc.data().name : 'Someone';
+    
+    await createNotification(
+      fromUserId,
+      'rec_given',
+      'Recommendation saved!',
+      `${toUserName} saved your recommendation for ${thingTitle}`,
+      {
+        fromUserId: toUserId,
+        fromUserName: toUserName,
+        thingId,
+        thingTitle,
+      }
+    );
+    
     return docRef.id;
   } catch (error) {
     console.error('Error creating recommendation:', error);
@@ -2637,6 +2637,34 @@ export const createComment = async (
       commentCount: increment(1)
     });
     
+    // Notify the interaction owner (if not commenting on own post)
+    const interactionDoc = await getDoc(interactionRef);
+    if (interactionDoc.exists()) {
+      const interactionData = interactionDoc.data();
+      const postOwnerId = interactionData.userId;
+      
+      // Don't notify if commenting on your own post
+      if (postOwnerId !== authorId) {
+        // Get thing title for notification
+        const thingDoc = await getDoc(doc(db, 'things', interactionData.thingId));
+        const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'your post';
+        
+        await createNotification(
+          postOwnerId,
+          'comment',
+          'New comment',
+          `${authorName} commented on ${thingTitle}`,
+          {
+            fromUserId: authorId,
+            fromUserName: authorName,
+            interactionId,
+            thingId: interactionData.thingId,
+            thingTitle,
+          }
+        );
+      }
+    }
+    
     return docRef.id;
   } catch (error) {
     console.error('Error creating comment:', error);
@@ -3143,21 +3171,6 @@ export const acceptTag = async (
     await updateDoc(doc(db, 'tags', tagId), {
       status: 'accepted',
     });
-    
-    // Notify tagger
-    await createNotification(
-      tag.taggerId,
-      'tag_accepted',
-      `${userName} accepted your tag`,
-      `${userName} accepted your tag for ${tag.thingTitle}`,
-      {
-        fromUserId: userId,
-        fromUserName: userName,
-        thingId: tag.thingId,
-        thingTitle: tag.thingTitle,
-        interactionId: tag.sourceInteractionId,
-      }
-    );
     
     console.log('✅ Tag accepted:', tagId);
     return true;

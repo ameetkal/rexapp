@@ -111,7 +111,7 @@ export interface CategoryInfo {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'tagged' | 'tag_accepted' | 'mentioned' | 'followed' | 'post_liked';
+  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed';
   title: string;
   message: string;
   read: boolean;
@@ -130,9 +130,10 @@ export interface Notification {
 
 export interface NotificationPreferences {
   tagged: boolean;
-  mentioned: boolean; 
-  followed: boolean;
+  rec_given: boolean;
+  comment: boolean;
   post_liked: boolean;
+  followed: boolean;
   email_notifications: boolean;
 }
 

@@ -31,9 +31,10 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
   // Notification state
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>({
     tagged: true,
-    mentioned: true,
-    followed: true,
+    rec_given: true,
+    comment: true,
     post_liked: true,
+    followed: true,
     email_notifications: false,
   });
   const [notificationSaving, setNotificationSaving] = useState(false);
@@ -378,14 +379,48 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
 
                 <div className="flex items-center justify-between py-3">
                   <div>
-                    <h4 className="font-medium text-gray-900">💬 When mentioned</h4>
-                    <p className="text-sm text-gray-500">Get notified when someone lists you as a recommender</p>
+                    <h4 className="font-medium text-gray-900">🎁 Recommendations given</h4>
+                    <p className="text-sm text-gray-500">Get notified when someone saves your recommendation</p>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={notificationPrefs.mentioned}
-                      onChange={(e) => handleNotificationPrefChange('mentioned', e.target.checked)}
+                      checked={notificationPrefs.rec_given}
+                      onChange={(e) => handleNotificationPrefChange('rec_given', e.target.checked)}
+                      className="sr-only peer"
+                      disabled={notificationSaving}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between py-3">
+                  <div>
+                    <h4 className="font-medium text-gray-900">💬 Comments</h4>
+                    <p className="text-sm text-gray-500">Get notified when someone comments on your posts</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notificationPrefs.comment}
+                      onChange={(e) => handleNotificationPrefChange('comment', e.target.checked)}
+                      className="sr-only peer"
+                      disabled={notificationSaving}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between py-3">
+                  <div>
+                    <h4 className="font-medium text-gray-900">❤️ Post reactions</h4>
+                    <p className="text-sm text-gray-500">Get notified when someone likes your posts</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notificationPrefs.post_liked}
+                      onChange={(e) => handleNotificationPrefChange('post_liked', e.target.checked)}
                       className="sr-only peer"
                       disabled={notificationSaving}
                     />
@@ -403,23 +438,6 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       type="checkbox"
                       checked={notificationPrefs.followed}
                       onChange={(e) => handleNotificationPrefChange('followed', e.target.checked)}
-                      className="sr-only peer"
-                      disabled={notificationSaving}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <h4 className="font-medium text-gray-900">❤️ Post reactions</h4>
-                    <p className="text-sm text-gray-500">Get notified when someone saves your posts</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={notificationPrefs.post_liked}
-                      onChange={(e) => handleNotificationPrefChange('post_liked', e.target.checked)}
                       className="sr-only peer"
                       disabled={notificationSaving}
                     />

@@ -101,14 +101,14 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     switch (type) {
       case 'tagged':
         return '🏷️';
-      case 'tag_accepted':
-        return '✅';
-      case 'mentioned':
+      case 'rec_given':
+        return '🎁';
+      case 'comment':
         return '💬';
-      case 'followed':
-        return '👥';
       case 'post_liked':
         return '❤️';
+      case 'followed':
+        return '👥';
       default:
         return '🔔';
     }
