@@ -74,7 +74,8 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
       const timeoutId = setTimeout(checkUsername, 500);
       return () => clearTimeout(timeoutId);
     } else {
-      setUsernameAvailable(null);
+      // If username is the same as current, mark as available (not taken)
+      setUsernameAvailable(username === userProfile?.username ? true : null);
       setCheckingUsername(false);
     }
   }, [username, userProfile]);
@@ -321,7 +322,14 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
 
                 <button
                   onClick={handleSaveProfile}
-                  disabled={profileSaving || !name.trim() || !username.trim() || !email.trim() || usernameAvailable === false}
+                  disabled={
+                    profileSaving || 
+                    !name.trim() || 
+                    !username.trim() || 
+                    !email.trim() || 
+                    checkingUsername ||
+                    (username !== userProfile?.username && usernameAvailable !== true)
+                  }
                   className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 >
                   {profileSaving ? 'Saving...' : 'Save Changes'}
@@ -442,25 +450,6 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       disabled={notificationSaving}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-
-                <hr className="my-6" />
-
-                <div className="flex items-center justify-between py-3">
-                  <div>
-                    <h4 className="font-medium text-gray-900">📧 Email notifications</h4>
-                    <p className="text-sm text-gray-500">Receive notification summaries via email (coming soon)</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={notificationPrefs.email_notifications}
-                      onChange={(e) => handleNotificationPrefChange('email_notifications', e.target.checked)}
-                      className="sr-only peer"
-                      disabled={true} // Disabled for now
-                    />
-                    <div className="w-11 h-6 bg-gray-200 opacity-50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
                   </label>
                 </div>
               </div>
