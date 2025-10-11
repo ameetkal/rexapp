@@ -1,13 +1,13 @@
 import { Suspense } from 'react';
-import AuthProvider from '@/components/AuthProvider';
+import ClerkAuthProvider from '@/components/ClerkAuthProvider';
 import MainApp from '@/components/MainApp';
 
 export default function Home() {
   return (
-    <AuthProvider>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <ClerkAuthProvider>
         <MainApp />
-      </Suspense>
-    </AuthProvider>
+      </ClerkAuthProvider>
+    </Suspense>
   );
 }

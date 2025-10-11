@@ -51,11 +51,6 @@ service cloud.firestore {
         request.auth.uid == resource.data.fromUserId;
     }
     
-    // DEPRECATED: Posts V2 - read-only (replaced by UserThingInteraction)
-    match /posts_v2/{postId} {
-      allow read: if true;
-    }
-    
     // Comments - anyone can read, users can create/delete their own
     match /comments/{commentId} {
       allow read: if true;
@@ -69,13 +64,30 @@ service cloud.firestore {
         request.auth.uid == resource.data.authorId;
     }
     
-    // LEGACY: Keep old collections read-only for backward compatibility with existing invite links
-    match /posts/{postId} {
-      allow read: if true;
+    // Invitations - anyone can read (for invite links), authenticated users can create
+    match /invitations/{inviteCode} {
+      allow read: if true; // Public read for invite link processing
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.inviterId;
+      allow update: if request.auth != null; // Allow marking as used
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.inviterId;
     }
     
-    match /personal_items/{itemId} {
-      allow read: if true;
+    // Tags - users can read their own tags, tagger can create, tagged user can update/decline
+    match /tags/{tagId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.taggerId ||
+        request.auth.uid == resource.data.taggedUserId
+      );
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.taggerId;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.taggerId ||
+        request.auth.uid == resource.data.taggedUserId
+      );
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.taggerId;
     }
     
     // Fallback - allow authenticated users to read all for search

@@ -5,6 +5,7 @@ import { ArrowLeftIcon, BellIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '@/lib/firestore';
 import { Notification } from '@/lib/types';
+import TagAcceptModal from './TagAcceptModal';
 
 interface NotificationsScreenProps {
   onBack: () => void;
@@ -15,6 +16,7 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
   const { user } = useAuthStore();
   const [notifications, setNotifications] = useState<(Notification & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -46,9 +48,22 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
       }
     }
 
+    // Handle tagged notification - show accept modal
+    if (notification.type === 'tagged' && notification.data.tagId) {
+      setSelectedTagId(notification.data.tagId);
+      return;
+    }
+
     // Navigate to post if available
     if (notification.data.postId && onPostClick) {
       onPostClick(notification.data.postId);
+    }
+  };
+
+  const handleTagAccepted = () => {
+    // Reload notifications to remove accepted tag notification
+    if (user) {
+      getUserNotifications(user.uid).then(setNotifications);
     }
   };
 
@@ -86,12 +101,14 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     switch (type) {
       case 'tagged':
         return '🏷️';
-      case 'mentioned':
+      case 'rec_given':
+        return '🎁';
+      case 'comment':
         return '💬';
-      case 'followed':
-        return '👥';
       case 'post_liked':
         return '❤️';
+      case 'followed':
+        return '👥';
       default:
         return '🔔';
     }
@@ -192,6 +209,15 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
           </div>
         )}
       </div>
+
+      {/* Tag Accept Modal */}
+      {selectedTagId && (
+        <TagAcceptModal
+          tagId={selectedTagId}
+          onClose={() => setSelectedTagId(null)}
+          onAccepted={handleTagAccepted}
+        />
+      )}
     </div>
   );
 } 

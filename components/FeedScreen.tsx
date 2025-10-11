@@ -2,18 +2,20 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { universalSearch, followUser, unfollowUser, getFeedInteractions, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
+import { universalSearch, followUser, unfollowUser, getFeedInteractions, getFeedThings, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
-import { User, Thing, UserThingInteraction } from '@/lib/types';
+import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import PostCardV2 from './PostCardV2';
+import ThingFeedCard from './ThingFeedCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
   onNavigateToAdd?: () => void;
+  onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
 }
 
-export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: FeedScreenProps = {}) {
+export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEditInteraction }: FeedScreenProps = {}) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,10 +25,12 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
   const [feedInteractions, setFeedInteractions] = useState<UserThingInteraction[]>([]);
+  const [feedThings, setFeedThings] = useState<FeedThing[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
   const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [avgRatings, setAvgRatings] = useState<Map<string, number>>(new Map());
   const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
+  const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between thing-centric and interaction-centric
   
   const { user, userProfile, setUserProfile } = useAuthStore();
 
@@ -34,63 +38,71 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
     if (!userProfile || !user) return;
     
     try {
-      console.log('📱 Loading feed...');
-      const interactions = await getFeedInteractions(userProfile.following, user.uid);
-      setFeedInteractions(interactions);
-      
-      // Load users data for interactions (to get userNames)
-      const uniqueUserIds = [...new Set(interactions.map(int => int.userId))];
-      const usersData = new Map<string, User>();
-      for (const userId of uniqueUserIds) {
-        const userProfile = await getUserProfile(userId);
-        if (userProfile) {
-          usersData.set(userId, userProfile);
+      if (useThingFeed) {
+        // Load thing-centric feed
+        console.log('📱 Loading thing-centric feed...');
+        const things = await getFeedThings(userProfile.following, user.uid);
+        setFeedThings(things);
+      } else {
+        // Load interaction-centric feed (old way)
+        console.log('📱 Loading interaction-centric feed...');
+        const interactions = await getFeedInteractions(userProfile.following, user.uid);
+        setFeedInteractions(interactions);
+        
+        // Load users data for interactions (to get userNames)
+        const uniqueUserIds = [...new Set(interactions.map(int => int.userId))];
+        const usersData = new Map<string, User>();
+        for (const userId of uniqueUserIds) {
+          const userProfile = await getUserProfile(userId);
+          if (userProfile) {
+            usersData.set(userId, userProfile);
+          }
         }
+        setUsersMap(usersData);
+        
+        // Load things data for interactions
+        const uniqueThingIds = [...new Set(interactions.map(int => int.thingId))];
+        const thingsData: Thing[] = [];
+        for (const thingId of uniqueThingIds) {
+          const thing = await getThing(thingId);
+          if (thing) {
+            thingsData.push(thing);
+          }
+        }
+        setThings(thingsData);
+        
+        // Load current user's interactions for these things (for button highlighting)
+        console.log('👤 Loading your interactions for button states...');
+        const myInteractionsData = await getUserThingInteractions(user.uid);
+        const myInteractionsMap = new Map<string, UserThingInteraction>();
+        myInteractionsData.forEach(int => {
+          myInteractionsMap.set(int.thingId, int);
+        });
+        setMyInteractions(myInteractionsMap);
+        
+        // Load average ratings for all things in parallel
+        console.log('📊 Loading average ratings...');
+        const avgRatingsResults = await Promise.all(
+          uniqueThingIds.map(thingId => getThingAverageRating(thingId))
+        );
+        
+        const avgRatingsMap = new Map<string, number>();
+        uniqueThingIds.forEach((thingId, index) => {
+          const avgRating = avgRatingsResults[index];
+          if (avgRating !== null) {
+            avgRatingsMap.set(thingId, avgRating);
+          }
+        });
+        setAvgRatings(avgRatingsMap);
+        
+        console.log(`✅ Loaded ${interactions.length} interactions with ${avgRatingsMap.size} avg ratings`);
       }
-      setUsersMap(usersData);
-      
-      // Load things data for interactions
-      const uniqueThingIds = [...new Set(interactions.map(int => int.thingId))];
-      const thingsData: Thing[] = [];
-      for (const thingId of uniqueThingIds) {
-        const thing = await getThing(thingId);
-        if (thing) {
-          thingsData.push(thing);
-        }
-      }
-      setThings(thingsData);
-      
-      // Load current user's interactions for these things (for button highlighting)
-      console.log('👤 Loading your interactions for button states...');
-      const myInteractionsData = await getUserThingInteractions(user.uid);
-      const myInteractionsMap = new Map<string, UserThingInteraction>();
-      myInteractionsData.forEach(int => {
-        myInteractionsMap.set(int.thingId, int);
-      });
-      setMyInteractions(myInteractionsMap);
-      
-      // Load average ratings for all things in parallel
-      console.log('📊 Loading average ratings...');
-      const avgRatingsResults = await Promise.all(
-        uniqueThingIds.map(thingId => getThingAverageRating(thingId))
-      );
-      
-      const avgRatingsMap = new Map<string, number>();
-      uniqueThingIds.forEach((thingId, index) => {
-        const avgRating = avgRatingsResults[index];
-        if (avgRating !== null) {
-          avgRatingsMap.set(thingId, avgRating);
-        }
-      });
-      setAvgRatings(avgRatingsMap);
-      
-      console.log(`✅ Loaded ${interactions.length} interactions with ${avgRatingsMap.size} avg ratings`);
     } catch (error) {
       console.error('Error loading feed:', error);
     } finally {
       setLoading(false);
     }
-  }, [userProfile, user]);
+  }, [userProfile, user, useThingFeed]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -340,19 +352,45 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
         ) : (
           /* Regular Feed */
           <>
-            {/* Feed Header with Refresh */}
+            {/* Feed Header with Toggle and Refresh */}
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-gray-900">Your Feed</h2>
-              <button
-                onClick={handleRefresh}
-                disabled={refreshing}
-                className="text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-50"
-              >
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </button>
+              <div className="flex items-center space-x-3">
+                {/* Feed Mode Toggle */}
+                <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setUseThingFeed(true)}
+                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                      useThingFeed 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Things
+                  </button>
+                  <button
+                    onClick={() => setUseThingFeed(false)}
+                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
+                      !useThingFeed 
+                        ? 'bg-white text-blue-600 shadow-sm' 
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Posts
+                  </button>
+                </div>
+                
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-50"
+                >
+                  {refreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
             </div>
 
-            {feedInteractions.length === 0 ? (
+            {(useThingFeed ? feedThings.length === 0 : feedInteractions.length === 0) ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -369,7 +407,20 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
                   {' '}to get started.
                 </p>
               </div>
+            ) : useThingFeed ? (
+              /* Thing-Centric Feed */
+              <div className="space-y-4">
+                {feedThings.map((feedThing) => (
+                  <ThingFeedCard
+                    key={feedThing.thing.id}
+                    feedThing={feedThing}
+                    onEdit={onEditInteraction}
+                    onUserClick={onUserProfileClick}
+                  />
+                ))}
+              </div>
             ) : (
+              /* Interaction-Centric Feed (Old) */
               <div className="space-y-4">
                 {feedInteractions.map((interaction) => {
                   const thing = things.find(t => t.id === interaction.thingId);
@@ -398,6 +449,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd }: Feed
                       avgRating={avgRatings.get(interaction.thingId) || null}
                       isOwnInteraction={isOwnInteraction}
                       onAuthorClick={onUserProfileClick}
+                      onEdit={onEditInteraction}
                     />
                   );
                 })}

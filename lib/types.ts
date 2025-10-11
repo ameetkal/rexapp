@@ -95,6 +95,7 @@ export interface User {
   name: string;
   email: string;
   username: string; // Required - auto-generated for new users
+  phoneNumber?: string; // Optional - user's phone number
   following: string[]; // userIds
   followers: string[];
   createdAt: Timestamp;
@@ -110,24 +111,29 @@ export interface CategoryInfo {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'tagged' | 'mentioned' | 'followed' | 'post_liked';
+  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed';
   title: string;
   message: string;
   read: boolean;
   createdAt: Timestamp;
   data: {
     postId?: string;
-    fromUserId: string;
-    fromUserName: string;
+    fromUserId?: string;
+    fromUserName?: string;
     action?: string;
+    tagId?: string;
+    thingId?: string;
+    thingTitle?: string;
+    interactionId?: string;
   };
 }
 
 export interface NotificationPreferences {
   tagged: boolean;
-  mentioned: boolean; 
-  followed: boolean;
+  rec_given: boolean;
+  comment: boolean;
   post_liked: boolean;
+  followed: boolean;
   email_notifications: boolean;
 }
 
@@ -186,6 +192,7 @@ export interface UserThingInteraction {
   photos?: string[];       // Photo URLs (shown in feed)
   likedBy?: string[];      // userIds who liked (for feed engagement)
   commentCount?: number;   // Number of comments (denormalized)
+  experiencedWith?: string[]; // User IDs of tagged users (for "experienced with" feature)
   
   // Metadata
   createdAt: Timestamp;
@@ -201,7 +208,53 @@ export interface Recommendation {
   message?: string;   // Optional message with the recommendation
 }
 
-// Updated Post interface to link to things
+// Feed data structure - groups interactions by thing
+export interface FeedThing {
+  thing: Thing;
+  interactions: {
+    completed: UserThingInteraction[];
+    saved: UserThingInteraction[];
+  };
+  myInteraction?: UserThingInteraction;
+  avgRating: number | null;
+  mostRecentUpdate: Timestamp;
+}
+
+// Invitation system
+export interface Invitation {
+  id: string;              // The invite code (e.g., ABC123)
+  inviterId: string;       // User ID of person sending invite
+  inviterName: string;     // Display name
+  inviterUsername: string; // Username (for @mentions)
+  thingId: string;        // The thing being shared
+  thingTitle: string;     // Denormalized for display
+  interactionId?: string; // Optional: specific interaction being shared
+  createdAt: Timestamp;
+  usedBy: string[];       // User IDs who clicked this link
+  convertedUsers: string[]; // User IDs who signed up via this
+}
+
+// Tag system - for "Experienced With" feature
+export interface Tag {
+  id: string;
+  sourceInteractionId: string;  // The original interaction (Alice's post)
+  taggerId: string;              // Who created the tag (Alice)
+  taggerName: string;
+  taggedUserId: string;          // Who was tagged (Bob, or empty if non-user)
+  taggedName: string;            // Display name
+  taggedUserEmail?: string;      // For non-users
+  thingId: string;
+  thingTitle: string;            // Denormalized
+  state: 'bucketList' | 'completed';  // Mirror from source
+  rating?: number;               // Mirror from source
+  status: 'pending' | 'accepted' | 'declined';
+  inviteCode?: string;           // If tagged non-user, for SMS invite
+  createdAt: Timestamp;
+}
+
+// DEPRECATED: PostV2 replaced by UserThingInteraction with visibility field
+// This type is kept for backwards compatibility with store.ts
+// Can be removed once postsV2 is removed from store
 export interface PostV2 {
   id: string;
   authorId: string;

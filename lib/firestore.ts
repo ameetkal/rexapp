@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -20,7 +21,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing, Invitation, Tag } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -76,11 +77,8 @@ export const createPost = async (
       }
     }
 
-    // Create notification for recommended by user
-    if (enhancedFields?.recommendedByUserId) {
-      const postId = docRef.id;
-      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, title);
-    }
+    // NOTE: Recommendation notifications are now handled automatically in createRecommendation()
+    // when someone saves a post/item from another user
     
     return docRef.id;
   } catch (error) {
@@ -943,6 +941,10 @@ const cleanObject = <T>(obj: T): Partial<T> => {
   return cleaned;
 };
 
+// DEPRECATED: Old structured post creation - replaced by createOrGetThing + createUserThingInteraction
+// This function was part of the dual-system implementation
+// Can be safely removed after confirming production stability
+
 // Enhanced post creation with universal items that also creates personal items
 export const createStructuredPost = async (
   authorId: string,
@@ -1003,10 +1005,7 @@ export const createStructuredPost = async (
       }
     }
 
-    // Create notification for recommended by user
-    if (enhancedFields?.recommendedByUserId) {
-      await notifyRecommendedBy(enhancedFields.recommendedByUserId, authorId, authorName, postId, universalItem.title);
-    }
+    // NOTE: Recommendation notifications are now handled automatically in createRecommendation()
 
     // Now create the personal item linked to the post
     const personalItemId = await createPersonalItem(
@@ -1118,17 +1117,34 @@ export const unsharePost = async (
 // Notification functions
 export const createNotification = async (
   userId: string,
-  type: 'tagged' | 'mentioned' | 'followed' | 'post_liked',
+  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed',
   title: string,
   message: string,
   data: {
     postId?: string;
-    fromUserId: string;
-    fromUserName: string;
+    fromUserId?: string;
+    fromUserName?: string;
     action?: string;
+    tagId?: string;
+    thingId?: string;
+    thingTitle?: string;
+    interactionId?: string;
   }
 ) => {
   try {
+    // Check user's notification preferences
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const prefs = userData.notificationPreferences;
+      
+      // If user has preferences set, check if this notification type is enabled
+      if (prefs && prefs[type] === false) {
+        console.log(`🔕 Notification skipped (user preference): ${type} for user ${userId}`);
+        return null;
+      }
+    }
+
     const notification = {
       userId,
       type,
@@ -1252,38 +1268,8 @@ export const notifyTaggedUser = async (
   }
 };
 
-// Create notification when user is mentioned as recommender
-export const notifyRecommendedBy = async (
-  recommendedByUserId: string,
-  fromUserId: string,
-  fromUserName: string,
-  postId: string,
-  postTitle: string
-) => {
-  try {
-    // Check if user wants to receive mentioned notifications (default to true if not set)
-    const userDoc = await getDoc(doc(db, 'users', recommendedByUserId));
-    const userProfile = userDoc.exists() ? userDoc.data() as User : null;
-    if (userProfile?.notificationPreferences?.mentioned === false) {
-      console.log('User has disabled mentioned notifications');
-      return;
-    }
-
-    await createNotification(
-      recommendedByUserId,
-      'mentioned',
-      `${fromUserName} mentioned you recommended something!`,
-      `In "${postTitle}"`,
-      {
-        postId,
-        fromUserId,
-        fromUserName
-      }
-    );
-  } catch (error) {
-    console.error('Error notifying recommended by user:', error);
-  }
-};
+// DEPRECATED: Old notification function - no longer used
+// Recommendations now trigger 'rec_given' notifications directly in createRecommendation()
 
 // Real-time notification listener
 export const subscribeToNotifications = (
@@ -1362,7 +1348,7 @@ export const reserveUsername = async (userId: string, username: string): Promise
 
 export const updateUserWithUsername = async (
   userId: string, 
-  updates: { name?: string; email?: string; username?: string }
+  updates: { name?: string; email?: string; username?: string; phoneNumber?: string }
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     if (updates.username) {
@@ -1813,6 +1799,29 @@ export const createRecommendation = async (
     
     const docRef = await addDoc(collection(db, 'recommendations'), recommendationData);
     console.log('✅ Created recommendation:', docRef.id);
+    
+    // Notify the fromUser (person who made the rec) that someone saved it
+    // Get thing title for notification
+    const thingDoc = await getDoc(doc(db, 'things', thingId));
+    const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'an item';
+    
+    // Get toUser's name
+    const toUserDoc = await getDoc(doc(db, 'users', toUserId));
+    const toUserName = toUserDoc.exists() ? toUserDoc.data().name : 'Someone';
+    
+    await createNotification(
+      fromUserId,
+      'rec_given',
+      'Recommendation saved!',
+      `${toUserName} saved your recommendation for ${thingTitle}`,
+      {
+        fromUserId: toUserId,
+        fromUserName: toUserName,
+        thingId,
+        thingTitle,
+      }
+    );
+    
     return docRef.id;
   } catch (error) {
     console.error('Error creating recommendation:', error);
@@ -1864,7 +1873,10 @@ export const getRecommendationsGiven = async (userId: string): Promise<Recommend
   }
 };
 
-// POSTS V2 COLLECTION FUNCTIONS
+// ===== POSTS V2 COLLECTION FUNCTIONS =====
+// DEPRECATED: PostsV2 collection replaced by UserThingInteraction with visibility field
+// Keeping these functions for reference but they are no longer used in the app
+// Can be safely removed after confirming production stability
 
 export const createPostV2 = async (
   authorId: string,
@@ -2020,6 +2032,104 @@ export const deletePostV2 = async (postId: string): Promise<void> => {
 // ============================================================================
 // FEED AND DATA LOADING FUNCTIONS (NEW SYSTEM)
 // ============================================================================
+
+/**
+ * Get feed things - groups interactions by thing for cleaner feed display
+ * Shows one card per thing with all friends who've interacted with it
+ */
+export const getFeedThings = async (
+  following: string[],
+  currentUserId: string
+): Promise<FeedThing[]> => {
+  try {
+    console.log('📱 Loading feed things (grouped by thing)...');
+    console.log('👥 Following:', following.length, 'users');
+    console.log('👤 Current user:', currentUserId);
+    
+    const allUserIds = [...following, currentUserId];
+    console.log('📊 Total user IDs to query:', allUserIds.length);
+    
+    if (allUserIds.length === 0) {
+      console.log('⚠️ No users to query (not following anyone)');
+      return [];
+    }
+    
+    // Get all public interactions from followed users + yourself
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(
+      interactionsRef,
+      where('userId', 'in', allUserIds),
+      where('visibility', 'in', ['public', 'friends']),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+    
+    console.log('🔍 Querying user_thing_interactions collection...');
+    const snapshot = await getDocs(q);
+    console.log('📦 Query returned', snapshot.size, 'documents');
+    
+    const interactions = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as UserThingInteraction));
+    
+    // Group by thingId
+    const thingsMap = new Map<string, UserThingInteraction[]>();
+    interactions.forEach(int => {
+      if (!thingsMap.has(int.thingId)) {
+        thingsMap.set(int.thingId, []);
+      }
+      thingsMap.get(int.thingId)!.push(int);
+    });
+    
+    console.log(`📊 Grouped into ${thingsMap.size} unique things`);
+    
+    // Build FeedThing objects
+    const feedThings: FeedThing[] = [];
+    
+    for (const [thingId, ints] of thingsMap.entries()) {
+      const thing = await getThing(thingId);
+      if (!thing) {
+        console.warn('⚠️ Thing not found:', thingId);
+        continue;
+      }
+      
+      // Sort interactions by createdAt (earliest first for display order)
+      ints.sort((a, b) => {
+        const aTime = (a.createdAt as Timestamp)?.seconds || 0;
+        const bTime = (b.createdAt as Timestamp)?.seconds || 0;
+        return aTime - bTime;
+      });
+      
+      // Find most recent interaction for sorting feed
+      const mostRecent = ints[ints.length - 1];
+      
+      feedThings.push({
+        thing,
+        interactions: {
+          completed: ints.filter(i => i.state === 'completed'),
+          saved: ints.filter(i => i.state === 'bucketList')
+        },
+        myInteraction: ints.find(i => i.userId === currentUserId),
+        avgRating: await getThingAverageRating(thingId),
+        mostRecentUpdate: mostRecent.createdAt
+      });
+    }
+    
+    // Sort by most recent update
+    feedThings.sort((a, b) => {
+      const aTime = (a.mostRecentUpdate as Timestamp)?.seconds || 0;
+      const bTime = (b.mostRecentUpdate as Timestamp)?.seconds || 0;
+      return bTime - aTime;
+    });
+    
+    console.log(`✅ Loaded ${feedThings.length} feed things`);
+    return feedThings;
+  } catch (error) {
+    console.error('Error loading feed things:', error);
+    return [];
+  }
+};
 
 // Get feed posts using new system (posts_v2 with things data)
 // Get feed interactions (replaces getFeedPostsV2)
@@ -2250,6 +2360,10 @@ export const getRecommendationsWithThings = async (userId: string): Promise<{
 // ============================================================================
 // DUAL SYSTEM POST CREATION (NEW + OLD)
 // ============================================================================
+// DEPRECATED: Old dual-system implementation - no longer used
+// Replaced by direct calls to createOrGetThing + createUserThingInteraction
+// Can be safely removed after confirming production stability
+// ============================================================================
 
 export const createPostWithNewSystem = async (
   authorId: string,
@@ -2358,6 +2472,12 @@ export const createPostWithNewSystem = async (
     throw error;
   }
 };
+
+// ===== MIGRATION FUNCTIONS =====
+// DEPRECATED: One-time migration helpers - no longer needed
+// Used during initial migration from posts/personal_items to new system
+// Can be safely removed after confirming all data is migrated
+// ============================================================================
 
 // Helper function to convert old Post to new system data
 export const migratePostToNewSystem = async (post: Post): Promise<{
@@ -2517,6 +2637,34 @@ export const createComment = async (
       commentCount: increment(1)
     });
     
+    // Notify the interaction owner (if not commenting on own post)
+    const interactionDoc = await getDoc(interactionRef);
+    if (interactionDoc.exists()) {
+      const interactionData = interactionDoc.data();
+      const postOwnerId = interactionData.userId;
+      
+      // Don't notify if commenting on your own post
+      if (postOwnerId !== authorId) {
+        // Get thing title for notification
+        const thingDoc = await getDoc(doc(db, 'things', interactionData.thingId));
+        const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'your post';
+        
+        await createNotification(
+          postOwnerId,
+          'comment',
+          'New comment',
+          `${authorName} commented on ${thingTitle}`,
+          {
+            fromUserId: authorId,
+            fromUserName: authorName,
+            interactionId,
+            thingId: interactionData.thingId,
+            thingTitle,
+          }
+        );
+      }
+    }
+    
     return docRef.id;
   } catch (error) {
     console.error('Error creating comment:', error);
@@ -2595,6 +2743,39 @@ export const unlikeComment = async (commentId: string, userId: string): Promise<
 };
 
 // ===== MIGRATION HELPERS =====
+
+/**
+ * Migration: Convert all inProgress interactions to bucketList
+ * Run this once to clean up the removed state
+ */
+export const migrateInProgressToBucketList = async (userId: string): Promise<void> => {
+  try {
+    console.log('🔄 Migrating inProgress → bucketList for user:', userId);
+    
+    const interactionsRef = collection(db, 'user_thing_interactions');
+    const q = query(interactionsRef, where('userId', '==', userId), where('state', '==', 'inProgress'));
+    const snapshot = await getDocs(q);
+    
+    let updated = 0;
+    for (const docSnap of snapshot.docs) {
+      await updateDoc(doc(db, 'user_thing_interactions', docSnap.id), {
+        state: 'bucketList'
+      });
+      updated++;
+      console.log(`✅ Updated ${docSnap.id}: inProgress → bucketList`);
+    }
+    
+    console.log(`✅ Migration complete! Updated ${updated} interaction(s)`);
+    if (updated > 0) {
+      alert(`Converted ${updated} in-progress item(s) to bucket list. Refresh the page.`);
+    } else {
+      alert('No in-progress items found!');
+    }
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    throw error;
+  }
+};
 
 /**
  * Cleanup: Remove duplicate user_thing_interactions
@@ -2703,5 +2884,349 @@ export const migrateAddUserNameToInteractions = async (): Promise<void> => {
   } catch (error) {
     console.error('❌ Migration failed:', error);
     throw error;
+  }
+};
+
+// ============================================================================
+// INVITATION SYSTEM
+// ============================================================================
+
+/**
+ * Generate a short random invite code (7 characters)
+ */
+const generateInviteCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed ambiguous chars
+  let code = '';
+  for (let i = 0; i < 7; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
+/**
+ * Create an invitation for sharing a thing
+ */
+export const createInvitation = async (
+  inviterId: string,
+  inviterName: string,
+  inviterUsername: string,
+  thingId: string,
+  thingTitle: string,
+  interactionId?: string
+): Promise<string> => {
+  try {
+    // Generate unique code
+    let code = generateInviteCode();
+    let attempts = 0;
+    
+    // Ensure code is unique (very unlikely to collide, but check anyway)
+    while (attempts < 5) {
+      const existingDoc = await getDoc(doc(db, 'invitations', code));
+      if (!existingDoc.exists()) break;
+      code = generateInviteCode();
+      attempts++;
+    }
+    
+    const invitationData: Omit<Invitation, 'id'> = {
+      inviterId,
+      inviterName,
+      inviterUsername,
+      thingId,
+      thingTitle,
+      interactionId,
+      createdAt: Timestamp.now(),
+      usedBy: [],
+      convertedUsers: [],
+    };
+    
+    await setDoc(doc(db, 'invitations', code), invitationData);
+    console.log('✅ Created invitation code:', code);
+    return code;
+  } catch (error) {
+    console.error('Error creating invitation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get invitation by code
+ */
+export const getInvitation = async (code: string): Promise<Invitation | null> => {
+  try {
+    const inviteDoc = await getDoc(doc(db, 'invitations', code));
+    
+    if (!inviteDoc.exists()) {
+      console.log('⚠️ Invitation not found:', code);
+      return null;
+    }
+    
+    return {
+      id: inviteDoc.id,
+      ...inviteDoc.data()
+    } as Invitation;
+  } catch (error) {
+    console.error('Error getting invitation:', error);
+    return null;
+  }
+};
+
+/**
+ * Process invitation after user signs up/in
+ * Auto-follows inviter and saves thing to bucket list
+ */
+export const processInvitation = async (
+  userId: string,
+  userName: string,
+  inviteCode: string,
+  isNewUser: boolean
+): Promise<boolean> => {
+  try {
+    console.log('🎁 Processing invitation:', inviteCode, 'for user:', userId);
+    
+    const invitation = await getInvitation(inviteCode);
+    
+    if (!invitation) {
+      console.log('⚠️ Invitation not found or expired');
+      return false;
+    }
+    
+    // 1. Follow the inviter
+    console.log('👥 Auto-following inviter:', invitation.inviterId);
+    await followUser(userId, invitation.inviterId);
+    
+    // 2. Save thing to bucket list
+    console.log('📌 Auto-saving thing to bucket list:', invitation.thingId);
+    await createUserThingInteraction(
+      userId,
+      userName,
+      invitation.thingId,
+      'bucketList',
+      'private', // Private by default
+      { notes: `Recommended by ${invitation.inviterName}` }
+    );
+    
+    // 3. Create recommendation record (inviter → you)
+    console.log('🎁 Creating recommendation record');
+    await createRecommendation(
+      invitation.inviterId,
+      userId,
+      invitation.thingId,
+      `Via invite link`
+    );
+    
+    // 4. Mark invitation as used
+    const inviteRef = doc(db, 'invitations', inviteCode);
+    await updateDoc(inviteRef, {
+      usedBy: arrayUnion(userId),
+      ...(isNewUser && { convertedUsers: arrayUnion(userId) })
+    });
+    
+    // 5. Notify inviter (optional - new user joined)
+    if (isNewUser) {
+      await createNotification(
+        invitation.inviterId,
+        'followed',
+        `${userName} joined Rex!`,
+        `${userName} joined Rex via your invite and is now following you.`,
+        {
+          fromUserId: userId,
+          fromUserName: userName,
+        }
+      );
+    }
+    
+    console.log('✅ Invitation processed successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error processing invitation:', error);
+    return false;
+  }
+};
+
+// ============================================
+// TAG FUNCTIONS (for "Experienced With")
+// ============================================
+
+/**
+ * Create a tag for a user (existing or non-user)
+ */
+export const createTag = async (
+  sourceInteractionId: string,
+  taggerId: string,
+  taggerName: string,
+  taggedUserId: string,
+  taggedName: string,
+  taggedUserEmail: string | undefined,
+  thingId: string,
+  thingTitle: string,
+  state: 'bucketList' | 'completed',
+  rating: number | undefined,
+  inviteCode: string | undefined
+): Promise<string> => {
+  try {
+    const tagData: Omit<Tag, 'id'> = {
+      sourceInteractionId,
+      taggerId,
+      taggerName,
+      taggedUserId,
+      taggedName,
+      taggedUserEmail,
+      thingId,
+      thingTitle,
+      state,
+      rating,
+      status: 'pending',
+      inviteCode,
+      createdAt: Timestamp.now(),
+    };
+    
+    const cleanedData = cleanObject(tagData);
+    const docRef = await addDoc(collection(db, 'tags'), cleanedData);
+    console.log('✅ Created tag:', docRef.id, 'for', taggedName);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating tag:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all pending tags for a user
+ */
+export const getPendingTags = async (userId: string): Promise<Tag[]> => {
+  try {
+    const q = query(
+      collection(db, 'tags'),
+      where('taggedUserId', '==', userId),
+      where('status', '==', 'pending'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Tag));
+  } catch (error) {
+    console.error('Error getting pending tags:', error);
+    return [];
+  }
+};
+
+/**
+ * Get tag by ID
+ */
+export const getTag = async (tagId: string): Promise<Tag | null> => {
+  try {
+    const tagDoc = await getDoc(doc(db, 'tags', tagId));
+    
+    if (!tagDoc.exists()) {
+      return null;
+    }
+    
+    return {
+      id: tagDoc.id,
+      ...tagDoc.data()
+    } as Tag;
+  } catch (error) {
+    console.error('Error getting tag:', error);
+    return null;
+  }
+};
+
+/**
+ * Accept a tag - creates a UserThingInteraction mirroring the tagger's state
+ */
+export const acceptTag = async (
+  tagId: string,
+  userId: string,
+  userName: string
+): Promise<boolean> => {
+  try {
+    const tag = await getTag(tagId);
+    
+    if (!tag) {
+      console.error('Tag not found:', tagId);
+      return false;
+    }
+    
+    if (tag.taggedUserId !== userId) {
+      console.error('User mismatch for tag acceptance');
+      return false;
+    }
+    
+    // Create user's own interaction mirroring the tagger's state
+    await createUserThingInteraction(
+      userId,
+      userName,
+      tag.thingId,
+      tag.state,
+      'private', // Default to private
+      {
+        rating: tag.rating,
+      }
+    );
+    
+    // Update tag status
+    await updateDoc(doc(db, 'tags', tagId), {
+      status: 'accepted',
+    });
+    
+    console.log('✅ Tag accepted:', tagId);
+    return true;
+  } catch (error) {
+    console.error('Error accepting tag:', error);
+    return false;
+  }
+};
+
+/**
+ * Decline a tag
+ */
+export const declineTag = async (tagId: string, userId: string): Promise<boolean> => {
+  try {
+    const tag = await getTag(tagId);
+    
+    if (!tag) {
+      console.error('Tag not found:', tagId);
+      return false;
+    }
+    
+    if (tag.taggedUserId !== userId) {
+      console.error('User mismatch for tag decline');
+      return false;
+    }
+    
+    // Update tag status
+    await updateDoc(doc(db, 'tags', tagId), {
+      status: 'declined',
+    });
+    
+    console.log('✅ Tag declined:', tagId);
+    return true;
+  } catch (error) {
+    console.error('Error declining tag:', error);
+    return false;
+  }
+};
+
+/**
+ * Get tags for a specific interaction
+ */
+export const getTagsForInteraction = async (interactionId: string): Promise<Tag[]> => {
+  try {
+    const q = query(
+      collection(db, 'tags'),
+      where('sourceInteractionId', '==', interactionId)
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Tag));
+  } catch (error) {
+    console.error('Error getting tags for interaction:', error);
+    return [];
   }
 }; 

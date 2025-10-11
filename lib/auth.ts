@@ -72,9 +72,10 @@ export const signUp = async (email: string, password: string, name: string, user
       createdAt: serverTimestamp() as unknown as Timestamp,
       notificationPreferences: {
         tagged: true,
-        mentioned: true,
-        followed: true,
+        rec_given: true,
+        comment: true,
         post_liked: true,
+        followed: true,
         email_notifications: false,
       }
     };

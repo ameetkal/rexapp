@@ -1,27 +1,35 @@
 import { create } from 'zustand';
-import { User as FirebaseUser } from 'firebase/auth';
 import { User, Thing, UserThingInteraction, PostV2, Recommendation } from './types';
 
+// Simple auth user type (works with both Firebase and Clerk)
+export interface AuthUser {
+  uid: string;
+}
+
 interface AuthState {
-  user: FirebaseUser | null;
+  user: AuthUser | null;
   userProfile: User | null;
   loading: boolean;
-  setUser: (user: FirebaseUser | null) => void;
+  setUser: (user: AuthUser | null) => void;
   setUserProfile: (profile: User | null) => void;
   setLoading: (loading: boolean) => void;
 }
 
 interface AppState {
+  // DEPRECATED: postsV2 no longer used - replaced by userInteractions with visibility field
   postsV2: PostV2[];
+  
   things: Thing[];
   userInteractions: UserThingInteraction[];
   recommendations: Recommendation[];
   
+  // DEPRECATED: postsV2 setters no longer used
   setPostsV2: (posts: PostV2[]) => void;
+  addPostV2: (post: PostV2) => void;
+  
   setThings: (things: Thing[]) => void;
   setUserInteractions: (interactions: UserThingInteraction[]) => void;
   setRecommendations: (recommendations: Recommendation[]) => void;
-  addPostV2: (post: PostV2) => void;
   addThing: (thing: Thing) => void;
   addUserInteraction: (interaction: UserThingInteraction) => void;
   addRecommendation: (recommendation: Recommendation) => void;

@@ -15,6 +15,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
   const [name, setName] = useState(userProfile?.name || '');
   const [email, setEmail] = useState(userProfile?.email || '');
   const [username, setUsername] = useState(userProfile?.username || '');
+  const [phoneNumber, setPhoneNumber] = useState(userProfile?.phoneNumber || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -43,6 +44,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
         name: name.trim(),
         email: email.trim(),
         username: username.trim() || undefined,
+        // phoneNumber is read-only, managed by Clerk
       });
 
       if (!result.success) {
@@ -56,6 +58,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
         name: name.trim(),
         email: email.trim(),
         username: username.trim() || userProfile?.username || '',
+        // phoneNumber stays as is (read-only)
       });
 
       onClose();
@@ -72,6 +75,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
     setName(userProfile?.name || '');
     setEmail(userProfile?.email || '');
     setUsername(userProfile?.username || '');
+    setPhoneNumber(userProfile?.phoneNumber || '');
     setError('');
     onClose();
   };
@@ -146,6 +150,23 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
               placeholder="Enter your email"
               disabled={loading}
             />
+          </div>
+
+          <div>
+            <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-2">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              id="phoneNumber"
+              value={phoneNumber || 'Not set'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+              disabled={true}
+              readOnly
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Phone number is managed by your account settings
+            </p>
           </div>
 
           {/* Action Buttons */}

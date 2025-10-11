@@ -3,19 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
-import AuthForm from './AuthForm';
+import AuthScreen from './AuthScreen';
 import Navigation from './Navigation';
 import FeedScreen from './FeedScreen';
 import PostScreen from './PostScreen';
 import ProfileScreen from './ProfileScreen';
 import FollowingListScreen from './FollowingListScreen';
-import PublicProfileScreen from './PublicProfileScreen';
 import NotificationsScreen from './NotificationsScreen';
 import SettingsScreen from './SettingsScreen';
 import { User, Thing, UserThingInteraction } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { PlusIcon } from '@heroicons/react/24/outline';
-import { cleanupDuplicateInteractions } from '@/lib/firestore';
+import { cleanupDuplicateInteractions, migrateInProgressToBucketList } from '@/lib/firestore';
 
 type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
 type AppScreenType = 'notifications' | 'main';
@@ -24,7 +23,6 @@ export default function MainApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('post');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -33,15 +31,27 @@ export default function MainApp() {
   
   const { user, loading } = useAuthStore();
 
-  // Expose cleanup function to window for debugging
+  // Expose cleanup functions to window for debugging
   useEffect(() => {
     if (typeof window !== 'undefined' && user) {
-      (window as Window & typeof globalThis & { cleanupDuplicates?: () => Promise<void> }).cleanupDuplicates = async () => {
+      (window as Window & typeof globalThis & { 
+        cleanupDuplicates?: () => Promise<void>;
+        migrateInProgress?: () => Promise<void>;
+      }).cleanupDuplicates = async () => {
         try {
           await cleanupDuplicateInteractions(user.uid);
         } catch (error) {
           console.error('Cleanup failed:', error);
           alert('Cleanup failed. Check console for details.');
+        }
+      };
+      
+      (window as Window & typeof globalThis & { migrateInProgress?: () => Promise<void> }).migrateInProgress = async () => {
+        try {
+          await migrateInProgressToBucketList(user.uid);
+        } catch (error) {
+          console.error('Migration failed:', error);
+          alert('Migration failed. Check console for details.');
         }
       };
     }
@@ -90,17 +100,18 @@ export default function MainApp() {
   }
 
   if (!user) {
-    return (
-      <AuthForm 
-        mode={authMode} 
-        onToggle={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} 
-      />
-    );
+    return <AuthScreen />;
   }
 
   // Reset screens when switching tabs
   const handleTabChange = (tab: 'feed' | 'post' | 'profile') => {
+    // Reset profile screen state when switching tabs
     if (tab !== 'profile') {
+      setProfileScreen('main');
+      setSelectedUser(null);
+      setProfileNavigationSource('feed');
+    } else {
+      // When clicking Profile tab, always go to own profile
       setProfileScreen('main');
       setSelectedUser(null);
       setProfileNavigationSource('feed');
@@ -166,11 +177,20 @@ export default function MainApp() {
   // Handler for clicking on user profiles from feed
   const handleProfileClickFromFeed = async (authorId: string) => {
     try {
+      // If clicking own profile, just go to Profile tab
+      if (user && authorId === user.uid) {
+        setActiveTab('profile');
+        setProfileScreen('main');
+        setSelectedUser(null);
+        return;
+      }
+      
+      // Otherwise, show other user's profile
       const userProfile = await getUserProfile(authorId);
       if (userProfile) {
         setSelectedUser(userProfile);
         setProfileScreen('public');
-        setActiveTab('profile');
+        setActiveTab('profile'); // Switch to profile tab to render the profile
         setProfileNavigationSource('feed');
       }
     } catch (error) {
@@ -192,7 +212,16 @@ export default function MainApp() {
     // Handle main app screens
     switch (activeTab) {
       case 'feed':
-        return <FeedScreen onUserProfileClick={handleProfileClickFromFeed} onNavigateToAdd={() => setActiveTab('post')} />;
+        return (
+          <FeedScreen 
+            onUserProfileClick={handleProfileClickFromFeed} 
+            onNavigateToAdd={() => setActiveTab('post')}
+            onEditInteraction={(interaction, thing) => {
+              setEditingInteraction({ interaction, thing });
+              setActiveTab('post');
+            }}
+          />
+        );
       case 'post':
         return (
           <PostScreen 
@@ -214,9 +243,13 @@ export default function MainApp() {
             );
           case 'public':
             return selectedUser ? (
-              <PublicProfileScreen 
-                user={selectedUser}
+              <ProfileScreen 
+                viewingUserId={selectedUser.id}
                 onBack={handleBackFromPublicProfile}
+                onEditInteraction={(interaction, thing) => {
+                  setEditingInteraction({ interaction, thing });
+                  setActiveTab('post');
+                }}
               />
             ) : (
               <ProfileScreen 
@@ -254,8 +287,8 @@ export default function MainApp() {
       {/* Only show navigation on main app screens, not notifications/settings */}
       {appScreen === 'main' && profileScreen !== 'settings' && (
         <Navigation 
-          activeTab={activeTab} 
-          onTabChange={handleTabChange}
+          activeTab={profileScreen === 'public' ? 'feed' : activeTab}
+          onTabChange={handleTabChange} 
           onNotificationsClick={handleNotificationsClick}
         />
       )}
