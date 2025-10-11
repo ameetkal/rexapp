@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { Thing, UserThingInteraction } from '@/lib/types';
 import { createUserThingInteraction, createRecommendation } from '@/lib/firestore';
+import { getUserProfile } from '@/lib/auth';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
 import { XMarkIcon, BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
@@ -29,9 +30,28 @@ export default function InteractionDetailModal({
   const [loading, setLoading] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
+  const [experiencedWithNames, setExperiencedWithNames] = useState<string[]>([]);
   
   const { user, userProfile } = useAuthStore();
   const { addUserInteraction } = useAppStore();
+  
+  // Load names of tagged users
+  useState(() => {
+    const loadTaggedUserNames = async () => {
+      if (!interaction.experiencedWith || interaction.experiencedWith.length === 0) {
+        return;
+      }
+      
+      const names = await Promise.all(
+        interaction.experiencedWith.map(async (userId) => {
+          const profile = await getUserProfile(userId);
+          return profile?.name || 'Unknown User';
+        })
+      );
+      setExperiencedWithNames(names);
+    };
+    loadTaggedUserNames();
+  });
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
@@ -283,6 +303,25 @@ export default function InteractionDetailModal({
                   {isOwnInteraction ? 'Your Comments' : 'Comments'}
                 </h3>
                 <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{interaction.content}</p>
+              </div>
+            )}
+
+            {/* Experienced With */}
+            {experiencedWithNames.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  👥 Experienced with
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {experiencedWithNames.map((name, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
 

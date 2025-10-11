@@ -21,7 +21,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing, Invitation } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing, Invitation, Tag } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -1123,14 +1123,18 @@ export const unsharePost = async (
 // Notification functions
 export const createNotification = async (
   userId: string,
-  type: 'tagged' | 'mentioned' | 'followed' | 'post_liked',
+  type: 'tagged' | 'tag_accepted' | 'mentioned' | 'followed' | 'post_liked',
   title: string,
   message: string,
   data: {
     postId?: string;
-    fromUserId: string;
-    fromUserName: string;
+    fromUserId?: string;
+    fromUserName?: string;
     action?: string;
+    tagId?: string;
+    thingId?: string;
+    thingTitle?: string;
+    interactionId?: string;
   }
 ) => {
   try {
@@ -3008,5 +3012,208 @@ export const processInvitation = async (
   } catch (error) {
     console.error('❌ Error processing invitation:', error);
     return false;
+  }
+};
+
+// ============================================
+// TAG FUNCTIONS (for "Experienced With")
+// ============================================
+
+/**
+ * Create a tag for a user (existing or non-user)
+ */
+export const createTag = async (
+  sourceInteractionId: string,
+  taggerId: string,
+  taggerName: string,
+  taggedUserId: string,
+  taggedName: string,
+  taggedUserEmail: string | undefined,
+  thingId: string,
+  thingTitle: string,
+  state: 'bucketList' | 'completed',
+  rating: number | undefined,
+  inviteCode: string | undefined
+): Promise<string> => {
+  try {
+    const tagData: Omit<Tag, 'id'> = {
+      sourceInteractionId,
+      taggerId,
+      taggerName,
+      taggedUserId,
+      taggedName,
+      taggedUserEmail,
+      thingId,
+      thingTitle,
+      state,
+      rating,
+      status: 'pending',
+      inviteCode,
+      createdAt: Timestamp.now(),
+    };
+    
+    const cleanedData = cleanObject(tagData);
+    const docRef = await addDoc(collection(db, 'tags'), cleanedData);
+    console.log('✅ Created tag:', docRef.id, 'for', taggedName);
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating tag:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all pending tags for a user
+ */
+export const getPendingTags = async (userId: string): Promise<Tag[]> => {
+  try {
+    const q = query(
+      collection(db, 'tags'),
+      where('taggedUserId', '==', userId),
+      where('status', '==', 'pending'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Tag));
+  } catch (error) {
+    console.error('Error getting pending tags:', error);
+    return [];
+  }
+};
+
+/**
+ * Get tag by ID
+ */
+export const getTag = async (tagId: string): Promise<Tag | null> => {
+  try {
+    const tagDoc = await getDoc(doc(db, 'tags', tagId));
+    
+    if (!tagDoc.exists()) {
+      return null;
+    }
+    
+    return {
+      id: tagDoc.id,
+      ...tagDoc.data()
+    } as Tag;
+  } catch (error) {
+    console.error('Error getting tag:', error);
+    return null;
+  }
+};
+
+/**
+ * Accept a tag - creates a UserThingInteraction mirroring the tagger's state
+ */
+export const acceptTag = async (
+  tagId: string,
+  userId: string,
+  userName: string
+): Promise<boolean> => {
+  try {
+    const tag = await getTag(tagId);
+    
+    if (!tag) {
+      console.error('Tag not found:', tagId);
+      return false;
+    }
+    
+    if (tag.taggedUserId !== userId) {
+      console.error('User mismatch for tag acceptance');
+      return false;
+    }
+    
+    // Create user's own interaction mirroring the tagger's state
+    await createUserThingInteraction(
+      userId,
+      userName,
+      tag.thingId,
+      tag.state,
+      'private', // Default to private
+      {
+        rating: tag.rating,
+      }
+    );
+    
+    // Update tag status
+    await updateDoc(doc(db, 'tags', tagId), {
+      status: 'accepted',
+    });
+    
+    // Notify tagger
+    await createNotification(
+      tag.taggerId,
+      'tag_accepted',
+      `${userName} accepted your tag`,
+      `${userName} accepted your tag for ${tag.thingTitle}`,
+      {
+        fromUserId: userId,
+        fromUserName: userName,
+        thingId: tag.thingId,
+        thingTitle: tag.thingTitle,
+        interactionId: tag.sourceInteractionId,
+      }
+    );
+    
+    console.log('✅ Tag accepted:', tagId);
+    return true;
+  } catch (error) {
+    console.error('Error accepting tag:', error);
+    return false;
+  }
+};
+
+/**
+ * Decline a tag
+ */
+export const declineTag = async (tagId: string, userId: string): Promise<boolean> => {
+  try {
+    const tag = await getTag(tagId);
+    
+    if (!tag) {
+      console.error('Tag not found:', tagId);
+      return false;
+    }
+    
+    if (tag.taggedUserId !== userId) {
+      console.error('User mismatch for tag decline');
+      return false;
+    }
+    
+    // Update tag status
+    await updateDoc(doc(db, 'tags', tagId), {
+      status: 'declined',
+    });
+    
+    console.log('✅ Tag declined:', tagId);
+    return true;
+  } catch (error) {
+    console.error('Error declining tag:', error);
+    return false;
+  }
+};
+
+/**
+ * Get tags for a specific interaction
+ */
+export const getTagsForInteraction = async (interactionId: string): Promise<Tag[]> => {
+  try {
+    const q = query(
+      collection(db, 'tags'),
+      where('sourceInteractionId', '==', interactionId)
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Tag));
+  } catch (error) {
+    console.error('Error getting tags for interaction:', error);
+    return [];
   }
 }; 

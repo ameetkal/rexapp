@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation, createTag, createNotification } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
 import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
@@ -45,6 +45,7 @@ export default function PostForm({
   const [description, setDescription] = useState(editMode?.interaction.content || '');
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
   const [recommendedByText, setRecommendedByText] = useState('');
+  const [experiencedWithUsers, setExperiencedWithUsers] = useState<{id: string; name: string; email: string}[]>([]);
   const [submitting, setSubmitting] = useState(false);
   
   // More Info state
@@ -223,6 +224,83 @@ export default function PostForm({
           recommendedByValue
         );
         console.log('✅ Recommendation created');
+      }
+      
+      // 4. Create tags for "Experienced With" users
+      if (experiencedWithUsers.length > 0) {
+        console.log('👥 Creating tags for experienced with users:', experiencedWithUsers.length);
+        const itemTitle = universalItem?.title || title.trim();
+        
+        for (const taggedUser of experiencedWithUsers) {
+          try {
+            // Create tag (pending acceptance)
+            const tagId = await createTag(
+              interactionId,
+              user.uid,
+              userProfile.name,
+              taggedUser.id, // Will be empty string for non-users
+              taggedUser.name,
+              taggedUser.email,
+              thingId,
+              itemTitle,
+              interactionState as 'completed' | 'bucketList',
+              rating > 0 ? rating : undefined,
+              undefined // inviteCode only for non-users (handled below)
+            );
+            console.log('✅ Tag created:', tagId, 'for', taggedUser.name);
+            
+            // If Rex user, notify them
+            if (taggedUser.id) {
+              await createNotification(
+                taggedUser.id,
+                'tagged',
+                `${userProfile.name} tagged you`,
+                `${userProfile.name} tagged you in ${itemTitle} (${interactionState === 'completed' ? 'Completed' : 'To Do'})`,
+                {
+                  fromUserId: user.uid,
+                  fromUserName: userProfile.name,
+                  thingId,
+                  thingTitle: itemTitle,
+                  interactionId,
+                  tagId,
+                }
+              );
+              console.log('✅ Notification sent to', taggedUser.name);
+            } else {
+              // Non-user: create invitation
+              console.log('🎁 Creating invitation for non-user tag:', taggedUser.name);
+              const inviteCode = await createInvitation(
+                user.uid,
+                userProfile.name,
+                userProfile.username,
+                thingId,
+                itemTitle,
+                interactionId
+              );
+              
+              // Update tag with invite code
+              await updateDoc(doc(db, 'tags', tagId), { inviteCode });
+              
+              // Send SMS invite
+              sendSMSInvite(
+                taggedUser.name,
+                userProfile.name,
+                itemTitle,
+                inviteCode
+              );
+              console.log('✅ SMS invite sent to', taggedUser.name);
+            }
+          } catch (error) {
+            console.error('❌ Error creating tag for', taggedUser.name, error);
+          }
+        }
+        
+        // Update interaction with experiencedWith user IDs
+        await updateDoc(doc(db, 'user_thing_interactions', interactionId), {
+          experiencedWith: experiencedWithUsers
+            .filter(u => u.id) // Only Rex users
+            .map(u => u.id),
+        });
       }
       
       const result = { thingId, interactionId, postId: postToFeed ? interactionId : undefined };
@@ -499,6 +577,25 @@ export default function PostForm({
               placeholder="Share your thoughts..."
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
               rows={3}
+            />
+          </div>
+
+          {/* Experienced With */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              👥 Experienced with <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Tag friends who experienced this with you. They&apos;ll be notified to accept.
+            </p>
+            
+            <UserTagInput
+              singleUser={false}
+              selectedUsers={experiencedWithUsers}
+              onUsersChange={(users) => setExperiencedWithUsers(users)}
+              excludeCurrentUser={true}
+              currentUserId={user?.uid}
+              placeholder="Search for Rex users or enter any name..."
             />
           </div>
 

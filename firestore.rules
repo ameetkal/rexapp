@@ -74,6 +74,22 @@ service cloud.firestore {
         request.auth.uid == resource.data.inviterId;
     }
     
+    // Tags - users can read their own tags, tagger can create, tagged user can update/decline
+    match /tags/{tagId} {
+      allow read: if request.auth != null && (
+        request.auth.uid == resource.data.taggerId ||
+        request.auth.uid == resource.data.taggedUserId
+      );
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.taggerId;
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.taggerId ||
+        request.auth.uid == resource.data.taggedUserId
+      );
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.taggerId;
+    }
+    
     // Fallback - allow authenticated users to read all for search
     match /{document=**} {
       allow read: if request.auth != null;
