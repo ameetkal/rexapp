@@ -2,21 +2,28 @@
 
 import { useEffect, useState } from 'react';
 import { useUser, useAuth } from '@clerk/nextjs';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { db, auth as firebaseAuth } from '@/lib/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
 import { User } from '@/lib/types';
+import { processInvitation } from '@/lib/firestore';
 
 /**
  * ClerkAuthProvider - Syncs Clerk authentication with Zustand store and Firestore
  * Creates Firebase custom tokens from Clerk sessions so Firestore rules work
  */
 export default function ClerkAuthProvider({ children }: { children: React.ReactNode }) {
+  const searchParams = useSearchParams();
   const { isLoaded, isSignedIn, user: clerkUser } = useUser();
   const { userId } = useAuth();
   const { setUser, setUserProfile, setLoading } = useAuthStore();
   const [firebaseSignedIn, setFirebaseSignedIn] = useState(false);
+  const [inviteProcessed, setInviteProcessed] = useState(false);
+  
+  // Get invite code from URL
+  const inviteCode = searchParams.get('i') || searchParams.get('invite');
 
   useEffect(() => {
     const syncUserToFirestore = async () => {
@@ -61,11 +68,14 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
         const userDocRef = doc(db, 'users', userId);
         const userDocSnap = await getDoc(userDocRef);
 
+        const isNewUser = !userDocSnap.exists();
+        let userProfileData: User;
+        
         if (userDocSnap.exists()) {
           // Existing user - load their profile
-          const userData = userDocSnap.data() as User;
-          console.log('✅ Loaded existing Firestore user profile:', userData.username);
-          setUserProfile(userData);
+          userProfileData = userDocSnap.data() as User;
+          console.log('✅ Loaded existing Firestore user profile:', userProfileData.username);
+          setUserProfile(userProfileData);
         } else {
           // New user - create Firestore document
           console.log('🆕 Creating new Firestore user document...');
@@ -89,6 +99,23 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
           await setDoc(userDocRef, newUserProfile);
           console.log('✅ Created new Firestore user:', generatedUsername);
           setUserProfile(newUserProfile);
+          userProfileData = newUserProfile;
+        }
+        
+        // Process invitation if present (for both new and existing users)
+        if (inviteCode && !inviteProcessed) {
+          console.log(`🎁 Processing invitation for ${isNewUser ? 'new' : 'existing'} user...`);
+          const inviteSuccess = await processInvitation(
+            userId,
+            userProfileData.name,
+            inviteCode,
+            isNewUser
+          );
+          
+          if (inviteSuccess) {
+            setInviteProcessed(true);
+            console.log('✅ Invitation processed! Auto-followed inviter and saved thing to bucket list');
+          }
         }
 
         setLoading(false);
@@ -99,7 +126,7 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
     };
 
     syncUserToFirestore();
-  }, [isLoaded, isSignedIn, clerkUser, userId, setUser, setUserProfile, setLoading, firebaseSignedIn]);
+  }, [isLoaded, isSignedIn, clerkUser, userId, setUser, setUserProfile, setLoading, firebaseSignedIn, inviteCode, inviteProcessed]);
 
   return <>{children}</>;
 }

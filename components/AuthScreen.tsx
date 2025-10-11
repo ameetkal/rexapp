@@ -1,14 +1,43 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import PhoneSignIn from './PhoneSignIn';
 import PhoneSignUp from './PhoneSignUp';
 import ProfileCompletion from './ProfileCompletion';
+import { getInvitation } from '@/lib/firestore';
+import { Invitation } from '@/lib/types';
 
 export default function AuthScreen() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
   const [signupStep, setSignupStep] = useState<'phone' | 'profile'>('phone');
   const [signupPhoneNumber, setSignupPhoneNumber] = useState('');
+  const [invitation, setInvitation] = useState<Invitation | null>(null);
+  
+  // Get invite code from URL
+  const inviteCode = searchParams.get('i') || searchParams.get('invite');
+
+  // Load invitation data if code present
+  useEffect(() => {
+    const loadInvitation = async () => {
+      if (!inviteCode) return;
+      
+      try {
+        const inviteData = await getInvitation(inviteCode);
+        setInvitation(inviteData);
+        
+        // If there's an invitation, default to Sign Up tab
+        if (inviteData) {
+          setActiveTab('signup');
+        }
+      } catch (error) {
+        console.error('Error loading invitation:', error);
+      }
+    };
+    
+    loadInvitation();
+  }, [inviteCode]);
 
   const handleSignUpComplete = (userId: string, phone: string) => {
     setSignupPhoneNumber(phone);
@@ -57,6 +86,18 @@ export default function AuthScreen() {
           
           {/* Content */}
           <div className="p-8">
+            {/* Invitation Banner */}
+            {invitation && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <p className="text-sm text-blue-900 font-medium">
+                  🎉 <strong>{invitation.inviterName}</strong> invited you to join Rex!
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  They recommended &quot;{invitation.thingTitle}&quot; - sign up to save it and see their other recommendations.
+                </p>
+              </div>
+            )}
+            
             {activeTab === 'signin' ? (
               <PhoneSignIn />
             ) : signupStep === 'phone' ? (

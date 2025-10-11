@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { Thing, UserThingInteraction } from '@/lib/types';
-import { deleteUserThingInteraction } from '@/lib/firestore';
+import { deleteUserThingInteraction, createInvitation } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -37,7 +37,7 @@ export default function ThingInteractionCard({
   const [tempRating, setTempRating] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { user } = useAuthStore();
+  const { user, userProfile } = useAuthStore();
   const { removeUserInteraction, updateUserInteraction } = useAppStore();
   
   // Click outside to close menu
@@ -222,23 +222,46 @@ export default function ThingInteractionCard({
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
+    if (!user || !userProfile) return;
+    
     setShowMenu(false);
-    if (navigator.share) {
-      navigator.share({
-        title: `Check out ${thing.title}`,
-        text: `I want to try ${thing.title}!`,
-        url: `${window.location.origin}/thing/${thing.id}`
-      }).catch(err => {
-        // User cancelled share, ignore
-        if (err.name !== 'AbortError') {
-          console.error('Share failed:', err);
-        }
-      });
-    } else {
-      // Fallback to copying URL
-      navigator.clipboard.writeText(`${window.location.origin}/thing/${thing.id}`);
-      alert('Link copied to clipboard!');
+    setLoading(true);
+    
+    try {
+      // Create invitation code
+      const inviteCode = await createInvitation(
+        user.uid,
+        userProfile.name,
+        userProfile.username,
+        thing.id,
+        thing.title,
+        interaction.id
+      );
+      
+      const inviteUrl = `${window.location.origin}/?i=${inviteCode}`;
+      
+      if (navigator.share) {
+        await navigator.share({
+          title: `Check out ${thing.title} on Rex`,
+          text: `I thought you might like "${thing.title}"! Check it out on Rex:`,
+          url: inviteUrl
+        }).catch(err => {
+          // User cancelled share, ignore
+          if (err.name !== 'AbortError') {
+            console.error('Share failed:', err);
+          }
+        });
+      } else {
+        // Fallback to copying URL
+        await navigator.clipboard.writeText(inviteUrl);
+        alert('Invite link copied to clipboard!');
+      }
+    } catch (error) {
+      console.error('Error creating invite:', error);
+      alert('Failed to create invite link');
+    } finally {
+      setLoading(false);
     }
   };
 

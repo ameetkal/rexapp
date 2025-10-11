@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
 import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
@@ -61,9 +61,8 @@ export default function PostForm({
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [inviteData, setInviteData] = useState<{
     recommenderName: string;
-    postTitle: string;
-    postId: string;
-    isPost: boolean;
+    thingTitle: string;
+    inviteCode: string;
   } | null>(null);
   
   const { user, userProfile } = useAuthStore();
@@ -234,29 +233,24 @@ export default function PostForm({
       if (recommendedByValue && shouldOfferSMSInvite(recommendedByValue) && !recommendedByUser) {
         const itemTitle = universalItem?.title || title.trim();
         
-        if (postToFeed && result.postId) {
-          // For shared posts, use the post ID
-          console.log(`✅ Setting up SMS invite for shared post: ${result.postId}`);
-          setInviteData({
-            recommenderName: recommendedByValue,
-            postTitle: itemTitle,
-            postId: result.postId,
-            isPost: true
-          });
-          setShowInviteDialog(true);
-          return;
-        } else if (!postToFeed && result.interactionId) {
-          // For private items, use the interaction ID
-          console.log(`✅ Setting up SMS invite for private item: ${result.interactionId}`);
-          setInviteData({
-            recommenderName: recommendedByValue,
-            postTitle: itemTitle,
-            postId: result.interactionId,
-            isPost: false
-          });
-          setShowInviteDialog(true);
-          return;
-        }
+        // Create invitation code
+        console.log('🎁 Creating invitation for non-user recommender');
+        const inviteCode = await createInvitation(
+          user.uid,
+          userProfile.name,
+          userProfile.username,
+          result.thingId,
+          itemTitle,
+          result.interactionId
+        );
+        
+        setInviteData({
+          recommenderName: recommendedByValue,
+          thingTitle: itemTitle,
+          inviteCode,
+        });
+        setShowInviteDialog(true);
+        return;
       }
       
       // Only call onSuccess if no invite dialog was shown
@@ -273,9 +267,8 @@ export default function PostForm({
       sendSMSInvite(
         inviteData.recommenderName,
         userProfile.name,
-        inviteData.postTitle,
-        inviteData.postId,
-        inviteData.isPost
+        inviteData.thingTitle,
+        inviteData.inviteCode
       );
       setShowInviteDialog(false);
       setInviteData(null);
@@ -678,7 +671,7 @@ export default function PostForm({
                 Invite {inviteData.recommenderName}?
               </h3>
               <p className="text-gray-600 text-sm">
-                Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.postTitle}&rdquo; is being shared on Rex!
+                Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.thingTitle}&rdquo; is being shared on Rex!
               </p>
             </div>
             

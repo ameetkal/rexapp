@@ -4,10 +4,10 @@ import MainApp from '@/components/MainApp';
 
 export default function Home() {
   return (
-    <ClerkAuthProvider>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <ClerkAuthProvider>
         <MainApp />
-      </Suspense>
-    </ClerkAuthProvider>
+      </ClerkAuthProvider>
+    </Suspense>
   );
 }

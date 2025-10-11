@@ -214,6 +214,20 @@ export interface FeedThing {
   mostRecentUpdate: Timestamp;
 }
 
+// Invitation system
+export interface Invitation {
+  id: string;              // The invite code (e.g., ABC123)
+  inviterId: string;       // User ID of person sending invite
+  inviterName: string;     // Display name
+  inviterUsername: string; // Username (for @mentions)
+  thingId: string;        // The thing being shared
+  thingTitle: string;     // Denormalized for display
+  interactionId?: string; // Optional: specific interaction being shared
+  createdAt: Timestamp;
+  usedBy: string[];       // User IDs who clicked this link
+  convertedUsers: string[]; // User IDs who signed up via this
+}
+
 // DEPRECATED: PostV2 replaced by UserThingInteraction with visibility field
 // This type is kept for backwards compatibility with store.ts
 // Can be removed once postsV2 is removed from store

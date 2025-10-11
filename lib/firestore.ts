@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -20,7 +21,7 @@ import {
   increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing } from './types';
+import { Post, User, Category, PersonalItem, PersonalItemStatus, UniversalItem, Notification, Thing, UserThingInteraction, UserThingInteractionState, Recommendation, PostV2, Comment, FeedThing, Invitation } from './types';
 
 export const createPost = async (
   authorId: string,
@@ -2851,5 +2852,161 @@ export const migrateAddUserNameToInteractions = async (): Promise<void> => {
   } catch (error) {
     console.error('❌ Migration failed:', error);
     throw error;
+  }
+};
+
+// ============================================================================
+// INVITATION SYSTEM
+// ============================================================================
+
+/**
+ * Generate a short random invite code (7 characters)
+ */
+const generateInviteCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed ambiguous chars
+  let code = '';
+  for (let i = 0; i < 7; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+};
+
+/**
+ * Create an invitation for sharing a thing
+ */
+export const createInvitation = async (
+  inviterId: string,
+  inviterName: string,
+  inviterUsername: string,
+  thingId: string,
+  thingTitle: string,
+  interactionId?: string
+): Promise<string> => {
+  try {
+    // Generate unique code
+    let code = generateInviteCode();
+    let attempts = 0;
+    
+    // Ensure code is unique (very unlikely to collide, but check anyway)
+    while (attempts < 5) {
+      const existingDoc = await getDoc(doc(db, 'invitations', code));
+      if (!existingDoc.exists()) break;
+      code = generateInviteCode();
+      attempts++;
+    }
+    
+    const invitationData: Omit<Invitation, 'id'> = {
+      inviterId,
+      inviterName,
+      inviterUsername,
+      thingId,
+      thingTitle,
+      interactionId,
+      createdAt: Timestamp.now(),
+      usedBy: [],
+      convertedUsers: [],
+    };
+    
+    await setDoc(doc(db, 'invitations', code), invitationData);
+    console.log('✅ Created invitation code:', code);
+    return code;
+  } catch (error) {
+    console.error('Error creating invitation:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get invitation by code
+ */
+export const getInvitation = async (code: string): Promise<Invitation | null> => {
+  try {
+    const inviteDoc = await getDoc(doc(db, 'invitations', code));
+    
+    if (!inviteDoc.exists()) {
+      console.log('⚠️ Invitation not found:', code);
+      return null;
+    }
+    
+    return {
+      id: inviteDoc.id,
+      ...inviteDoc.data()
+    } as Invitation;
+  } catch (error) {
+    console.error('Error getting invitation:', error);
+    return null;
+  }
+};
+
+/**
+ * Process invitation after user signs up/in
+ * Auto-follows inviter and saves thing to bucket list
+ */
+export const processInvitation = async (
+  userId: string,
+  userName: string,
+  inviteCode: string,
+  isNewUser: boolean
+): Promise<boolean> => {
+  try {
+    console.log('🎁 Processing invitation:', inviteCode, 'for user:', userId);
+    
+    const invitation = await getInvitation(inviteCode);
+    
+    if (!invitation) {
+      console.log('⚠️ Invitation not found or expired');
+      return false;
+    }
+    
+    // 1. Follow the inviter
+    console.log('👥 Auto-following inviter:', invitation.inviterId);
+    await followUser(userId, invitation.inviterId);
+    
+    // 2. Save thing to bucket list
+    console.log('📌 Auto-saving thing to bucket list:', invitation.thingId);
+    await createUserThingInteraction(
+      userId,
+      userName,
+      invitation.thingId,
+      'bucketList',
+      'private', // Private by default
+      { notes: `Recommended by ${invitation.inviterName}` }
+    );
+    
+    // 3. Create recommendation record (inviter → you)
+    console.log('🎁 Creating recommendation record');
+    await createRecommendation(
+      invitation.inviterId,
+      userId,
+      invitation.thingId,
+      `Via invite link`
+    );
+    
+    // 4. Mark invitation as used
+    const inviteRef = doc(db, 'invitations', inviteCode);
+    await updateDoc(inviteRef, {
+      usedBy: arrayUnion(userId),
+      ...(isNewUser && { convertedUsers: arrayUnion(userId) })
+    });
+    
+    // 5. Notify inviter (optional - new user joined)
+    if (isNewUser) {
+      await createNotification(
+        invitation.inviterId,
+        'followed',
+        `${userName} joined Rex!`,
+        `${userName} joined Rex via your invite and is now following you.`,
+        {
+          fromUserId: userId,
+          fromUserName: userName,
+        }
+      );
+    }
+    
+    console.log('✅ Invitation processed successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Error processing invitation:', error);
+    return false;
   }
 }; 

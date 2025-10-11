@@ -1,20 +1,20 @@
 // SMS Invite Utility Functions
 
+/**
+ * Send SMS invite with invitation code
+ * New system: uses short invite codes (e.g., rex.app/?i=ABC123)
+ */
 export const sendSMSInvite = (
   recommenderName: string, 
   currentUserName: string, 
   itemTitle: string,
-  itemId: string,
-  isPost: boolean = true
+  inviteCode: string
 ) => {
-  const itemType = isPost ? 'shared on Rex' : 'saved on Rex';
-  const basePath = isPost ? '/invite' : '/personal-invite';
-  
   // Extract first name from recommender name
   const firstName = recommenderName.split(' ')[0];
-  const displayName = firstName || recommenderName; // Fallback to full name if no space found
+  const displayName = firstName || recommenderName;
   
-  const message = `Hey ${displayName}! Your recommendation for "${itemTitle}" is being ${itemType} by ${currentUserName}. Check it out: ${window.location.origin}${basePath}/${itemId}?ref=${encodeURIComponent(recommenderName)}`;
+  const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out and join me: ${window.location.origin}/?i=${inviteCode}`;
   
   const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
   window.open(smsUrl, '_self');
