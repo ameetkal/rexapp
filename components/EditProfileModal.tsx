@@ -44,7 +44,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
         name: name.trim(),
         email: email.trim(),
         username: username.trim() || undefined,
-        phoneNumber: phoneNumber.trim() || undefined,
+        // phoneNumber is read-only, managed by Clerk
       });
 
       if (!result.success) {
@@ -58,7 +58,7 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
         name: name.trim(),
         email: email.trim(),
         username: username.trim() || userProfile?.username || '',
-        phoneNumber: phoneNumber.trim() || undefined,
+        // phoneNumber stays as is (read-only)
       });
 
       onClose();
@@ -159,14 +159,13 @@ export default function EditProfileModal({ isOpen, onClose }: EditProfileModalPr
             <input
               type="tel"
               id="phoneNumber"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="+1 (555) 555-5555"
-              disabled={loading}
+              value={phoneNumber || 'Not set'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+              disabled={true}
+              readOnly
             />
             <p className="text-xs text-gray-500 mt-1">
-              Include country code (e.g., +1 for US)
+              Phone number is managed by your account settings
             </p>
           </div>
 

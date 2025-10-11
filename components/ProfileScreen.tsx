@@ -5,11 +5,10 @@ import { useAuthStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { UserThingInteraction, Thing, Category, CATEGORIES, User } from '@/lib/types';
-import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, PencilSquareIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import ThingInteractionCard from './ThingInteractionCard';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
-import EditProfileModal from './EditProfileModal';
 
 interface ProfileScreenProps {
   viewingUserId?: string; // If provided, shows that user's profile; otherwise shows own profile
@@ -23,7 +22,6 @@ interface ProfileScreenProps {
 export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
-  const [showEditProfile, setShowEditProfile] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
@@ -198,16 +196,9 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
             </div>
           )}
           
-          {/* Edit/Settings - Top Right (for own profile) */}
+          {/* Settings - Top Right (for own profile) */}
           {isOwnProfile && (
-            <div className="absolute top-0 right-0 flex space-x-2">
-              <button
-                onClick={() => setShowEditProfile(true)}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                title="Edit Profile"
-              >
-                <PencilSquareIcon className="h-6 w-6 text-gray-600" />
-              </button>
+            <div className="absolute top-0 right-0">
               <button
                 onClick={onSettingsClick}
                 className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -345,45 +336,37 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
             })}
           </div>
           
-          {/* Category Filter Pills */}
-          <div className="mb-4 flex space-x-2 overflow-x-auto pb-2">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === 'all'
-                  ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              All ({getCategoryCount('all')})
-            </button>
-            {CATEGORIES.map((category) => {
-              const count = getCategoryCount(category.id);
-              return (
-                <button
-                  key={category.id}
-                  onClick={() => setSelectedCategory(category.id)}
-                  className={`px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                    selectedCategory === category.id
-                      ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {category.emoji} {category.name} ({count})
-                </button>
-              );
-            })}
-          </div>
-          
-          {/* Activity Search */}
-          <div className="mb-4">
-            <div className="relative">
+          {/* Category Dropdown & Search Row */}
+          <div className="mb-4 flex items-center space-x-3">
+            {/* Category Dropdown */}
+            <div className="flex-shrink-0">
+              <label htmlFor="category-select" className="sr-only">Category</label>
+              <select
+                id="category-select"
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value as Category | 'all')}
+                className="px-4 py-2.5 border border-gray-300 rounded-lg bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
+              >
+                <option value="all">All Categories ({getCategoryCount('all')})</option>
+                {CATEGORIES.map((category) => {
+                  const count = getCategoryCount(category.id);
+                  return (
+                    <option key={category.id} value={category.id}>
+                      {category.emoji} {category.name} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            
+            {/* Activity Search */}
+            <div className="flex-1 relative">
               <input
                 type="text"
                 value={activitySearchTerm}
                 onChange={(e) => setActivitySearchTerm(e.target.value)}
                 placeholder="Search your activities..."
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
               />
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
             </div>
@@ -441,13 +424,6 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
       {showInstallPrompt && (
         <PWAInstallPrompt onDismiss={() => setShowInstallPrompt(false)} />
       )}
-
-      {/* Edit Profile Modal */}
-      <EditProfileModal 
-        isOpen={showEditProfile}
-        onClose={() => setShowEditProfile(false)}
-      />
-
     </div>
   );
 } 

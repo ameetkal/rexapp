@@ -46,7 +46,10 @@ export default function RootLayout({
           <meta name="theme-color" content="#2563eb" />
           <meta name="msapplication-TileColor" content="#2563eb" />
           
-          {/* Standard Favicons */}
+          {/* Favicons */}
+          <link rel="icon" type="image/png" href="/rexlogo.png" />
+          <link rel="icon" type="image/png" sizes="16x16" href="/rexlogo.png" />
+          <link rel="icon" type="image/png" sizes="32x32" href="/rexlogo.png" />
           <link rel="icon" type="image/png" sizes="192x192" href="/rexlogo.png" />
           <link rel="icon" type="image/png" sizes="512x512" href="/rexlogo.png" />
           <link rel="shortcut icon" href="/rexlogo.png" />

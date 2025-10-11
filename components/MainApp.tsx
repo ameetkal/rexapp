@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
-import { SignIn, SignUp } from '@clerk/nextjs';
+import AuthScreen from './AuthScreen';
 import Navigation from './Navigation';
 import FeedScreen from './FeedScreen';
 import PostScreen from './PostScreen';
@@ -23,7 +23,6 @@ export default function MainApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('post');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -101,60 +100,7 @@ export default function MainApp() {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          {/* Rex Logo/Branding */}
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Rex</h1>
-            <p className="text-gray-600">Share & Save Recommendations</p>
-          </div>
-          
-          {/* Clerk Auth Component */}
-          {authMode === 'login' ? (
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <SignIn 
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    card: "shadow-none",
-                  }
-                }}
-                routing="hash"
-              />
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setAuthMode('signup')}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Don&apos;t have an account? Sign up
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <SignUp 
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    card: "shadow-none",
-                  }
-                }}
-                routing="hash"
-              />
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setAuthMode('login')}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Already have an account? Sign in
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+    return <AuthScreen />;
   }
 
   // Reset screens when switching tabs

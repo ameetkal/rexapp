@@ -1,22 +1,34 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeftIcon, BellIcon, ArrowRightOnRectangleIcon, KeyIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, BellIcon, ArrowRightOnRectangleIcon, UserIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { logOut } from '@/lib/auth';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { useClerk } from '@clerk/nextjs';
+import { UserProfile } from '@clerk/nextjs';
 import { NotificationPreferences } from '@/lib/types';
+import { updateUserWithUsername, checkUsernameAvailability } from '@/lib/firestore';
 
 interface SettingsScreenProps {
   onBack: () => void;
 }
 
 export default function SettingsScreen({ onBack }: SettingsScreenProps) {
-  const { user, userProfile } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<'notifications'>('notifications');
+  const { user, userProfile, setUserProfile } = useAuthStore();
+  const { signOut } = useClerk();
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications'>('profile');
+  
+  // Profile edit state
+  const [name, setName] = useState(userProfile?.name || '');
+  const [username, setUsername] = useState(userProfile?.username || '');
+  const [email, setEmail] = useState(userProfile?.email || '');
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  
+  // Notification state
   const [notificationPrefs, setNotificationPrefs] = useState<NotificationPreferences>({
     tagged: true,
     mentioned: true,
@@ -24,15 +36,104 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
     post_liked: true,
     email_notifications: false,
   });
-  const [saving, setSaving] = useState(false);
-  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
-  const [resetPasswordSuccess, setResetPasswordSuccess] = useState(false);
+  const [notificationSaving, setNotificationSaving] = useState(false);
 
+  // Sync profile fields when userProfile loads
+  useEffect(() => {
+    if (userProfile) {
+      setName(userProfile.name);
+      setUsername(userProfile.username);
+      setEmail(userProfile.email);
+    }
+  }, [userProfile]);
+
+  // Sync notification preferences
   useEffect(() => {
     if (userProfile?.notificationPreferences) {
       setNotificationPrefs(userProfile.notificationPreferences);
     }
   }, [userProfile]);
+
+  // Check username availability as user types
+  useEffect(() => {
+    if (username !== userProfile?.username && username.length >= 3) {
+      const checkUsername = async () => {
+        setCheckingUsername(true);
+        try {
+          const available = await checkUsernameAvailability(username.toLowerCase());
+          setUsernameAvailable(available);
+        } catch (error) {
+          console.error('Error checking username:', error);
+          setUsernameAvailable(null);
+        } finally {
+          setCheckingUsername(false);
+        }
+      };
+
+      const timeoutId = setTimeout(checkUsername, 500);
+      return () => clearTimeout(timeoutId);
+    } else {
+      setUsernameAvailable(null);
+      setCheckingUsername(false);
+    }
+  }, [username, userProfile]);
+
+  const handleSaveProfile = async () => {
+    if (!user || !userProfile) return;
+
+    if (!name.trim()) {
+      setProfileError('Name is required');
+      return;
+    }
+
+    if (!username.trim()) {
+      setProfileError('Username is required');
+      return;
+    }
+
+    if (!email.trim()) {
+      setProfileError('Email is required');
+      return;
+    }
+
+    if (usernameAvailable === false) {
+      setProfileError('Username is already taken');
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError('');
+
+    try {
+      const result = await updateUserWithUsername(user.uid, {
+        name: name.trim(),
+        email: email.trim(),
+        username: username.trim() || undefined,
+      });
+
+      if (!result.success) {
+        setProfileError(result.error || 'Failed to update profile');
+        return;
+      }
+
+      // Update local state
+      setUserProfile({
+        ...userProfile,
+        name: name.trim(),
+        email: email.trim(),
+        username: username.trim() || userProfile.username,
+      });
+
+      setProfileError('');
+      // Show success briefly
+      setTimeout(() => setProfileError(''), 2000);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      setProfileError('Failed to update profile. Please try again.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   const handleNotificationPrefChange = async (key: keyof NotificationPreferences, value: boolean) => {
     if (!user) return;
@@ -40,7 +141,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
     const newPrefs = { ...notificationPrefs, [key]: value };
     setNotificationPrefs(newPrefs);
 
-    setSaving(true);
+    setNotificationSaving(true);
     try {
       await updateDoc(doc(db, 'users', user.uid), {
         notificationPreferences: newPrefs
@@ -50,39 +151,25 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
       // Revert on error
       setNotificationPrefs(notificationPrefs);
     } finally {
-      setSaving(false);
+      setNotificationSaving(false);
     }
   };
 
   const handleLogout = async () => {
     try {
-      await logOut();
+      await signOut();
+      // Clerk will handle the redirect and cleanup
     } catch (error) {
       console.error('Logout error:', error);
     }
   };
 
-  const handleResetPassword = async () => {
-    if (!userProfile?.email || resetPasswordLoading) return;
-
-    setResetPasswordLoading(true);
-    try {
-      await sendPasswordResetEmail(auth, userProfile.email);
-      setResetPasswordSuccess(true);
-      
-      // Hide success message after 5 seconds
-      setTimeout(() => {
-        setResetPasswordSuccess(false);
-      }, 5000);
-    } catch (error) {
-      console.error('Error sending password reset email:', error);
-      // Could add error state here if needed
-    } finally {
-      setResetPasswordLoading(false);
-    }
-  };
-
   const tabs = [
+    {
+      id: 'profile' as const,
+      name: 'Profile',
+      icon: UserIcon,
+    },
     {
       id: 'notifications' as const,
       name: 'Notifications',
@@ -91,8 +178,9 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto pb-20">
-      <div className="px-4 py-6">
+    <div className="flex-1 flex flex-col">
+      <div className="flex-1 overflow-y-auto pb-32">
+        <div className="px-4 py-6">
         {/* Header */}
         <div className="flex items-center mb-6">
           <button
@@ -128,6 +216,140 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
         </div>
 
         {/* Content */}
+        {activeTab === 'profile' && (
+          <div className="space-y-8">
+            {/* Edit Profile Section */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Profile Information</h3>
+              
+              {profileError && (
+                <div className={`mb-4 rounded-lg p-3 ${
+                  profileError === '' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                }`}>
+                  <p className={`text-sm ${profileError === '' ? 'text-green-600' : 'text-red-600'}`}>
+                    {profileError || 'Profile updated successfully!'}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    id="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter your name"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                    Username
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      id="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="username"
+                      pattern="^[a-z0-9_]*$"
+                      maxLength={20}
+                    />
+                    {checkingUsername && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    )}
+                    {!checkingUsername && username.length >= 3 && username !== userProfile?.username && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        {usernameAvailable ? (
+                          <span className="text-green-600 text-xl">✓</span>
+                        ) : (
+                          <span className="text-red-600 text-xl">✗</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Letters, numbers, and underscores only
+                    {!checkingUsername && username.length >= 3 && username !== userProfile?.username && (
+                      <span className={usernameAvailable ? 'text-green-600' : 'text-red-600'}>
+                        {' - '}{usernameAvailable ? 'Available!' : 'Already taken'}
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    id="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter your email"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    id="phone"
+                    value={userProfile?.phoneNumber || 'Not set'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                    disabled={true}
+                    readOnly
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Phone number is managed by your account settings
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={profileSaving || !name.trim() || !username.trim() || !email.trim() || usernameAvailable === false}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {profileSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+
+            {/* Connected Accounts Section */}
+            <div className="border-t border-gray-200 pt-8">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Connected Accounts</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Manage your sign-in methods and connected accounts
+              </p>
+              
+              <UserProfile 
+                routing="hash"
+                appearance={{
+                  elements: {
+                    rootBox: "w-full",
+                    card: "shadow-none border-0",
+                    navbar: "hidden",
+                    pageScrollBox: "p-0",
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {activeTab === 'notifications' && (
           <div className="space-y-6">
             <div>
@@ -148,7 +370,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       checked={notificationPrefs.tagged}
                       onChange={(e) => handleNotificationPrefChange('tagged', e.target.checked)}
                       className="sr-only peer"
-                      disabled={saving}
+                      disabled={notificationSaving}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
@@ -165,7 +387,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       checked={notificationPrefs.mentioned}
                       onChange={(e) => handleNotificationPrefChange('mentioned', e.target.checked)}
                       className="sr-only peer"
-                      disabled={saving}
+                      disabled={notificationSaving}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
@@ -182,7 +404,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       checked={notificationPrefs.followed}
                       onChange={(e) => handleNotificationPrefChange('followed', e.target.checked)}
                       className="sr-only peer"
-                      disabled={saving}
+                      disabled={notificationSaving}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
@@ -199,7 +421,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
                       checked={notificationPrefs.post_liked}
                       onChange={(e) => handleNotificationPrefChange('post_liked', e.target.checked)}
                       className="sr-only peer"
-                      disabled={saving}
+                      disabled={notificationSaving}
                     />
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
@@ -227,47 +449,31 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
             </div>
           </div>
         )}
-
-        {/* Account Actions Section */}
-        <div className="mt-12 pt-6 border-t border-gray-200 space-y-2">
-          <button
-            onClick={handleResetPassword}
-            disabled={resetPasswordLoading}
-            className="flex items-center space-x-3 w-full p-4 text-left text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <KeyIcon className="h-6 w-6" />
-            <div className="flex-1">
-              <span className="font-medium">
-                {resetPasswordLoading ? 'Sending...' : 'Reset Password'}
-              </span>
-              {resetPasswordSuccess && (
-                <p className="text-sm text-green-600 mt-1">
-                  Password reset email sent! Check your inbox.
-                </p>
-              )}
-              {!resetPasswordSuccess && (
-                <p className="text-sm text-gray-500 mt-1">
-                  Send password reset email to {userProfile?.email}
-                </p>
-              )}
-            </div>
-          </button>
-
-          <button
-            onClick={handleLogout}
-            className="flex items-center space-x-3 w-full p-4 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            <ArrowRightOnRectangleIcon className="h-6 w-6" />
-            <span className="font-medium">Sign Out</span>
-          </button>
         </div>
-
-        {saving && (
-          <div className="fixed top-4 right-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-sm">
-            Saving preferences...
-          </div>
-        )}
       </div>
+
+      {/* Sticky Footer with Sign Out */}
+      <div className="border-t border-gray-200 bg-white px-4 py-4">
+        <button
+          onClick={handleLogout}
+          className="flex items-center justify-center space-x-2 w-full p-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium"
+        >
+          <ArrowRightOnRectangleIcon className="h-5 w-5" />
+          <span>Sign Out</span>
+        </button>
+      </div>
+
+      {/* Saving Indicators */}
+      {profileSaving && (
+        <div className="fixed top-4 right-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-sm shadow-lg">
+          Saving profile...
+        </div>
+      )}
+      {notificationSaving && (
+        <div className="fixed top-4 right-4 bg-blue-100 text-blue-800 px-4 py-2 rounded-lg text-sm shadow-lg">
+          Saving preferences...
+        </div>
+      )}
     </div>
   );
 } 
