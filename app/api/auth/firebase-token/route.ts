@@ -2,9 +2,9 @@ import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import admin from 'firebase-admin';
 
-// Initialize Firebase Admin (singleton pattern)
-if (!admin.apps.length) {
-  try {
+// Initialize Firebase Admin (lazy initialization)
+function initializeFirebaseAdmin() {
+  if (!admin.apps.length) {
     const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
     const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
@@ -26,10 +26,8 @@ if (!admin.apps.length) {
       }),
     });
     console.log('✅ Firebase Admin initialized successfully');
-  } catch (error) {
-    console.error('❌ Firebase Admin initialization failed:', error);
-    throw error;
   }
+  return admin;
 }
 
 export async function GET() {
@@ -43,8 +41,11 @@ export async function GET() {
     
     console.log('🔑 Creating Firebase token for Clerk user:', userId);
     
+    // Initialize Firebase Admin (only when actually needed)
+    const adminApp = initializeFirebaseAdmin();
+    
     // Create Firebase custom token for this Clerk user ID
-    const firebaseToken = await admin.auth().createCustomToken(userId);
+    const firebaseToken = await adminApp.auth().createCustomToken(userId);
     
     console.log('✅ Firebase token created successfully');
     return NextResponse.json({ token: firebaseToken });
