@@ -5,7 +5,6 @@ import { useAuthStore } from '@/lib/store';
 import { universalSearch, followUser, unfollowUser, getFeedInteractions, getFeedThings, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
-import PostCardV2 from './PostCardV2';
 import ThingFeedCard from './ThingFeedCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 
@@ -24,13 +23,8 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   
-  const [feedInteractions, setFeedInteractions] = useState<UserThingInteraction[]>([]);
   const [feedThings, setFeedThings] = useState<FeedThing[]>([]);
-  const [things, setThings] = useState<Thing[]>([]);
-  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
-  const [avgRatings, setAvgRatings] = useState<Map<string, number>>(new Map());
-  const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
-  const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between thing-centric and interaction-centric
+  const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
   
   const { user, userProfile, setUserProfile } = useAuthStore();
 
@@ -43,60 +37,8 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         console.log('📱 Loading thing-centric feed...');
         const things = await getFeedThings(userProfile.following, user.uid);
         setFeedThings(things);
-      } else {
-        // Load interaction-centric feed (old way)
-        console.log('📱 Loading interaction-centric feed...');
-        const interactions = await getFeedInteractions(userProfile.following, user.uid);
-        setFeedInteractions(interactions);
-        
-        // Load users data for interactions (to get userNames)
-        const uniqueUserIds = [...new Set(interactions.map(int => int.userId))];
-        const usersData = new Map<string, User>();
-        for (const userId of uniqueUserIds) {
-          const userProfile = await getUserProfile(userId);
-          if (userProfile) {
-            usersData.set(userId, userProfile);
-          }
-        }
-        setUsersMap(usersData);
-        
-        // Load things data for interactions
-        const uniqueThingIds = [...new Set(interactions.map(int => int.thingId))];
-        const thingsData: Thing[] = [];
-        for (const thingId of uniqueThingIds) {
-          const thing = await getThing(thingId);
-          if (thing) {
-            thingsData.push(thing);
-          }
-        }
-        setThings(thingsData);
-        
-        // Load current user's interactions for these things (for button highlighting)
-        console.log('👤 Loading your interactions for button states...');
-        const myInteractionsData = await getUserThingInteractions(user.uid);
-        const myInteractionsMap = new Map<string, UserThingInteraction>();
-        myInteractionsData.forEach(int => {
-          myInteractionsMap.set(int.thingId, int);
-        });
-        setMyInteractions(myInteractionsMap);
-        
-        // Load average ratings for all things in parallel
-        console.log('📊 Loading average ratings...');
-        const avgRatingsResults = await Promise.all(
-          uniqueThingIds.map(thingId => getThingAverageRating(thingId))
-        );
-        
-        const avgRatingsMap = new Map<string, number>();
-        uniqueThingIds.forEach((thingId, index) => {
-          const avgRating = avgRatingsResults[index];
-          if (avgRating !== null) {
-            avgRatingsMap.set(thingId, avgRating);
-          }
-        });
-        setAvgRatings(avgRatingsMap);
-        
-        console.log(`✅ Loaded ${interactions.length} interactions with ${avgRatingsMap.size} avg ratings`);
       }
+      // Map view doesn't need to load any data - it's just a coming soon page
     } catch (error) {
       console.error('Error loading feed:', error);
     } finally {
@@ -104,11 +46,6 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     }
   }, [userProfile, user, useThingFeed]);
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadFeedPosts();
-    setRefreshing(false);
-  };
 
   const performSearch = async (term: string) => {
     if (!term.trim() || !user) {
@@ -352,45 +289,33 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         ) : (
           /* Regular Feed */
           <>
-            {/* Feed Header with Toggle and Refresh */}
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Your Feed</h2>
-              <div className="flex items-center space-x-3">
-                {/* Feed Mode Toggle */}
-                <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setUseThingFeed(true)}
-                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                      useThingFeed 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Things
-                  </button>
-                  <button
-                    onClick={() => setUseThingFeed(false)}
-                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                      !useThingFeed 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Posts
-                  </button>
-                </div>
-                
+            {/* Feed Mode Toggle Header */}
+            <div className="flex items-center justify-center mb-6">
+              <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-50"
+                  onClick={() => setUseThingFeed(true)}
+                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                    useThingFeed 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
                 >
-                  {refreshing ? 'Refreshing...' : 'Refresh'}
+                  Things
+                </button>
+                <button
+                  onClick={() => setUseThingFeed(false)}
+                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                    !useThingFeed 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Map
                 </button>
               </div>
             </div>
 
-            {(useThingFeed ? feedThings.length === 0 : feedInteractions.length === 0) ? (
+            {useThingFeed && feedThings.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -420,39 +345,17 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                 ))}
               </div>
             ) : (
-              /* Interaction-Centric Feed (Old) */
-              <div className="space-y-4">
-                {feedInteractions.map((interaction) => {
-                  const thing = things.find(t => t.id === interaction.thingId);
-                  
-                  if (!thing) {
-                    console.warn('Thing not found for interaction:', interaction.id, 'thingId:', interaction.thingId);
-                    return null;
-                  }
-                  
-                  const isOwnInteraction = user?.uid === interaction.userId;
-                  const myInteraction = myInteractions.get(interaction.thingId);
-                  const interactionUser = usersMap.get(interaction.userId);
-                  
-                  // Populate userName from loaded user data
-                  const interactionWithUser = {
-                    ...interaction,
-                    userName: interactionUser?.username || interactionUser?.name || interaction.userName || 'User'
-                  };
-                  
-                  return (
-                    <PostCardV2
-                      key={interaction.id}
-                      interaction={interactionWithUser}
-                      thing={thing}
-                      myInteraction={myInteraction}
-                      avgRating={avgRatings.get(interaction.thingId) || null}
-                      isOwnInteraction={isOwnInteraction}
-                      onAuthorClick={onUserProfileClick}
-                      onEdit={onEditInteraction}
-                    />
-                  );
-                })}
+              /* Map View - Coming Soon */
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Map View</h3>
+                <p className="text-gray-500 max-w-sm">
+                  Discover recommendations near you with our interactive map view. Coming soon!
+                </p>
               </div>
             )}
           </>
