@@ -20,6 +20,10 @@ export interface UniversalItem {
     tmdbId?: string | number;  // For deduplication
     tmdbRating?: number;
     type?: 'movie' | 'tv';
+    genre?: string;
+    runtime?: number;
+    episodes?: number;
+    seasons?: number;
     // Places
     address?: string;
     placeId?: string;  // For deduplication

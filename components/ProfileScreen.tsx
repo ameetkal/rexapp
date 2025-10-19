@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useAuthStore } from '@/lib/store';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAuthStore, useAppStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { UserThingInteraction, Thing, Category, CATEGORIES, User } from '@/lib/types';
-import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, ListBulletIcon, DevicePhoneMobileIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon, BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import ThingInteractionCard from './ThingInteractionCard';
 import PWAInstallPrompt from './PWAInstallPrompt';
 import { usePWAInstallStatus } from './PWAInstallStatus';
@@ -27,6 +27,7 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
   const [things, setThings] = useState<Thing[]>([]);
   const [viewingUserProfile, setViewingUserProfile] = useState<User | null>(null);
   const [followLoading, setFollowLoading] = useState(false);
+  const [forceUpdate, setForceUpdate] = useState(0);
   
   // State and Category filters (removed 'inProgress')
   const [selectedState, setSelectedState] = useState<'all' | 'bucketList' | 'completed'>('all');
@@ -34,11 +35,26 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
   
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { isInstalled, isLoading } = usePWAInstallStatus();
+  const { userInteractions: storeUserInteractions } = useAppStore();
   
   // Determine if viewing own profile or someone else's
   const isOwnProfile = !viewingUserId || viewingUserId === user?.uid;
   const displayedProfile = isOwnProfile ? userProfile : viewingUserProfile;
   const displayedUserId = isOwnProfile ? user?.uid : viewingUserId;
+  
+  // Force re-render when store data changes by tracking the length and a hash of states
+  const storeDataKey = useMemo(() => {
+    if (!isOwnProfile) return 'other-user';
+    const statesHash = storeUserInteractions.map(i => `${i.id}-${i.state}`).join(',');
+    return `${storeUserInteractions.length}-${statesHash}`;
+  }, [storeUserInteractions, isOwnProfile]);
+
+  // Force re-render when store data changes
+  useEffect(() => {
+    if (isOwnProfile) {
+      setForceUpdate(prev => prev + 1);
+    }
+  }, [storeUserInteractions, isOwnProfile]);
 
   // Load viewing user's profile data (if viewing someone else)
   useEffect(() => {
@@ -129,8 +145,41 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
     ? userProfile.following.includes(viewingUserProfile.id) 
     : false;
 
+  // Combine local userInteractions with store data for real-time updates
+  const combinedUserInteractions = useMemo(() => {
+    if (!isOwnProfile) {
+      // For other users' profiles, use local data only
+      return userInteractions;
+    }
+    
+    // For own profile, merge store data with local data
+    // Create a combined map starting with local data
+    const combinedMap = new Map();
+    userInteractions.forEach((interaction: UserThingInteraction) => {
+      combinedMap.set(interaction.id, interaction);
+    });
+    
+    // Override with store data (which has the latest state changes)
+    storeUserInteractions.forEach((interaction: UserThingInteraction) => {
+      combinedMap.set(interaction.id, interaction);
+    });
+    
+    const mergedInteractions = Array.from(combinedMap.values());
+    
+    console.log('🔄 Profile screen: combinedUserInteractions updated', {
+      localCount: userInteractions.length,
+      storeCount: storeUserInteractions.length,
+      mergedCount: mergedInteractions.length,
+      storeStates: storeUserInteractions.map(i => ({ id: i.id, state: i.state })),
+      selectedState,
+      filteredCount: mergedInteractions.filter(i => selectedState === 'all' || i.state === selectedState).length
+    });
+    
+    return mergedInteractions;
+  }, [userInteractions, storeUserInteractions, isOwnProfile, selectedState, storeDataKey, forceUpdate]);
+
   // Filter interactions by state, category, and search
-  const filteredInteractions = userInteractions.filter(interaction => {
+  const filteredInteractions = combinedUserInteractions.filter((interaction: UserThingInteraction) => {
     // State filter
     if (selectedState !== 'all' && interaction.state !== selectedState) {
       return false;
@@ -158,25 +207,25 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
   
   // Helper to get count for each state
   const getStateCount = (state: 'all' | 'bucketList' | 'completed') => {
-    if (state === 'all') return userInteractions.length;
-    return userInteractions.filter(i => i.state === state).length;
+    if (state === 'all') return combinedUserInteractions.length;
+    return combinedUserInteractions.filter((i: UserThingInteraction) => i.state === state).length;
   };
   
   // Helper to get count for each category within current state filter
   const getCategoryCount = (category: Category | 'all') => {
     const stateFiltered = selectedState === 'all' 
-      ? userInteractions 
-      : userInteractions.filter(i => i.state === selectedState);
+      ? combinedUserInteractions 
+      : combinedUserInteractions.filter((i: UserThingInteraction) => i.state === selectedState);
     
     if (category === 'all') return stateFiltered.length;
     
-    return stateFiltered.filter(interaction => {
+    return stateFiltered.filter((interaction: UserThingInteraction) => {
       const thing = things.find(t => t.id === interaction.thingId);
       return thing?.category === category;
     }).length;
   };
   
-  const completedCount = userInteractions.filter(i => i.state === 'completed').length;
+  const completedCount = combinedUserInteractions.filter((i: UserThingInteraction) => i.state === 'completed').length;
 
   return (
     <div className="flex-1 overflow-y-auto pb-20">
@@ -315,22 +364,23 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
           {/* State Filter Tabs */}
           <div className="mb-4 flex space-x-2 overflow-x-auto pb-2">
             {[
-              { id: 'all', label: 'All', icon: '📋' },
-              { id: 'bucketList', label: 'To Do', icon: '📝' },
-              { id: 'completed', label: 'Completed', icon: '✅' },
+              { id: 'all', label: 'All', icon: null },
+              { id: 'bucketList', label: 'Saved', icon: BookmarkIcon },
+              { id: 'completed', label: 'Completed', icon: CheckCircleIcon },
             ].map((state) => {
               const count = getStateCount(state.id as 'all' | 'bucketList' | 'completed');
               return (
                 <button
                   key={state.id}
                   onClick={() => setSelectedState(state.id as 'all' | 'bucketList' | 'completed')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center space-x-2 ${
                     selectedState === state.id
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  {state.icon} {state.label} ({count})
+                  {state.icon && <state.icon className="h-4 w-4" />}
+                  <span>{state.label} ({count})</span>
                 </button>
               );
             })}
@@ -398,7 +448,7 @@ export default function ProfileScreen({ viewingUserId, onShowFollowingList, onSe
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredInteractions.map((interaction) => {
+              {filteredInteractions.map((interaction: UserThingInteraction) => {
                 const thing = things.find(t => t.id === interaction.thingId);
                 if (!thing) return null;
                 

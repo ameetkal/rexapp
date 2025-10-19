@@ -5,7 +5,7 @@ import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/
 import { useAuthStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount, getUserThingInteraction } from '@/lib/firestore';
 import { User, Thing, UserThingInteraction } from '@/lib/types';
-import PostCardV2 from './PostCardV2';
+import ThingInteractionCard from './ThingInteractionCard';
 
 interface PublicProfileScreenProps {
   user: User;
@@ -209,13 +209,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
                 }
                 
                 return (
-                  <PostCardV2 
+                  <ThingInteractionCard 
                     key={interaction.id} 
                     interaction={interaction}
                     thing={thing}
-                    myInteraction={myInteraction}
-                    avgRating={undefined}
-                    isOwnInteraction={currentUser?.uid === interaction.userId}
                   />
                 );
               })}

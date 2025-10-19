@@ -4,20 +4,36 @@
  * Send SMS invite with invitation code
  * New system: uses short invite codes (e.g., rex.app/?i=ABC123)
  */
-export const sendSMSInvite = (
+export const sendSMSInvite = async (
   recommenderName: string, 
   currentUserName: string, 
   itemTitle: string,
   inviteCode: string
-) => {
+): Promise<boolean> => {
   // Extract first name from recommender name
   const firstName = recommenderName.split(' ')[0];
   const displayName = firstName || recommenderName;
   
   const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out and join me: ${window.location.origin}/?i=${inviteCode}`;
   
-  const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
-  window.open(smsUrl, '_self');
+  try {
+    // Try to copy to clipboard first (modern approach)
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(message);
+      return true; // Success - message copied to clipboard
+    } else {
+      // Fallback: try the old SMS URL approach (will show browser dialog)
+      const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
+      window.open(smsUrl, '_self');
+      return false; // Will show browser dialog
+    }
+  } catch (error) {
+    console.error('Failed to copy to clipboard:', error);
+    // Fallback to SMS URL
+    const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
+    window.open(smsUrl, '_self');
+    return false; // Will show browser dialog
+  }
 };
 
 export const shouldOfferSMSInvite = (recommenderName: string): boolean => {

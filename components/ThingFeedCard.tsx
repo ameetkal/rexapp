@@ -253,7 +253,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           thing.id,
           'completed',
           'public',
-          rating
+          { rating }
         );
         
         newInteraction.id = interactionId;
@@ -403,7 +403,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           ) : (
             <BookmarkIcon className="h-5 w-5" />
           )}
-          <span className="text-sm font-medium">Save</span>
+          <span className="text-sm font-medium">Saved</span>
         </button>
 
         {/* Completed Button */}

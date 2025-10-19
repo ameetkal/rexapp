@@ -14,6 +14,10 @@ import {
   PlayIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
+import { 
+  BookmarkIcon as BookmarkIconSolid, 
+  CheckCircleIcon as CheckCircleIconSolid
+} from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
 import StarRating from './StarRating';
 
@@ -30,7 +34,6 @@ export default function ThingInteractionCard({
   onEdit
 }: ThingInteractionCardProps) {
   const [loading, setLoading] = useState(false);
-  const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
   const [showMenu, setShowMenu] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -38,7 +41,21 @@ export default function ThingInteractionCard({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const { user, userProfile } = useAuthStore();
-  const { removeUserInteraction, updateUserInteraction } = useAppStore();
+  const { removeUserInteraction, updateUserInteraction, getUserInteractionByThingId } = useAppStore();
+  
+  // Sync with global store to get the most up-to-date interaction data
+  const [localInteraction, setLocalInteraction] = useState<UserThingInteraction>(interaction);
+  const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
+  
+  useEffect(() => {
+    // Get the most recent interaction from the global store
+    const storeInteraction = getUserInteractionByThingId(thing.id);
+    if (storeInteraction && storeInteraction.id === interaction.id) {
+      setLocalInteraction(storeInteraction);
+    } else {
+      setLocalInteraction(interaction);
+    }
+  }, [interaction, getUserInteractionByThingId, thing.id]);
   
   // Click outside to close menu
   useEffect(() => {
@@ -98,7 +115,7 @@ export default function ThingInteractionCard({
   };
 
   const handleStateChange = async (newState: 'bucketList' | 'inProgress' | 'completed') => {
-    if (!user || newState === interaction.state) return;
+    if (!user || newState === localInteraction.state) return;
     
     // If marking as completed, show rating modal first
     if (newState === 'completed') {
@@ -109,17 +126,26 @@ export default function ThingInteractionCard({
     setLoading(true);
     try {
       // Update the existing interaction's state (don't delete/recreate)
-      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      const interactionRef = doc(db, 'user_thing_interactions', localInteraction.id);
       await updateDoc(interactionRef, {
         state: newState,
         date: Timestamp.now()
       });
       
       // Update local store
-      updateUserInteraction(interaction.id, { 
+      updateUserInteraction(localInteraction.id, { 
         state: newState,
         date: Timestamp.now()
       });
+      
+      console.log('🔄 ThingInteractionCard: Updated store for interaction', {
+        interactionId: localInteraction.id,
+        newState,
+        thingId: thing.id
+      });
+      
+      // Update local state immediately for UI responsiveness
+      setLocalInteraction(prev => ({ ...prev, state: newState, date: Timestamp.now() }));
       
       console.log(`✅ Changed state to: ${newState}`);
       
@@ -139,7 +165,7 @@ export default function ThingInteractionCard({
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
       // Update to completed with rating
-      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      const interactionRef = doc(db, 'user_thing_interactions', localInteraction.id);
       await updateDoc(interactionRef, {
         state: 'completed',
         rating: rating || null,
@@ -147,11 +173,14 @@ export default function ThingInteractionCard({
       });
       
       // Update local store
-      updateUserInteraction(interaction.id, { 
+      updateUserInteraction(localInteraction.id, { 
         state: 'completed',
         rating,
         date: Timestamp.now()
       });
+      
+      // Update local state immediately for UI responsiveness
+      setLocalInteraction(prev => ({ ...prev, state: 'completed', rating, date: Timestamp.now() }));
       
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
       setShowRatingModal(false);
@@ -431,35 +460,61 @@ export default function ThingInteractionCard({
         </div>
       )}
 
-      {/* Status and Actions */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        {/* Status */}
-        <div className="flex items-center space-x-2">
-          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStateColor()}`}>
-            {getStateIcon()}
-            <span className="ml-1">{getStateLabel()}</span>
-          </span>
-          <span className="text-xs text-gray-500">
-            Added {formatDate(interaction.date)}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center space-x-2">
-          {/* Complete Button - only show if in bucket list */}
-          {interaction.state === 'bucketList' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleStateChange('completed');
-              }}
-              disabled={loading}
-              className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              Mark Complete
-            </button>
+      {/* Action Bar */}
+      <div className="flex items-center space-x-1 pt-3 border-t border-gray-100">
+        {/* Save Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (localInteraction.state === 'bucketList') {
+              // Already saved - show as disabled
+              return;
+            } else {
+              // Change from completed back to saved
+              handleStateChange('bucketList');
+            }
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            localInteraction.state === 'bucketList'
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+          }`}
+        >
+          {localInteraction.state === 'bucketList' ? (
+            <BookmarkIconSolid className="h-5 w-5" />
+          ) : (
+            <BookmarkIcon className="h-5 w-5" />
           )}
-        </div>
+          <span className="text-sm font-medium">Saved</span>
+        </button>
+
+        {/* Completed Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (localInteraction.state === 'completed') {
+              // Already completed - show as disabled
+              return;
+            } else {
+              // Change from saved to completed
+              handleStateChange('completed');
+            }
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            localInteraction.state === 'completed'
+              ? 'bg-green-50 text-green-600 hover:bg-green-100'
+              : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+          }`}
+        >
+          {localInteraction.state === 'completed' ? (
+            <CheckCircleIconSolid className="h-5 w-5" />
+          ) : (
+            <CheckCircleIcon className="h-5 w-5" />
+          )}
+          <span className="text-sm font-medium">Completed</span>
+        </button>
       </div>
 
       {/* Detail Modal */}

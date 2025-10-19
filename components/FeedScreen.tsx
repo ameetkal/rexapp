@@ -290,7 +290,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           /* Regular Feed */
           <>
             {/* Feed Mode Toggle Header */}
-            <div className="flex items-center justify-center mb-6">
+            <div className="flex items-center justify-start mb-6">
               <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setUseThingFeed(true)}

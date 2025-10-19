@@ -131,6 +131,9 @@ export default function PhoneSignUp({ onSignUpComplete }: PhoneSignUpProps) {
             </p>
           </div>
 
+          {/* Clerk CAPTCHA element */}
+          <div id="clerk-captcha"></div>
+
           <button
             type="submit"
             disabled={loading || !phoneNumber.trim()}
