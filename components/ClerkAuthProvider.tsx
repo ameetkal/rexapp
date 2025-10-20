@@ -105,6 +105,7 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
           })();
           
           console.log('🎯 Final user data - Name:', userName, 'Username:', userUsername);
+          console.log('🔍 Pending profile data used:', !!pendingProfileData);
           
           const newUserProfile: User = {
             id: userId,
@@ -126,6 +127,7 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
         // Process invitation if present (for both new and existing users)
         if (inviteCode && !inviteProcessed) {
           console.log(`🎁 Processing invitation for ${isNewUser ? 'new' : 'existing'} user...`);
+          console.log('🔍 Invite code:', inviteCode, 'User ID:', userId, 'Already processed:', inviteProcessed);
           const inviteSuccess = await processInvitation(
             userId,
             userProfileData.name,

@@ -1580,6 +1580,8 @@ export const createUserThingInteraction = async (
   }
 ): Promise<string> => {
   try {
+    console.log('🔍 createUserThingInteraction called:', { userId, userName, thingId, state, visibility });
+    
     // Check if user already has an interaction with this thing
     const existingQuery = query(
       collection(db, 'user_thing_interactions'),
@@ -1590,6 +1592,7 @@ export const createUserThingInteraction = async (
     const existingInteractions = await getDocs(existingQuery);
     
     if (!existingInteractions.empty) {
+      console.log('⚠️ Found existing interaction, updating instead of creating new one');
       // Update existing interaction
       const existingDoc = existingInteractions.docs[0];
       const updateData: Partial<UserThingInteraction> = {

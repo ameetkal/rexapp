@@ -30,9 +30,13 @@ export default function ProfileCompletion({ phoneNumber, onBack, invitationData 
   // Pre-fill name and generate username from invitation data
   useEffect(() => {
     if (invitationData) {
+      console.log('🔍 ProfileCompletion invitationData:', invitationData);
       // Pre-fill the name with the recipient's name (if available)
       if (invitationData.recipientName) {
+        console.log('✅ Pre-filling name with recipientName:', invitationData.recipientName);
         setName(invitationData.recipientName);
+      } else {
+        console.log('❌ No recipientName found in invitationData');
       }
       
       // Generate a username from the inviter's name (as fallback)
@@ -113,6 +117,10 @@ export default function ProfileCompletion({ phoneNumber, onBack, invitationData 
         console.log('💾 Storing profile data in localStorage:', profileData);
         localStorage.setItem('pendingProfileData', JSON.stringify(profileData));
         
+        // Verify the data was stored
+        const verification = localStorage.getItem('pendingProfileData');
+        console.log('🔍 Verification - data stored:', verification);
+        
         // ClerkAuthProvider will handle Firestore user creation with the stored data
         router.push('/');
       } else {
@@ -149,13 +157,7 @@ export default function ProfileCompletion({ phoneNumber, onBack, invitationData 
           </button>
         )}
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Profile</h2>
-        <p className="text-gray-600">Tell us a bit about yourself</p>
         <p className="text-sm text-gray-500 mt-1">Phone: {phoneNumber} ✓</p>
-        {invitationData && (
-          <p className="text-sm text-blue-600 mt-1">
-            ✨ Pre-filled from {invitationData.inviterName}'s invitation
-          </p>
-        )}
       </div>
 
       {error && (

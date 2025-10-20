@@ -772,7 +772,7 @@ export default function PostForm({
                 Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.thingTitle}&rdquo; is being shared on Rex!
               </p>
               <p className="text-gray-500 text-xs">
-                We'll copy the message to your clipboard, then you can paste it into your messaging app.
+                We'll open your messaging app with the invite message ready to send.
               </p>
             </div>
             
@@ -781,7 +781,7 @@ export default function PostForm({
                 onClick={handleSendInvite}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
               >
-                Copy Message
+                Send Invite
               </button>
               <button
                 onClick={handleSkipInvite}

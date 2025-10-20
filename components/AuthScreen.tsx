@@ -93,7 +93,7 @@ export default function AuthScreen() {
                   🎉 <strong>{invitation.inviterName}</strong> invited you to join Rex!
                 </p>
                 <p className="text-xs text-blue-700 mt-1">
-                  They recommended &quot;{invitation.thingTitle}&quot; - sign up to save it and see their other recommendations.
+                  They said you recommended &quot;{invitation.thingTitle}&quot; - sign up to save & share recs.
                 </p>
               </div>
             )}
