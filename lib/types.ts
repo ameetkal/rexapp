@@ -233,6 +233,7 @@ export interface Invitation {
   thingId: string;        // The thing being shared
   thingTitle: string;     // Denormalized for display
   interactionId?: string; // Optional: specific interaction being shared
+  recipientName?: string; // Name of the person being invited (if known)
   createdAt: Timestamp;
   usedBy: string[];       // User IDs who clicked this link
   convertedUsers: string[]; // User IDs who signed up via this

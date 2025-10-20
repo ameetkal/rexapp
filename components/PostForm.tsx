@@ -319,7 +319,8 @@ export default function PostForm({
           userProfile.username,
           result.thingId,
           itemTitle,
-          result.interactionId
+          result.interactionId,
+          recommendedByValue // Pass the recipient's name
         );
         
         setInviteData({

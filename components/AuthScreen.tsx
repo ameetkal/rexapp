@@ -72,10 +72,10 @@ export default function AuthScreen() {
                       setSignupStep('phone'); // Reset signup to phone step
                     }
                   }}
-                  className={`flex-1 px-4 py-3 font-medium text-sm border-b-2 transition-colors ${
+                  className={`flex-1 px-4 py-3 font-medium text-sm border-2 transition-colors ${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600 bg-blue-50'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      ? 'border-blue-500 text-white bg-blue-600'
+                      : 'border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                   }`}
                 >
                   {tab.label}
@@ -111,6 +111,11 @@ export default function AuthScreen() {
                   setSignupStep('phone');
                   setActiveTab('signup');
                 }}
+                invitationData={invitation ? {
+                  inviterName: invitation.inviterName,
+                  thingTitle: invitation.thingTitle,
+                  recipientName: invitation.recipientName
+                } : null}
               />
             )}
           </div>

@@ -1409,28 +1409,15 @@ export const getUserByUsername = async (username: string): Promise<User | null> 
 
 export const getUserRecsGivenCount = async (userId: string): Promise<number> => {
   try {
-    // Get all posts by this user
-    const userPostsQuery = query(
-      collection(db, 'posts'),
-      where('authorId', '==', userId)
+    // Get all recommendations given by this user
+    const recommendationsQuery = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', userId)
     );
     
-    const userPostsSnapshot = await getDocs(userPostsQuery);
+    const recommendationsSnapshot = await getDocs(recommendationsQuery);
     
-    if (userPostsSnapshot.empty) {
-      return 0;
-    }
-    
-    // Count total saves across all user's posts
-    let totalSaves = 0;
-    userPostsSnapshot.forEach((doc) => {
-      const post = doc.data() as Post;
-      if (post.savedBy && Array.isArray(post.savedBy)) {
-        totalSaves += post.savedBy.length;
-      }
-    });
-    
-    return totalSaves;
+    return recommendationsSnapshot.size;
   } catch (error) {
     console.error('Error getting user recs given count:', error);
     return 0;
@@ -2912,7 +2899,8 @@ export const createInvitation = async (
   inviterUsername: string,
   thingId: string,
   thingTitle: string,
-  interactionId?: string
+  interactionId?: string,
+  recipientName?: string
 ): Promise<string> => {
   try {
     // Generate unique code
@@ -2934,6 +2922,7 @@ export const createInvitation = async (
       thingId,
       thingTitle,
       interactionId,
+      recipientName,
       createdAt: Timestamp.now(),
       usedBy: [],
       convertedUsers: [],
@@ -3005,11 +2994,12 @@ export const processInvitation = async (
       { notes: `Recommended by ${invitation.inviterName}` }
     );
     
-    // 3. Create recommendation record (inviter → you)
+    // 3. Create recommendation record (you → inviter)
+    // The person being invited is the one who gave the recommendation
     console.log('🎁 Creating recommendation record');
     await createRecommendation(
-      invitation.inviterId,
-      userId,
+      userId,                 // The person who gave the recommendation
+      invitation.inviterId,   // The person who received the recommendation
       invitation.thingId,
       `Via invite link`
     );

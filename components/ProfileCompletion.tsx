@@ -8,9 +8,14 @@ import { checkUsernameAvailability } from '@/lib/firestore';
 interface ProfileCompletionProps {
   phoneNumber: string;
   onBack?: () => void;
+  invitationData?: {
+    inviterName: string;
+    thingTitle: string;
+    recipientName?: string;
+  } | null;
 }
 
-export default function ProfileCompletion({ phoneNumber, onBack }: ProfileCompletionProps) {
+export default function ProfileCompletion({ phoneNumber, onBack, invitationData }: ProfileCompletionProps) {
   const { isLoaded, signUp, setActive } = useSignUp();
   const router = useRouter();
   
@@ -21,6 +26,22 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
   const [error, setError] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+
+  // Pre-fill name and generate username from invitation data
+  useEffect(() => {
+    if (invitationData) {
+      // Pre-fill the name with the recipient's name (if available)
+      if (invitationData.recipientName) {
+        setName(invitationData.recipientName);
+      }
+      
+      // Generate a username from the inviter's name (as fallback)
+      const firstName = invitationData.inviterName.split(' ')[0].toLowerCase();
+      const randomSuffix = Math.floor(Math.random() * 10000);
+      const generatedUsername = `${firstName.replace(/[^a-z0-9]/g, '')}${randomSuffix}`;
+      setUsername(generatedUsername);
+    }
+  }, [invitationData]);
 
   // Check username availability as user types
   useEffect(() => {
@@ -76,9 +97,7 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
     try {
       // Update the sign-up with additional information
       const result = await signUp.update({
-        firstName: name.trim(),
         emailAddress: email.trim(),
-        username: username.trim().toLowerCase(),
       });
 
       if (result.status === 'complete' && result.createdSessionId) {
@@ -86,7 +105,15 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
         await setActive({ session: result.createdSessionId });
         console.log('✅ Sign-up complete!');
         
-        // ClerkAuthProvider will handle Firestore user creation
+        // Store the profile data in localStorage for ClerkAuthProvider to use
+        const profileData = {
+          name: name.trim(),
+          username: username.trim().toLowerCase(),
+        };
+        console.log('💾 Storing profile data in localStorage:', profileData);
+        localStorage.setItem('pendingProfileData', JSON.stringify(profileData));
+        
+        // ClerkAuthProvider will handle Firestore user creation with the stored data
         router.push('/');
       } else {
         console.log('Sign-up status:', result.status);
@@ -124,6 +151,11 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Profile</h2>
         <p className="text-gray-600">Tell us a bit about yourself</p>
         <p className="text-sm text-gray-500 mt-1">Phone: {phoneNumber} ✓</p>
+        {invitationData && (
+          <p className="text-sm text-blue-600 mt-1">
+            ✨ Pre-filled from {invitationData.inviterName}'s invitation
+          </p>
+        )}
       </div>
 
       {error && (

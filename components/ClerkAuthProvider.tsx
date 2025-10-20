@@ -80,16 +80,37 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
           // New user - create Firestore document
           console.log('🆕 Creating new Firestore user document...');
           
-          // Generate username from Clerk user data
-          const firstName = clerkUser.firstName || clerkUser.username || 'user';
-          const randomSuffix = Math.floor(Math.random() * 10000);
-          const generatedUsername = `${firstName.toLowerCase().replace(/\s+/g, '_')}${randomSuffix}`;
+          // Check for pending profile data from ProfileCompletion
+          let pendingProfileData = null;
+          try {
+            const stored = localStorage.getItem('pendingProfileData');
+            console.log('🔍 Checking localStorage for pending profile data:', stored);
+            if (stored) {
+              pendingProfileData = JSON.parse(stored);
+              console.log('✅ Found pending profile data:', pendingProfileData);
+              localStorage.removeItem('pendingProfileData'); // Clean up
+            } else {
+              console.log('❌ No pending profile data found in localStorage');
+            }
+          } catch (error) {
+            console.error('Error parsing pending profile data:', error);
+          }
+          
+          // Use pending profile data if available, otherwise generate from Clerk data
+          const userName = pendingProfileData?.name || clerkUser.fullName || clerkUser.firstName || 'Rex User';
+          const userUsername = pendingProfileData?.username || (() => {
+            const firstName = clerkUser.firstName || clerkUser.username || 'user';
+            const randomSuffix = Math.floor(Math.random() * 10000);
+            return `${firstName.toLowerCase().replace(/\s+/g, '_')}${randomSuffix}`;
+          })();
+          
+          console.log('🎯 Final user data - Name:', userName, 'Username:', userUsername);
           
           const newUserProfile: User = {
             id: userId,
-            name: clerkUser.fullName || clerkUser.firstName || 'Rex User',
+            name: userName,
             email: clerkUser.primaryEmailAddress?.emailAddress || '',
-            username: generatedUsername,
+            username: userUsername,
             phoneNumber: clerkUser.primaryPhoneNumber?.phoneNumber,
             following: [],
             followers: [],
@@ -97,7 +118,7 @@ export default function ClerkAuthProvider({ children }: { children: React.ReactN
           };
 
           await setDoc(userDocRef, newUserProfile);
-          console.log('✅ Created new Firestore user:', generatedUsername);
+          console.log('✅ Created new Firestore user:', userUsername);
           setUserProfile(newUserProfile);
           userProfileData = newUserProfile;
         }
