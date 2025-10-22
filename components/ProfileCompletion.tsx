@@ -111,8 +111,10 @@ export default function ProfileCompletion({ phoneNumber, invitationData }: Profi
       // Add a small delay to show the success message
       setTimeout(() => {
         // Redirect to root - ClerkAuthProvider will handle Firestore user creation
-        window.location.href = '/';
-      }, 1000);
+        // Use replaceState to avoid back button issues
+        window.history.replaceState({}, '', '/');
+        window.location.reload();
+      }, 1500);
       
     } catch (err) {
       console.error('Error completing sign-up:', err);
