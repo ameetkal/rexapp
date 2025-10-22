@@ -1409,28 +1409,15 @@ export const getUserByUsername = async (username: string): Promise<User | null> 
 
 export const getUserRecsGivenCount = async (userId: string): Promise<number> => {
   try {
-    // Get all posts by this user
-    const userPostsQuery = query(
-      collection(db, 'posts'),
-      where('authorId', '==', userId)
+    // Get all recommendations given by this user
+    const recommendationsQuery = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', userId)
     );
     
-    const userPostsSnapshot = await getDocs(userPostsQuery);
+    const recommendationsSnapshot = await getDocs(recommendationsQuery);
     
-    if (userPostsSnapshot.empty) {
-      return 0;
-    }
-    
-    // Count total saves across all user's posts
-    let totalSaves = 0;
-    userPostsSnapshot.forEach((doc) => {
-      const post = doc.data() as Post;
-      if (post.savedBy && Array.isArray(post.savedBy)) {
-        totalSaves += post.savedBy.length;
-      }
-    });
-    
-    return totalSaves;
+    return recommendationsSnapshot.size;
   } catch (error) {
     console.error('Error getting user recs given count:', error);
     return 0;
@@ -1593,6 +1580,8 @@ export const createUserThingInteraction = async (
   }
 ): Promise<string> => {
   try {
+    console.log('🔍 createUserThingInteraction called:', { userId, userName, thingId, state, visibility });
+    
     // Check if user already has an interaction with this thing
     const existingQuery = query(
       collection(db, 'user_thing_interactions'),
@@ -1603,6 +1592,7 @@ export const createUserThingInteraction = async (
     const existingInteractions = await getDocs(existingQuery);
     
     if (!existingInteractions.empty) {
+      console.log('⚠️ Found existing interaction, updating instead of creating new one');
       // Update existing interaction
       const existingDoc = existingInteractions.docs[0];
       const updateData: Partial<UserThingInteraction> = {
@@ -1789,6 +1779,21 @@ export const createRecommendation = async (
   message?: string
 ): Promise<string> => {
   try {
+    // Check if recommendation already exists
+    const existingQuery = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', fromUserId),
+      where('toUserId', '==', toUserId),
+      where('thingId', '==', thingId)
+    );
+    
+    const existingRecommendations = await getDocs(existingQuery);
+    
+    if (!existingRecommendations.empty) {
+      console.log('⚠️ Recommendation already exists, skipping creation');
+      return existingRecommendations.docs[0].id;
+    }
+    
     const recommendationData: Omit<Recommendation, 'id'> = {
       fromUserId,
       toUserId,
@@ -2106,20 +2111,17 @@ export const getFeedThings = async (
       
       feedThings.push({
         thing,
-        interactions: {
-          completed: ints.filter(i => i.state === 'completed'),
-          saved: ints.filter(i => i.state === 'bucketList')
-        },
+        interactions: ints,
         myInteraction: ints.find(i => i.userId === currentUserId),
         avgRating: await getThingAverageRating(thingId),
-        mostRecentUpdate: mostRecent.createdAt
+        mostRecentUpdate: mostRecent.createdAt.toDate()
       });
     }
     
     // Sort by most recent update
     feedThings.sort((a, b) => {
-      const aTime = (a.mostRecentUpdate as Timestamp)?.seconds || 0;
-      const bTime = (b.mostRecentUpdate as Timestamp)?.seconds || 0;
+      const aTime = a.mostRecentUpdate?.getTime() || 0;
+      const bTime = b.mostRecentUpdate?.getTime() || 0;
       return bTime - aTime;
     });
     
@@ -2912,7 +2914,8 @@ export const createInvitation = async (
   inviterUsername: string,
   thingId: string,
   thingTitle: string,
-  interactionId?: string
+  interactionId?: string,
+  recipientName?: string
 ): Promise<string> => {
   try {
     // Generate unique code
@@ -2934,6 +2937,7 @@ export const createInvitation = async (
       thingId,
       thingTitle,
       interactionId,
+      recipientName,
       createdAt: Timestamp.now(),
       usedBy: [],
       convertedUsers: [],
@@ -3005,11 +3009,12 @@ export const processInvitation = async (
       { notes: `Recommended by ${invitation.inviterName}` }
     );
     
-    // 3. Create recommendation record (inviter → you)
+    // 3. Create recommendation record (you → inviter)
+    // The person being invited is the one who gave the recommendation
     console.log('🎁 Creating recommendation record');
     await createRecommendation(
-      invitation.inviterId,
-      userId,
+      userId,                 // The person who gave the recommendation
+      invitation.inviterId,   // The person who received the recommendation
       invitation.thingId,
       `Via invite link`
     );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { SparklesIcon, UserIcon, BellIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon as SparklesIconSolid, UserIcon as UserIconSolid } from '@heroicons/react/24/solid';
 import { useAuthStore } from '@/lib/store';
@@ -47,7 +48,16 @@ export default function Navigation({ activeTab, onTabChange, onNotificationsClic
       {/* Top Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Rex</h1>
+          <div className="flex items-center gap-2">
+            <Image
+              src="/rexlogo.png"
+              alt="Rex Logo"
+              width={32}
+              height={32}
+              className="rounded-lg"
+            />
+            <h1 className="text-2xl font-bold text-gray-900">Rex</h1>
+          </div>
           <button
             onClick={onNotificationsClick}
             className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"

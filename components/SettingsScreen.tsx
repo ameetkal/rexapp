@@ -6,7 +6,6 @@ import { useAuthStore } from '@/lib/store';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useClerk } from '@clerk/nextjs';
-import { UserProfile } from '@clerk/nextjs';
 import { NotificationPreferences } from '@/lib/types';
 import { updateUserWithUsername, checkUsernameAvailability } from '@/lib/firestore';
 
@@ -337,25 +336,6 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
               </div>
             </div>
 
-            {/* Connected Accounts Section */}
-            <div className="border-t border-gray-200 pt-8">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Connected Accounts</h3>
-              <p className="text-sm text-gray-600 mb-6">
-                Manage your sign-in methods and connected accounts
-              </p>
-              
-              <UserProfile 
-                routing="hash"
-                appearance={{
-                  elements: {
-                    rootBox: "w-full",
-                    card: "shadow-none border-0",
-                    navbar: "hidden",
-                    pageScrollBox: "p-0",
-                  }
-                }}
-              />
-            </div>
           </div>
         )}
 

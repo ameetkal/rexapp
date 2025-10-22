@@ -117,3 +117,11 @@ textarea[class*="py-"] {
     color: #000000 !important;
   }
 }
+
+/* Line clamp utility for text truncation */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

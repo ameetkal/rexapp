@@ -14,10 +14,20 @@ export const sendSMSInvite = (
   const firstName = recommenderName.split(' ')[0];
   const displayName = firstName || recommenderName;
   
-  const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out and join me: ${window.location.origin}/?i=${inviteCode}`;
+  const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out: ${window.location.origin}/?i=${inviteCode}`;
+  
+  console.log('📱 SMS Invite - Message:', message);
+  console.log('📱 SMS Invite - Attempting to open SMS app...');
   
   const smsUrl = `sms:?body=${encodeURIComponent(message)}`;
-  window.open(smsUrl, '_self');
+  console.log('📱 SMS Invite - SMS URL:', smsUrl);
+  
+  try {
+    window.open(smsUrl, '_self');
+    console.log('📱 SMS Invite - window.open called successfully');
+  } catch (error) {
+    console.error('📱 SMS Invite - Error opening SMS app:', error);
+  }
 };
 
 export const shouldOfferSMSInvite = (recommenderName: string): boolean => {

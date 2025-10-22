@@ -9,9 +9,10 @@ import { BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
 import StarRating from './StarRating';
-import { Timestamp } from 'firebase/firestore';
-import { useAuthStore } from '@/lib/store';
+import { Timestamp, doc, updateDoc } from 'firebase/firestore';
+import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
+import { db } from '@/lib/firebase';
 
 interface ThingFeedCardProps {
   feedThing: FeedThing;
@@ -26,23 +27,38 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const [tempRating, setTempRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
-  const [localMyInteraction, setLocalMyInteraction] = useState<UserThingInteraction | undefined>(myInteraction);
   
   const { user, userProfile } = useAuthStore();
+  const { getUserInteractionByThingId, removeUserInteraction, addUserInteraction, updateUserInteraction } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === thing.category);
-  const allInteractions = useMemo(
-    () => [...interactions.completed, ...interactions.saved],
-    [interactions.completed, interactions.saved]
-  );
+  const allInteractions = useMemo(() => {
+    // Use interactions directly (now it's a flat array)
+    const feedInteractions = interactions;
+    
+    // Get current user's interaction from global store
+    const storeInteraction = getUserInteractionByThingId(thing.id);
+    
+    // If user has an interaction in the store, replace or add it to feed interactions
+    if (storeInteraction) {
+      // Remove any existing interaction for this user from feed data
+      const filteredFeedInteractions = feedInteractions.filter(int => int.userId !== storeInteraction.userId);
+      // Add the current store interaction (with updated state)
+      filteredFeedInteractions.push(storeInteraction);
+      return filteredFeedInteractions;
+    }
+    
+    return feedInteractions;
+  }, [interactions, getUserInteractionByThingId, thing.id]);
 
-  // Sync local interaction with prop
-  useEffect(() => {
-    setLocalMyInteraction(myInteraction);
-  }, [myInteraction]);
+  // Dynamically calculate completed and saved interactions based on current states
+  const dynamicInteractions = useMemo(() => ({
+    completed: allInteractions.filter(int => int.state === 'completed'),
+    saved: allInteractions.filter(int => int.state === 'bucketList')
+  }), [allInteractions]);
 
   // Determine button states
-  const currentMyInteraction = localMyInteraction;
+  const currentMyInteraction = myInteraction;
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
 
@@ -65,22 +81,12 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     loadUsers();
   }, [allInteractions]);
 
-  const formatDate = (timestamp: Timestamp | Date | { seconds: number } | undefined) => {
-    if (!timestamp) return 'Recently';
+  const formatDate = (timestamp: Date | null) => {
+    if (!timestamp) return 'No recent activity';
     
-    let date: Date;
-    if (timestamp instanceof Date) {
-      date = timestamp;
-    } else if ('toDate' in timestamp && typeof timestamp.toDate === 'function') {
-      date = timestamp.toDate();
-    } else if ('seconds' in timestamp) {
-      date = new Date(timestamp.seconds * 1000);
-    } else {
-      return 'Recently';
-    }
-    
+    // Format time since someone first interacted with this item
     const now = new Date();
-    const diffInMs = now.getTime() - date.getTime();
+    const diffInMs = now.getTime() - timestamp.getTime();
     const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
     const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
@@ -99,11 +105,11 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
 
   // Calculate friends average rating from completed interactions in this card
   const friendsAvgRating = useMemo(() => {
-    const completedWithRatings = interactions.completed.filter(i => i.rating && i.rating > 0);
+    const completedWithRatings = dynamicInteractions.completed.filter(i => i.rating && i.rating > 0);
     if (completedWithRatings.length === 0) return null;
     const sum = completedWithRatings.reduce((acc, i) => acc + (i.rating || 0), 0);
     return sum / completedWithRatings.length;
-  }, [interactions.completed]);
+  }, [dynamicInteractions.completed]);
 
   // Handle Save/Unsave
   const handleSaveToggle = async () => {
@@ -111,20 +117,28 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     
     setLoading(true);
     try {
-      if (isInBucketList && currentMyInteraction) {
+      if (isInBucketList && myInteraction) {
         // Remove from bucket list
         if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
           setLoading(false);
           return;
         }
         
-        setLocalMyInteraction(undefined);
-        await deleteUserThingInteraction(currentMyInteraction.id);
+        await deleteUserThingInteraction(myInteraction.id);
+        removeUserInteraction(myInteraction.id);
         console.log('🗑️ Removed from bucket list');
       } else {
         // Add to bucket list
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thing.id,
+          'bucketList',
+          'public'
+        );
+        
         const newInteraction: UserThingInteraction = {
-          id: '',
+          id: interactionId,
           userId: user.uid,
           userName: userProfile.name,
           thingId: thing.id,
@@ -136,32 +150,27 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           commentCount: 0,
         };
         
-        setLocalMyInteraction(newInteraction);
-        
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          userProfile.name,
-          thing.id,
-          'bucketList',
-          'public'
-        );
-        
-        newInteraction.id = interactionId;
-        setLocalMyInteraction(newInteraction);
+        addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
       }
     } catch (error) {
       console.error('Error toggling save:', error);
-      setLocalMyInteraction(currentMyInteraction); // Revert on error
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle Complete (shows rating modal first)
+  // Handle Complete (shows rating modal first, or edit if already completed)
   const handleCompleteToggle = () => {
     if (!user || !userProfile) return;
-    setShowRatingModal(true);
+    
+    if (isCompleted && onEdit && myInteraction) {
+      // Already completed - open edit modal with existing data
+      onEdit(myInteraction, thing);
+    } else {
+      // Not completed yet - show rating modal
+      setShowRatingModal(true);
+    }
   };
 
   // Handle rating submission after Complete clicked
@@ -172,33 +181,52 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
-      const newInteraction: UserThingInteraction = {
-        id: currentMyInteraction?.id || '',
-        userId: user.uid,
-        userName: userProfile.name,
-        thingId: thing.id,
-        state: 'completed',
-        date: Timestamp.now(),
-        visibility: 'public',
-        rating,
-        createdAt: currentMyInteraction?.createdAt || Timestamp.now(),
-        likedBy: [],
-        commentCount: 0,
-      };
-      
-      setLocalMyInteraction(newInteraction);
-      setShowRatingModal(false);
-      
-      await createUserThingInteraction(
-        user.uid,
-        userProfile.name,
-        thing.id,
-        'completed',
-        'public',
-        { rating }
-      );
+      if (myInteraction) {
+        // Update existing interaction to completed
+        // Update the existing interaction's state directly in Firestore
+        const interactionRef = doc(db, 'user_thing_interactions', myInteraction.id);
+        await updateDoc(interactionRef, {
+          state: 'completed',
+          rating: rating || null,
+          date: Timestamp.now()
+        });
+        
+        // Update local store
+        updateUserInteraction(myInteraction.id, { 
+          state: 'completed',
+          rating,
+          date: Timestamp.now()
+        });
+      } else {
+        // Create new completed interaction (first time completing)
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thing.id,
+          'completed',
+          'public',
+          { rating }
+        );
+        
+        const newInteraction: UserThingInteraction = {
+          id: interactionId,
+          userId: user.uid,
+          userName: userProfile.name,
+          thingId: thing.id,
+          state: 'completed',
+          date: Timestamp.now(),
+          visibility: 'public',
+          rating,
+          createdAt: Timestamp.now(),
+          likedBy: [],
+          commentCount: 0,
+        };
+        
+        addUserInteraction(newInteraction);
+      }
       
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
+      setShowRatingModal(false);
       setTempRating(0);
     } catch (error) {
       console.error('Error marking as completed:', error);
@@ -238,12 +266,12 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       {/* People Section */}
       <div className="mb-3 space-y-2">
         {/* Completed By */}
-        {interactions.completed.length > 0 && (
+        {dynamicInteractions.completed.length > 0 && (
           <div className="flex items-center space-x-2">
             <CheckCircleIcon className="h-4 w-4 text-green-600 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="text-sm text-gray-700">
-                {interactions.completed.slice(0, 3).map((int, idx) => {
+                {dynamicInteractions.completed.slice(0, 3).map((int, idx) => {
                   const user = users.get(int.userId);
                   const displayName = user?.username || int.userName || 'User';
                   return (
@@ -261,8 +289,8 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                     </span>
                   );
                 })}
-                {interactions.completed.length > 3 && (
-                  <span className="text-gray-500"> +{interactions.completed.length - 3} more</span>
+                {dynamicInteractions.completed.length > 3 && (
+                  <span className="text-gray-500"> +{dynamicInteractions.completed.length - 3} more</span>
                 )}
               </span>
               <span className="text-xs text-gray-500 ml-1">completed</span>
@@ -276,12 +304,12 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         )}
         
         {/* Saved By */}
-        {interactions.saved.length > 0 && (
+        {dynamicInteractions.saved.length > 0 && (
           <div className="flex items-center space-x-2">
             <BookmarkIcon className="h-4 w-4 text-blue-600 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="text-sm text-gray-700">
-                {interactions.saved.slice(0, 3).map((int, idx) => {
+                {dynamicInteractions.saved.slice(0, 3).map((int, idx) => {
                   const user = users.get(int.userId);
                   const displayName = user?.username || int.userName || 'User';
                   return (
@@ -299,8 +327,8 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                     </span>
                   );
                 })}
-                {interactions.saved.length > 3 && (
-                  <span className="text-gray-500"> +{interactions.saved.length - 3} more</span>
+                {dynamicInteractions.saved.length > 3 && (
+                  <span className="text-gray-500"> +{dynamicInteractions.saved.length - 3} more</span>
                 )}
               </span>
               <span className="text-xs text-gray-500 ml-1">saved</span>
@@ -338,7 +366,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           ) : (
             <BookmarkIcon className="h-5 w-5" />
           )}
-          <span className="text-sm font-medium">Save</span>
+          <span className="text-sm font-medium">Saved</span>
         </button>
 
         {/* Completed Button */}
@@ -406,7 +434,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       )}
 
       {/* Detail Modal */}
-      {showDetailModal && (
+      {showDetailModal && (myInteraction || allInteractions[0]) && (
         <InteractionDetailModal
           interaction={myInteraction || allInteractions[0]}
           thing={thing}
@@ -417,6 +445,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
             setShowDetailModal(false);
             onEdit(myInteraction, thing);
           } : undefined}
+          onUserClick={onUserClick}
         />
       )}
     </div>

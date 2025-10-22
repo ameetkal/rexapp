@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Thing, UserThingInteraction } from '@/lib/types';
 import { createUserThingInteraction, createRecommendation } from '@/lib/firestore';
@@ -17,6 +17,7 @@ interface InteractionDetailModalProps {
   isOwnInteraction: boolean;
   onClose: () => void;
   onEdit?: () => void; // Only available for own interactions
+  onUserClick?: (userId: string) => void; // For navigating to user profiles
 }
 
 export default function InteractionDetailModal({
@@ -25,19 +26,31 @@ export default function InteractionDetailModal({
   myInteraction,
   isOwnInteraction,
   onClose,
-  onEdit
+  onEdit,
+  onUserClick
 }: InteractionDetailModalProps) {
   const [loading, setLoading] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [tempRating, setTempRating] = useState(0);
   const [experiencedWithNames, setExperiencedWithNames] = useState<string[]>([]);
+  const [displayUserName, setDisplayUserName] = useState<string>('');
   
   const { user, userProfile } = useAuthStore();
   const { addUserInteraction } = useAppStore();
   
-  // Load names of tagged users
-  useState(() => {
-    const loadTaggedUserNames = async () => {
+  // Load user name if missing and tagged user names
+  useEffect(() => {
+    if (!interaction) return;
+    const loadUserData = async () => {
+      // Load display user name if missing
+      if (!interaction.userName && interaction.userId) {
+        const profile = await getUserProfile(interaction.userId);
+        setDisplayUserName(profile?.name || 'Unknown User');
+      } else {
+        setDisplayUserName(interaction.userName);
+      }
+      
+      // Load names of tagged users
       if (!interaction.experiencedWith || interaction.experiencedWith.length === 0) {
         return;
       }
@@ -50,8 +63,8 @@ export default function InteractionDetailModal({
       );
       setExperiencedWithNames(names);
     };
-    loadTaggedUserNames();
-  });
+    loadUserData();
+  }, [interaction]);
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
@@ -156,6 +169,11 @@ export default function InteractionDetailModal({
     }
   };
 
+  // Safety check - don't render if interaction is undefined
+  if (!interaction) {
+    return null;
+  }
+
   return (
     <>
       {/* Main Detail Modal */}
@@ -186,163 +204,285 @@ export default function InteractionDetailModal({
 
           {/* Content */}
           <div className="px-6 py-6 space-y-6">
-            {/* Thing Preview (if has image) */}
-            {thing.image && (
-              <div className="relative w-full h-64 rounded-lg overflow-hidden">
-                <Image
-                  src={thing.image}
-                  alt={thing.title}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-            )}
-
-            {/* Thing Description */}
-            {thing.description && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">About</h3>
-                <p className="text-gray-700 leading-relaxed">{thing.description}</p>
-              </div>
-            )}
-
-            {/* Thing Metadata */}
-            {thing.metadata && Object.keys(thing.metadata).length > 0 && (
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Details</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {thing.metadata.author && (
+            {/* Compact Thing Info Card */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-start space-x-4">
+                {/* Small Thumbnail */}
+                {thing.image && (
+                  <div className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                    <Image
+                      src={thing.image}
+                      alt={thing.title}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                )}
+                
+                    {/* Thing Details */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-4 text-sm text-gray-600 mb-2">
+                        {thing.metadata?.year && (
+                          <span>{thing.metadata.year}</span>
+                        )}
+                        {thing.metadata?.author && (
+                          <span>by {thing.metadata.author}</span>
+                        )}
+                        {thing.metadata?.director && (
+                          <span>dir. {thing.metadata.director}</span>
+                        )}
+                        {thing.metadata?.type && (
+                          <span className="capitalize">{thing.metadata.type === 'tv' ? 'TV Show' : thing.metadata.type}</span>
+                        )}
+                        {/* Show clickable city/state for places */}
+                        {thing.metadata?.address && (
+                          <a 
+                            href={`https://maps.google.com/maps?q=${encodeURIComponent(thing.metadata.address)}`}
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {(() => {
+                              // Extract city and state from full address
+                              const address = thing.metadata.address;
+                              
+                              // Split by commas and clean up
+                              const parts = address.split(',').map(part => part.trim());
+                              
+                              if (parts.length >= 2) {
+                                // Try to find city and state pattern
+                                // Look for the last two parts that aren't just numbers or countries
+                                let city = '';
+                                let state = '';
+                                
+                                for (let i = parts.length - 1; i >= 0; i--) {
+                                  const part = parts[i];
+                                  
+                                  // Skip if it's just numbers or contains ZIP code pattern (5 digits or 5-4 digits)
+                                  if (/^\d+$/.test(part) || /^\d{5}(-\d{4})?$/.test(part)) continue;
+                                  
+                                  // Skip if it's a country name (common patterns)
+                                  if (/^(USA|United States|US)$/i.test(part)) continue;
+                                  
+                                  // Clean the part by removing ZIP codes if they're attached
+                                  const cleanPart = part.replace(/\s+\d{5}(-\d{4})?$/, '').trim();
+                                  
+                                  // Skip if after cleaning, it's empty or just numbers
+                                  if (!cleanPart || /^\d+$/.test(cleanPart)) continue;
+                                  
+                                  // If we don't have state yet, this could be it
+                                  if (!state) {
+                                    state = cleanPart;
+                                  } else if (!city) {
+                                    // This is likely the city
+                                    city = cleanPart;
+                                    break;
+                                  }
+                                }
+                                
+                                if (city && state) {
+                                  return `${city}, ${state}`;
+                                }
+                              }
+                              
+                              // Fallback to full address if pattern doesn't match
+                              return address;
+                            })()}
+                          </a>
+                        )}
+                        {/* Show place type for places */}
+                        {thing.metadata?.placeType && (
+                          <span className="capitalize text-gray-600">
+                            {thing.metadata.placeType.replace('_', ' ')}
+                          </span>
+                        )}
+                        {/* Show Google rating for places */}
+                        {thing.metadata?.rating && (
+                          <span className="text-gray-600">
+                            ⭐ {thing.metadata.rating}/5
+                          </span>
+                        )}
+                        {/* Show price level for places */}
+                        {thing.metadata?.priceLevel && (
+                          <span className="text-green-600 font-medium">
+                            {'$'.repeat(thing.metadata.priceLevel)}
+                          </span>
+                        )}
+                      </div>
+                  
+                  {/* Description with expand functionality */}
+                  {thing.description && (
                     <div>
-                      <span className="text-gray-500">Author:</span>
-                      <span className="ml-2 text-gray-900">{thing.metadata.author}</span>
-                    </div>
-                  )}
-                  {thing.metadata.director && (
-                    <div>
-                      <span className="text-gray-500">Director:</span>
-                      <span className="ml-2 text-gray-900">{thing.metadata.director}</span>
-                    </div>
-                  )}
-                  {thing.metadata.year && (
-                    <div>
-                      <span className="text-gray-500">Year:</span>
-                      <span className="ml-2 text-gray-900">{thing.metadata.year}</span>
-                    </div>
-                  )}
-                  {thing.metadata.type && (
-                    <div>
-                      <span className="text-gray-500">Type:</span>
-                      <span className="ml-2 text-gray-900">{thing.metadata.type === 'tv' ? 'TV Show' : 'Movie'}</span>
-                    </div>
-                  )}
-                  {thing.metadata.address && (
-                    <div className="col-span-2">
-                      <span className="text-gray-500">Address:</span>
-                      <span className="ml-2 text-gray-900">{thing.metadata.address}</span>
-                    </div>
-                  )}
-                  {thing.metadata.rating && (
-                    <div>
-                      <span className="text-gray-500">Google Rating:</span>
-                      <span className="ml-2 text-gray-900">⭐ {thing.metadata.rating}/5</span>
-                    </div>
-                  )}
-                  {thing.metadata.priceLevel && (
-                    <div>
-                      <span className="text-gray-500">Price:</span>
-                      <span className="ml-2 text-green-600 font-medium">{'$'.repeat(thing.metadata.priceLevel)}</span>
+                      {thing.description.length > 100 ? (
+                        <details className="group">
+                          <summary className="text-sm text-gray-700 cursor-pointer hover:text-gray-900 list-none">
+                            <span className="line-clamp-2 group-open:hidden">
+                              {thing.description}
+                            </span>
+                            <span className="hidden group-open:block">
+                              {thing.description}
+                            </span>
+                            <span className="text-blue-600 text-xs ml-1 group-open:hidden">...read more</span>
+                          </summary>
+                        </details>
+                      ) : (
+                        <p className="text-sm text-gray-700">
+                          {thing.description}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
-            )}
+              
+              {/* Expandable Details Section - Only show if there's extra content */}
+              {(() => {
+                const hasExtraContent = thing.metadata && (
+                  thing.metadata.genre || 
+                  thing.metadata.runtime || 
+                  thing.metadata.episodes || 
+                  thing.metadata.seasons || 
+                  thing.metadata.website ||
+                  thing.metadata.phoneNumber
+                );
+                
+                return hasExtraContent && (
+                  <details className="mt-3">
+                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 flex items-center">
+                      <span>View all details</span>
+                      <svg className="w-3 h-3 ml-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </summary>
+                    <div className="mt-2 pt-3 border-t border-gray-200">
+                      <div className="grid grid-cols-1 gap-2 text-xs">
+                        {thing.metadata.genre && (
+                          <div className="flex items-start space-x-2">
+                            <span className="text-gray-500">Genre:</span>
+                            <span className="text-gray-900">{Array.isArray(thing.metadata.genre) ? thing.metadata.genre.join(', ') : thing.metadata.genre}</span>
+                          </div>
+                        )}
+                        {thing.metadata.runtime && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-500">Runtime:</span>
+                            <span className="text-gray-900">{thing.metadata.runtime}</span>
+                          </div>
+                        )}
+                        {thing.metadata.episodes && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-500">Episodes:</span>
+                            <span className="text-gray-900">{thing.metadata.episodes}</span>
+                          </div>
+                        )}
+                        {thing.metadata.seasons && (
+                          <div className="flex items-center space-x-2">
+                            <span className="text-gray-500">Seasons:</span>
+                            <span className="text-gray-900">{thing.metadata.seasons}</span>
+                          </div>
+                        )}
+                      {thing.metadata.website && (
+                        <div className="flex items-start space-x-2">
+                          <span className="text-gray-500">Website:</span>
+                          <a href={thing.metadata.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">
+                            {thing.metadata.website}
+                          </a>
+                        </div>
+                      )}
+                      {thing.metadata.phoneNumber && (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-gray-500">📞</span>
+                          <span className="text-gray-900">{thing.metadata.phoneNumber}</span>
+                        </div>
+                      )}
+                      </div>
+                    </div>
+                  </details>
+                );
+              })()}
+            </div>
 
             {/* Divider */}
             <div className="border-t border-gray-200"></div>
 
-            {/* User's State Badge */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">
-                {isOwnInteraction ? 'Your Status' : `${interaction.userName}'s Status`}
-              </h3>
-              <div className="inline-flex items-center px-3 py-2 rounded-full text-sm font-medium bg-blue-50 text-blue-700">
-                {interaction.state === 'bucketList' && <><BookmarkIcon className="h-4 w-4 mr-1" /> Bucket List</>}
-                {interaction.state === 'inProgress' && <>🏃 In Progress</>}
-                {interaction.state === 'completed' && <><CheckCircleIcon className="h-4 w-4 mr-1" /> Completed</>}
-              </div>
-            </div>
-
-            {/* User's Rating */}
-            {interaction.rating && interaction.rating > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
-                  {isOwnInteraction ? 'Your Rating' : 'Rating'}
-                </h3>
-                <div className="flex items-center space-x-1">
-                  {[...Array(5)].map((_, i) => (
-                    <span
-                      key={i}
-                      className={`text-2xl ${
-                        i < interaction.rating! ? 'text-yellow-400' : 'text-gray-300'
-                      }`}
+            {/* User's Review Card - All reviewer content integrated */}
+            {(interaction.content || interaction.rating || interaction.photos || experiencedWithNames.length > 0) && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                {/* Review Header */}
+                <div className="flex items-center justify-between mb-3">
+                  {isOwnInteraction ? (
+                    <span className="text-sm font-medium text-gray-900">You</span>
+                  ) : (
+                    <button
+                      onClick={() => onUserClick?.(interaction.userId)}
+                      className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
                     >
-                      ★
-                    </span>
-                  ))}
-                  <span className="ml-3 text-lg font-medium text-gray-700">
-                    {interaction.rating}/5
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* User's Comments */}
-            {interaction.content && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
-                  {isOwnInteraction ? 'Your Comments' : 'Comments'}
-                </h3>
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{interaction.content}</p>
-              </div>
-            )}
-
-            {/* Experienced With */}
-            {experiencedWithNames.length > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
-                  👥 Experienced with
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {experiencedWithNames.map((name, index) => (
-                    <span
-                      key={index}
-                      className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700"
-                    >
-                      {name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* User's Photos */}
-            {interaction.photos && interaction.photos.length > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Photos</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {interaction.photos.map((photoUrl, index) => (
-                    <div key={index} className="relative w-full h-48 rounded-lg overflow-hidden">
-                      <Image
-                        src={photoUrl}
-                        alt={`Photo ${index + 1}`}
-                        fill
-                        className="object-cover"
-                      />
+                      {displayUserName}
+                    </button>
+                  )}
+                  {interaction.rating && interaction.rating > 0 && (
+                    <div className="flex items-center space-x-1">
+                      {[...Array(5)].map((_, i) => (
+                        <span
+                          key={i}
+                          className={`text-sm ${
+                            i < interaction.rating! ? 'text-yellow-400' : 'text-gray-300'
+                          }`}
+                        >
+                          ★
+                        </span>
+                      ))}
+                      <span className="ml-1 text-sm font-medium text-gray-700">
+                        {interaction.rating}/5
+                      </span>
                     </div>
-                  ))}
+                  )}
                 </div>
+
+                {/* Review Content */}
+                {interaction.content && (
+                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap mb-3">{interaction.content}</p>
+                )}
+
+                {/* Photo Thumbnails */}
+                {interaction.photos && interaction.photos.length > 0 && (
+                  <div className="flex space-x-2 mb-3">
+                    {interaction.photos.map((photoUrl, index) => (
+                      <div 
+                        key={index} 
+                        className="relative w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => {
+                          // TODO: Open photo in full size modal
+                          window.open(photoUrl, '_blank');
+                        }}
+                      >
+                        <Image
+                          src={photoUrl}
+                          alt={`Photo ${index + 1}`}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Experienced With Tags */}
+                {experiencedWithNames.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    <span className="text-xs text-gray-500 mr-2">👥 Experienced with:</span>
+                    {experiencedWithNames.map((name, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700"
+                      >
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
+
 
             {/* Private Notes (only show for own interactions) */}
             {isOwnInteraction && interaction.notes && (
@@ -356,32 +496,17 @@ export default function InteractionDetailModal({
           {/* Footer Actions */}
           <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
             {isOwnInteraction ? (
-              <>
-                <button
-                  onClick={onClose}
-                  className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    onClose();
-                    onEdit?.();
-                  }}
-                  className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Edit
-                </button>
-              </>
+              <button
+                onClick={() => {
+                  onClose();
+                  onEdit?.();
+                }}
+                className="w-full py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Edit
+              </button>
             ) : (
               <>
-                <button
-                  onClick={onClose}
-                  className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Close
-                </button>
-                
                 {/* Show appropriate actions based on user's current state */}
                 {!hasInteraction ? (
                   <>
@@ -424,13 +549,16 @@ export default function InteractionDetailModal({
                   </>
                 ) : isCompleted ? (
                   <>
-                    {/* Already completed - show it's done */}
+                    {/* Already completed - show edit button */}
                     <button
-                      disabled
-                      className="flex-1 py-3 px-4 bg-green-100 text-green-700 rounded-lg cursor-not-allowed"
+                      onClick={() => {
+                        onClose();
+                        onEdit?.();
+                      }}
+                      className="w-full py-3 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                     >
                       <CheckCircleIcon className="h-5 w-5 inline mr-2 fill-current" />
-                      Completed
+                      Edit
                     </button>
                   </>
                 ) : null}

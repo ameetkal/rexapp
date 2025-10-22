@@ -170,10 +170,10 @@ export default function PostScreen({ editMode, onEditComplete }: PostScreenProps
                 {/* Places Search Option */}
                 <button
                   onClick={handlePlacesSearch}
-                  className="w-full p-6 border-2 border-green-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-colors text-left"
+                  className="w-full p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left bg-white"
                 >
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
                       <MapPinIcon className="h-6 w-6 text-green-600" />
                     </div>
                     <div className="flex-1">
@@ -187,10 +187,10 @@ export default function PostScreen({ editMode, onEditComplete }: PostScreenProps
                 {/* Book Search Option */}
                 <button
                   onClick={handleBookSearch}
-                  className="w-full p-6 border-2 border-blue-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="w-full p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left bg-white"
                 >
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                       <BookOpenIcon className="h-6 w-6 text-blue-600" />
                     </div>
                     <div className="flex-1">
@@ -204,10 +204,10 @@ export default function PostScreen({ editMode, onEditComplete }: PostScreenProps
                 {/* Movie Search Option */}
                 <button
                   onClick={handleMovieSearch}
-                  className="w-full p-6 border-2 border-purple-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors text-left"
+                  className="w-full p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left bg-white"
                 >
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
                       <FilmIcon className="h-6 w-6 text-purple-600" />
                     </div>
                     <div className="flex-1">
@@ -221,10 +221,10 @@ export default function PostScreen({ editMode, onEditComplete }: PostScreenProps
                 {/* Custom Post Option */}
                 <button
                   onClick={handleCustomForm}
-                  className="w-full p-6 border-2 border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left"
+                  className="w-full p-6 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left bg-white"
                 >
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center">
                       <PlusIcon className="h-6 w-6 text-gray-600" />
                     </div>
                     <div className="flex-1">

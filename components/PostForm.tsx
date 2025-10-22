@@ -319,7 +319,8 @@ export default function PostForm({
           userProfile.username,
           result.thingId,
           itemTitle,
-          result.interactionId
+          result.interactionId,
+          recommendedByValue // Pass the recipient's name
         );
         
         setInviteData({
@@ -391,7 +392,7 @@ export default function PostForm({
 
         {/* Item Preview (Structured or Edit Mode) */}
         {(isStructured || isEditMode) && (
-          <div className={`mb-6 p-4 border rounded-lg ${isEditMode ? 'bg-gray-50 border-gray-300' : 'bg-blue-50 border-blue-200'}`}>
+          <div className={`mb-6 p-4 border rounded-lg ${isEditMode ? 'bg-gray-50 border-gray-200' : 'bg-blue-50 border-blue-200'}`}>
             {isEditMode && <p className="text-xs text-gray-500 mb-2">📌 Editing</p>}
             <div className="flex space-x-4">
               <div className="flex-shrink-0">
@@ -472,7 +473,7 @@ export default function PostForm({
                   placeholder="What's the title?"
                   required
                   maxLength={100}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                 />
                 <div className="text-right text-xs text-gray-500 mt-1">
                   {title.length}/100 characters
@@ -492,7 +493,7 @@ export default function PostForm({
                       className={`p-3 border rounded-lg text-left transition-colors ${
                         category === cat
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700'
                       }`}
                     >
                       <div className="font-medium capitalize">{cat}</div>
@@ -512,7 +513,7 @@ export default function PostForm({
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   status === 'want_to_try'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700'
                 }`}
               >
                 <div className="font-medium">📝 To Do</div>
@@ -523,7 +524,7 @@ export default function PostForm({
                 className={`p-4 border rounded-lg text-left transition-colors ${
                   status === 'completed'
                     ? 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-gray-700'
                 }`}
               >
                 <div className="font-medium">✅ Completed</div>
@@ -575,7 +576,7 @@ export default function PostForm({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Share your thoughts..."
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-white"
               rows={3}
             />
           </div>
@@ -606,7 +607,7 @@ export default function PostForm({
                 type="checkbox"
                 checked={postToFeed}
                 onChange={(e) => setPostToFeed(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-200 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-700">
                 Share to feed
@@ -651,7 +652,7 @@ export default function PostForm({
                   
                   {/* Upload Button */}
                   {(photos.length + existingPhotoUrls.length) < MAX_PHOTOS && (
-                    <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                    <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                       <input
                         type="file"
                         accept="image/*"
@@ -738,7 +739,7 @@ export default function PostForm({
             <button
               type="button"
               onClick={onBack}
-              className="flex-1 py-3 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 py-3 px-4 border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Back
             </button>
@@ -767,8 +768,11 @@ export default function PostForm({
               <h3 className="text-lg font-bold text-gray-900 mb-2">
                 Invite {inviteData.recommenderName}?
               </h3>
-              <p className="text-gray-600 text-sm">
+              <p className="text-gray-600 text-sm mb-2">
                 Let {inviteData.recommenderName} know their recommendation for &ldquo;{inviteData.thingTitle}&rdquo; is being shared on Rex!
+              </p>
+              <p className="text-gray-500 text-xs">
+                We&apos;ll open your messaging app with the invite message ready to send.
               </p>
             </div>
             
@@ -777,7 +781,7 @@ export default function PostForm({
                 onClick={handleSendInvite}
                 className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
               >
-                Send Text Invite
+                Send Invite
               </button>
               <button
                 onClick={handleSkipInvite}

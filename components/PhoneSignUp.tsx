@@ -63,6 +63,10 @@ export default function PhoneSignUp({ onSignUpComplete }: PhoneSignUpProps) {
         const userId = result.createdUserId;
         console.log('✅ Phone verified! User ID:', userId);
         
+        // Store phone number in localStorage for profile completion
+        localStorage.setItem('verifiedPhoneNumber', phoneNumber);
+        console.log('💾 Stored verified phone number:', phoneNumber);
+        
         // Call parent to show profile completion step
         onSignUpComplete(userId!, phoneNumber);
       } else {
@@ -130,6 +134,9 @@ export default function PhoneSignUp({ onSignUpComplete }: PhoneSignUpProps) {
               Include country code (e.g., +1 for US)
             </p>
           </div>
+
+          {/* Clerk CAPTCHA element */}
+          <div id="clerk-captcha"></div>
 
           <button
             type="submit"

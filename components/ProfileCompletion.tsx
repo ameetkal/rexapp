@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { useSignUp } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { checkUsernameAvailability } from '@/lib/firestore';
 
 interface ProfileCompletionProps {
   phoneNumber: string;
-  onBack?: () => void;
+  invitationData?: {
+    inviterName: string;
+    thingTitle: string;
+    recipientName?: string;
+  } | null;
 }
 
-export default function ProfileCompletion({ phoneNumber, onBack }: ProfileCompletionProps) {
-  const { isLoaded, signUp, setActive } = useSignUp();
-  const router = useRouter();
+export default function ProfileCompletion({ phoneNumber, invitationData }: ProfileCompletionProps) {
+  const { isLoaded } = useSignUp();
   
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
@@ -21,6 +23,26 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
   const [error, setError] = useState('');
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+
+  // Pre-fill name and generate username from invitation data
+  useEffect(() => {
+    if (invitationData) {
+      console.log('🔍 ProfileCompletion invitationData:', invitationData);
+      // Pre-fill the name with the recipient's name (if available)
+      if (invitationData.recipientName) {
+        console.log('✅ Pre-filling name with recipientName:', invitationData.recipientName);
+        setName(invitationData.recipientName);
+      } else {
+        console.log('❌ No recipientName found in invitationData');
+      }
+      
+      // Generate a username from the inviter's name (as fallback)
+      const firstName = invitationData.inviterName.split(' ')[0].toLowerCase();
+      const randomSuffix = Math.floor(Math.random() * 10000);
+      const generatedUsername = `${firstName.replace(/[^a-z0-9]/g, '')}${randomSuffix}`;
+      setUsername(generatedUsername);
+    }
+  }, [invitationData]);
 
   // Check username availability as user types
   useEffect(() => {
@@ -74,28 +96,27 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
     setError('');
 
     try {
-      // Update the sign-up with additional information
-      const result = await signUp.update({
-        firstName: name.trim(),
-        emailAddress: email.trim(),
+      // Store profile data and redirect
+      const profileData = {
+        name: name.trim(),
         username: username.trim().toLowerCase(),
-      });
-
-      if (result.status === 'complete' && result.createdSessionId) {
-        // Set the active session
-        await setActive({ session: result.createdSessionId });
-        console.log('✅ Sign-up complete!');
-        
-        // ClerkAuthProvider will handle Firestore user creation
-        router.push('/');
-      } else {
-        console.log('Sign-up status:', result.status);
-        setError('Sign-up incomplete. Please try again.');
-      }
+        email: email.trim(),
+      };
+      
+      localStorage.setItem('pendingProfileData', JSON.stringify(profileData));
+      
+      // Clean up phone number from localStorage
+      localStorage.removeItem('verifiedPhoneNumber');
+      
+      // Add a small delay to show the success message
+      setTimeout(() => {
+        // Redirect to root - ClerkAuthProvider will handle Firestore user creation
+        window.location.href = '/';
+      }, 1000);
+      
     } catch (err) {
       console.error('Error completing sign-up:', err);
-      const clerkError = err as { errors?: Array<{ message: string }> };
-      setError(clerkError.errors?.[0]?.message || 'Failed to complete sign-up. Please try again.');
+      setError('Failed to complete sign-up. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -111,18 +132,8 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
 
   return (
     <div className="space-y-6">
-      <div className="text-center relative">
-        {onBack && (
-          <button
-            onClick={onBack}
-            className="absolute left-0 top-0 text-gray-600 hover:text-gray-900"
-            type="button"
-          >
-            ← Back
-          </button>
-        )}
+      <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Profile</h2>
-        <p className="text-gray-600">Tell us a bit about yourself</p>
         <p className="text-sm text-gray-500 mt-1">Phone: {phoneNumber} ✓</p>
       </div>
 
@@ -210,7 +221,7 @@ export default function ProfileCompletion({ phoneNumber, onBack }: ProfileComple
           disabled={loading || !name.trim() || !username.trim() || !email.trim() || usernameAvailable === false}
           className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
         >
-          {loading ? 'Creating Account...' : 'Complete Sign Up'}
+          {loading ? 'Setting up your account...' : 'Complete Sign Up'}
         </button>
       </form>
     </div>

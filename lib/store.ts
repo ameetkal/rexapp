@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { User, Thing, UserThingInteraction, PostV2, Recommendation } from './types';
+import { User, Thing, UserThingInteraction, Recommendation } from './types';
 
 // Simple auth user type (works with both Firebase and Clerk)
 export interface AuthUser {
@@ -16,16 +16,9 @@ interface AuthState {
 }
 
 interface AppState {
-  // DEPRECATED: postsV2 no longer used - replaced by userInteractions with visibility field
-  postsV2: PostV2[];
-  
   things: Thing[];
   userInteractions: UserThingInteraction[];
   recommendations: Recommendation[];
-  
-  // DEPRECATED: postsV2 setters no longer used
-  setPostsV2: (posts: PostV2[]) => void;
-  addPostV2: (post: PostV2) => void;
   
   setThings: (things: Thing[]) => void;
   setUserInteractions: (interactions: UserThingInteraction[]) => void;
@@ -50,20 +43,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   loading: true,
   setUser: (user) => set({ user }),
   setUserProfile: (userProfile) => set({ userProfile }),
-  setLoading: (loading) => set({ loading }),
+  setLoading: (loading) => {
+    console.log('🔄 Zustand setLoading called with:', loading);
+    set({ loading });
+  },
 }));
 
 export const useAppStore = create<AppState>((set, get) => ({
-  postsV2: [],
   things: [],
   userInteractions: [],
   recommendations: [],
   
-  setPostsV2: (postsV2) => set({ postsV2 }),
   setThings: (things) => set({ things }),
   setUserInteractions: (userInteractions) => set({ userInteractions }),
   setRecommendations: (recommendations) => set({ recommendations }),
-  addPostV2: (post) => set((state) => ({ postsV2: [post, ...state.postsV2] })),
   addThing: (thing) => set((state) => ({ things: [thing, ...state.things] })),
   addUserInteraction: (interaction) => set((state) => ({ userInteractions: [interaction, ...state.userInteractions] })),
   addRecommendation: (recommendation) => set((state) => ({ recommendations: [recommendation, ...state.recommendations] })),

@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { universalSearch, followUser, unfollowUser, getFeedInteractions, getFeedThings, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
-import { getUserProfile } from '@/lib/auth';
-import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
-import PostCardV2 from './PostCardV2';
+import { followUser, unfollowUser } from '@/lib/firestore';
+import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingFeedCard from './ThingFeedCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
+import { useFeedData, useSearch } from '@/lib/hooks';
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
@@ -16,130 +15,97 @@ interface FeedScreenProps {
 }
 
 export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEditInteraction }: FeedScreenProps = {}) {
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<{ users: User[] }>({ users: [] });
-  const [searching, setSearching] = useState(false);
-  const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
-  
-  const [feedInteractions, setFeedInteractions] = useState<UserThingInteraction[]>([]);
-  const [feedThings, setFeedThings] = useState<FeedThing[]>([]);
-  const [things, setThings] = useState<Thing[]>([]);
-  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
-  const [avgRatings, setAvgRatings] = useState<Map<string, number>>(new Map());
-  const [usersMap, setUsersMap] = useState<Map<string, User>>(new Map());
-  const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between thing-centric and interaction-centric
+  const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
   
   const { user, userProfile, setUserProfile } = useAuthStore();
+  
+  // Use our new custom hooks for clean data access
+  const { things, interactions, loading: feedLoading } = useFeedData();
+  const { searchResults, loading: searchLoading, search } = useSearch();
 
-  const loadFeedPosts = useCallback(async () => {
-    if (!userProfile || !user) return;
-    
-    try {
-      if (useThingFeed) {
-        // Load thing-centric feed
-        console.log('📱 Loading thing-centric feed...');
-        const things = await getFeedThings(userProfile.following, user.uid);
-        setFeedThings(things);
-      } else {
-        // Load interaction-centric feed (old way)
-        console.log('📱 Loading interaction-centric feed...');
-        const interactions = await getFeedInteractions(userProfile.following, user.uid);
-        setFeedInteractions(interactions);
+  // Convert feed data to FeedThing format for compatibility
+  const feedThings: FeedThing[] = things
+    .filter((thing, index, self) => {
+      // Remove duplicates based on thing.id
+      const isDuplicate = index !== self.findIndex(t => t.id === thing.id);
+      // Silently filter out duplicates
+      return !isDuplicate;
+    })
+    .map(thing => {
+      const thingInteractions = interactions.filter(i => i.thingId === thing.id);
+      const myInteraction = thingInteractions.find(i => i.userId === user?.uid);
+      
+      // Calculate average rating
+      const completedWithRatings = thingInteractions.filter(i => i.state === 'completed' && i.rating && i.rating > 0);
+      const avgRating = completedWithRatings.length > 0 
+        ? completedWithRatings.reduce((sum, i) => sum + (i.rating || 0), 0) / completedWithRatings.length
+        : null;
+      
+      // Safe conversion: handle both Timestamp and Date objects
+      const getDate = (dateObj: Date | { seconds: number; nanoseconds?: number } | { toDate: () => Date } | null): Date | null => {
+        if (!dateObj) return null;
+        if (dateObj instanceof Date) return dateObj;
         
-        // Load users data for interactions (to get userNames)
-        const uniqueUserIds = [...new Set(interactions.map(int => int.userId))];
-        const usersData = new Map<string, User>();
-        for (const userId of uniqueUserIds) {
-          const userProfile = await getUserProfile(userId);
-          if (userProfile) {
-            usersData.set(userId, userProfile);
-          }
+        // Type guard for objects with toDate method
+        if ('toDate' in dateObj && typeof dateObj.toDate === 'function') {
+          return dateObj.toDate();
         }
-        setUsersMap(usersData);
         
-        // Load things data for interactions
-        const uniqueThingIds = [...new Set(interactions.map(int => int.thingId))];
-        const thingsData: Thing[] = [];
-        for (const thingId of uniqueThingIds) {
-          const thing = await getThing(thingId);
-          if (thing) {
-            thingsData.push(thing);
-          }
+        // Handle plain timestamp objects with seconds/nanoseconds
+        if ('seconds' in dateObj && typeof dateObj.seconds === 'number') {
+          return new Date(dateObj.seconds * 1000 + (dateObj.nanoseconds || 0) / 1000000);
         }
-        setThings(thingsData);
         
-        // Load current user's interactions for these things (for button highlighting)
-        console.log('👤 Loading your interactions for button states...');
-        const myInteractionsData = await getUserThingInteractions(user.uid);
-        const myInteractionsMap = new Map<string, UserThingInteraction>();
-        myInteractionsData.forEach(int => {
-          myInteractionsMap.set(int.thingId, int);
-        });
-        setMyInteractions(myInteractionsMap);
+        return null;
+      };
+      
+      // Find most recent interaction creation (when someone first interacted with this thing)
+      const mostRecentUpdate = thingInteractions.reduce((latest, i) => {
+        // Use createdAt to show when the interaction was first created
+        const interactionCreatedAt = i.createdAt;
         
-        // Load average ratings for all things in parallel
-        console.log('📊 Loading average ratings...');
-        const avgRatingsResults = await Promise.all(
-          uniqueThingIds.map(thingId => getThingAverageRating(thingId))
-        );
-        
-        const avgRatingsMap = new Map<string, number>();
-        uniqueThingIds.forEach((thingId, index) => {
-          const avgRating = avgRatingsResults[index];
-          if (avgRating !== null) {
-            avgRatingsMap.set(thingId, avgRating);
-          }
-        });
-        setAvgRatings(avgRatingsMap);
-        
-        console.log(`✅ Loaded ${interactions.length} interactions with ${avgRatingsMap.size} avg ratings`);
-      }
-    } catch (error) {
-      console.error('Error loading feed:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [userProfile, user, useThingFeed]);
+        const currentDate = getDate(interactionCreatedAt);
+        if (!latest) return currentDate;
+        if (!currentDate) return latest;
+        return currentDate > latest ? currentDate : latest;
+      }, null as Date | null);
+      
+      // If no valid dates found, use thing creation date as fallback
+      const finalMostRecentUpdate = mostRecentUpdate || (thing.createdAt ? 
+        getDate(thing.createdAt) : null);
+      
+      return {
+        thing,
+        interactions: thingInteractions,
+        myInteraction,
+        avgRating,
+        mostRecentUpdate: finalMostRecentUpdate
+      };
+    })
+    .sort((a, b) => {
+      // Sort by most recent activity (newest first)
+      const getTimestamp = (timestamp: Date | null): number => {
+        if (!timestamp) return 0;
+        return timestamp.getTime();
+      };
+      
+      const aTime = getTimestamp(a.mostRecentUpdate);
+      const bTime = getTimestamp(b.mostRecentUpdate);
+      
+      // Sort by most recent activity (newest first)
+      return bTime - aTime;
+    });
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await loadFeedPosts();
-    setRefreshing(false);
-  };
-
-  const performSearch = async (term: string) => {
-    if (!term.trim() || !user) {
-      setSearchResults({ users: [] });
-      setShowingSearchResults(false);
-      return;
+  const handleSearch = useCallback(() => {
+    if (searchTerm.trim()) {
+      search(searchTerm);
     }
-    
-    setSearching(true);
-    setShowingSearchResults(true);
-    try {
-      const results = await universalSearch(term);
-      // Filter out current user from user results
-      setSearchResults({
-        users: results.users.filter(u => u.id !== user.uid)
-      });
-    } catch (error) {
-      console.error('Error searching:', error);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleSearch = () => {
-    performSearch(searchTerm);
-  };
+  }, [searchTerm, search]);
 
   const clearSearch = () => {
     setSearchTerm('');
-    setSearchResults({ users: [] });
-    setShowingSearchResults(false);
   };
 
   const handleFollow = async (targetUserId: string) => {
@@ -186,41 +152,9 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     return userProfile?.following.includes(userId) || false;
   };
 
+  const showingSearchResults = searchResults.users.length > 0;
 
-  useEffect(() => {
-    if (userProfile && user) {
-      loadFeedPosts();
-    }
-  }, [userProfile, user, loadFeedPosts]);
-
-  // Refresh feed when component becomes visible (e.g., when switching from Add tab back to Feed)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && userProfile && user) {
-        // Refresh feed when tab becomes visible
-        loadFeedPosts();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [userProfile, user, loadFeedPosts]);
-
-  // Debounced live search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (searchTerm.trim()) {
-        performSearch(searchTerm);
-      } else {
-        setSearchResults({ users: [] });
-        setShowingSearchResults(false);
-      }
-    }, 300); // 300ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, user]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (loading) {
+  if (feedLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
@@ -243,10 +177,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search people, posts, places..."
-              className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+              className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white"
             />
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            {searching && (
+            {searchLoading && (
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
               </div>
@@ -254,10 +188,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           </div>
           <button
             onClick={handleSearch}
-            disabled={searching || !searchTerm.trim()}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            disabled={searchLoading || !searchTerm.trim()}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 font-medium"
           >
-            {searching ? 'Searching...' : 'Search'}
+            {searchLoading ? 'Searching...' : 'Search'}
           </button>
         </div>
         
@@ -337,7 +271,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
             )}
 
             {/* No Results */}
-            {searchResults.users.length === 0 && !searching && (
+            {searchResults.users.length === 0 && !searchLoading && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -352,45 +286,33 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         ) : (
           /* Regular Feed */
           <>
-            {/* Feed Header with Toggle and Refresh */}
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-900">Your Feed</h2>
-              <div className="flex items-center space-x-3">
-                {/* Feed Mode Toggle */}
-                <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                  <button
-                    onClick={() => setUseThingFeed(true)}
-                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                      useThingFeed 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Things
-                  </button>
-                  <button
-                    onClick={() => setUseThingFeed(false)}
-                    className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                      !useThingFeed 
-                        ? 'bg-white text-blue-600 shadow-sm' 
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Posts
-                  </button>
-                </div>
-                
+            {/* Feed Mode Toggle Header */}
+            <div className="flex items-center justify-start mb-6">
+              <div className="flex items-center bg-gray-100 rounded-lg p-1">
                 <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="text-blue-600 hover:text-blue-700 font-medium text-sm disabled:opacity-50"
+                  onClick={() => setUseThingFeed(true)}
+                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                    useThingFeed 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
                 >
-                  {refreshing ? 'Refreshing...' : 'Refresh'}
+                  Things
+                </button>
+                <button
+                  onClick={() => setUseThingFeed(false)}
+                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                    !useThingFeed 
+                      ? 'bg-white text-blue-600 shadow-sm' 
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Map
                 </button>
               </div>
             </div>
 
-            {(useThingFeed ? feedThings.length === 0 : feedInteractions.length === 0) ? (
+            {useThingFeed && feedThings.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -420,39 +342,17 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                 ))}
               </div>
             ) : (
-              /* Interaction-Centric Feed (Old) */
-              <div className="space-y-4">
-                {feedInteractions.map((interaction) => {
-                  const thing = things.find(t => t.id === interaction.thingId);
-                  
-                  if (!thing) {
-                    console.warn('Thing not found for interaction:', interaction.id, 'thingId:', interaction.thingId);
-                    return null;
-                  }
-                  
-                  const isOwnInteraction = user?.uid === interaction.userId;
-                  const myInteraction = myInteractions.get(interaction.thingId);
-                  const interactionUser = usersMap.get(interaction.userId);
-                  
-                  // Populate userName from loaded user data
-                  const interactionWithUser = {
-                    ...interaction,
-                    userName: interactionUser?.username || interactionUser?.name || interaction.userName || 'User'
-                  };
-                  
-                  return (
-                    <PostCardV2
-                      key={interaction.id}
-                      interaction={interactionWithUser}
-                      thing={thing}
-                      myInteraction={myInteraction}
-                      avgRating={avgRatings.get(interaction.thingId) || null}
-                      isOwnInteraction={isOwnInteraction}
-                      onAuthorClick={onUserProfileClick}
-                      onEdit={onEditInteraction}
-                    />
-                  );
-                })}
+              /* Map View - Coming Soon */
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Map View</h3>
+                <p className="text-gray-500 max-w-sm">
+                  Discover recommendations near you with our interactive map view. Coming soon!
+                </p>
               </div>
             )}
           </>

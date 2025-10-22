@@ -11,11 +11,15 @@ import { db } from '@/lib/firebase';
 import { 
   BookmarkIcon, 
   CheckCircleIcon,
-  PlayIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
+import { 
+  BookmarkIcon as BookmarkIconSolid, 
+  CheckCircleIcon as CheckCircleIconSolid
+} from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
 import StarRating from './StarRating';
+import { useUserInteraction } from '@/lib/hooks';
 
 interface ThingInteractionCardProps {
   thing: Thing;
@@ -30,7 +34,6 @@ export default function ThingInteractionCard({
   onEdit
 }: ThingInteractionCardProps) {
   const [loading, setLoading] = useState(false);
-  const [localVisibility, setLocalVisibility] = useState(interaction.visibility);
   const [showMenu, setShowMenu] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -39,6 +42,12 @@ export default function ThingInteractionCard({
 
   const { user, userProfile } = useAuthStore();
   const { removeUserInteraction, updateUserInteraction } = useAppStore();
+  
+  // Use our new hook to get the most up-to-date interaction data
+  const { interaction: currentInteraction } = useUserInteraction(thing.id);
+  
+  // Use the current interaction from store, or fall back to prop
+  const displayInteraction = currentInteraction || interaction;
   
   // Click outside to close menu
   useEffect(() => {
@@ -56,49 +65,8 @@ export default function ThingInteractionCard({
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
-  const formatDate = (timestamp: unknown) => {
-    let date: Date;
-    
-    // Handle different timestamp formats
-    type TimestampLike = { toDate: () => Date };
-    type TimestampObject = { seconds: number; nanoseconds: number };
-    
-    if (timestamp && typeof timestamp === 'object' && 'toDate' in timestamp && typeof (timestamp as TimestampLike).toDate === 'function') {
-      // Firestore Timestamp with toDate method
-      date = (timestamp as TimestampLike).toDate();
-    } else if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp && 'nanoseconds' in timestamp) {
-      // Firestore Timestamp object (raw format)
-      const ts = timestamp as TimestampObject;
-      date = new Date(ts.seconds * 1000 + ts.nanoseconds / 1000000);
-    } else if (timestamp instanceof Date) {
-      // Already a Date object
-      date = timestamp;
-    } else if (typeof timestamp === 'number') {
-      // Unix timestamp
-      date = new Date(timestamp);
-    } else {
-      // Fallback if format is unknown
-      console.warn('Unknown timestamp format:', timestamp);
-      return 'Recently';
-    }
-    
-    const now = new Date();
-    const diffInMs = now.getTime() - date.getTime();
-    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-    
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    if (diffInDays === 1) return 'Yesterday';
-    if (diffInDays < 7) return `${diffInDays}d ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)}w ago`;
-    return `${Math.floor(diffInDays / 30)}mo ago`;
-  };
-
   const handleStateChange = async (newState: 'bucketList' | 'inProgress' | 'completed') => {
-    if (!user || newState === interaction.state) return;
+    if (!user || newState === displayInteraction.state) return;
     
     // If marking as completed, show rating modal first
     if (newState === 'completed') {
@@ -109,16 +77,22 @@ export default function ThingInteractionCard({
     setLoading(true);
     try {
       // Update the existing interaction's state (don't delete/recreate)
-      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      const interactionRef = doc(db, 'user_thing_interactions', displayInteraction.id);
       await updateDoc(interactionRef, {
         state: newState,
         date: Timestamp.now()
       });
       
       // Update local store
-      updateUserInteraction(interaction.id, { 
+      updateUserInteraction(displayInteraction.id, { 
         state: newState,
         date: Timestamp.now()
+      });
+      
+      console.log('🔄 ThingInteractionCard: Updated store for interaction', {
+        interactionId: displayInteraction.id,
+        newState,
+        thingId: thing.id
       });
       
       console.log(`✅ Changed state to: ${newState}`);
@@ -139,7 +113,7 @@ export default function ThingInteractionCard({
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
       // Update to completed with rating
-      const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
+      const interactionRef = doc(db, 'user_thing_interactions', displayInteraction.id);
       await updateDoc(interactionRef, {
         state: 'completed',
         rating: rating || null,
@@ -147,7 +121,7 @@ export default function ThingInteractionCard({
       });
       
       // Update local store
-      updateUserInteraction(interaction.id, { 
+      updateUserInteraction(displayInteraction.id, { 
         state: 'completed',
         rating,
         date: Timestamp.now()
@@ -194,15 +168,13 @@ export default function ThingInteractionCard({
   const handleTogglePostToFeed = async () => {
     if (!user) return;
     
-    const newVisibility = localVisibility === 'public' ? 'private' : 'public';
+    const newVisibility = displayInteraction.visibility === 'public' ? 'private' : 'public';
     
-    // Optimistic update
-    setLocalVisibility(newVisibility);
     setShowMenu(false);
     setLoading(true);
     
     try {
-      console.log(`🔄 Toggling visibility from ${localVisibility} to ${newVisibility}`);
+      console.log(`🔄 Toggling visibility from ${displayInteraction.visibility} to ${newVisibility}`);
       
       const interactionRef = doc(db, 'user_thing_interactions', interaction.id);
       await updateDoc(interactionRef, {
@@ -214,8 +186,6 @@ export default function ThingInteractionCard({
       console.log(`✅ Visibility changed to: ${newVisibility}`);
     } catch (error) {
       console.error('❌ Error toggling visibility:', error);
-      // Revert on error
-      setLocalVisibility(localVisibility);
       alert(`Failed to change visibility: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
@@ -262,45 +232,6 @@ export default function ThingInteractionCard({
       alert('Failed to create invite link');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getStateIcon = () => {
-    switch (interaction.state) {
-      case 'bucketList':
-        return <BookmarkIcon className="h-5 w-5" />;
-      case 'inProgress':
-        return <PlayIcon className="h-5 w-5" />;
-      case 'completed':
-        return <CheckCircleIcon className="h-5 w-5" />;
-      default:
-        return <BookmarkIcon className="h-5 w-5" />;
-    }
-  };
-
-  const getStateColor = () => {
-    switch (interaction.state) {
-      case 'bucketList':
-        return 'text-blue-600 bg-blue-50';
-      case 'inProgress':
-        return 'text-yellow-600 bg-yellow-50';
-      case 'completed':
-        return 'text-green-600 bg-green-50';
-      default:
-        return 'text-blue-600 bg-blue-50';
-    }
-  };
-
-  const getStateLabel = () => {
-    switch (interaction.state) {
-      case 'bucketList':
-        return 'In Bucket List';
-      case 'inProgress':
-        return 'In Progress';
-      case 'completed':
-        return 'Completed';
-      default:
-        return 'In Bucket List';
     }
   };
 
@@ -358,7 +289,7 @@ export default function ThingInteractionCard({
                 disabled={loading}
                 className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                {localVisibility === 'public' ? (
+                {displayInteraction.visibility === 'public' ? (
                   <><span>👁️‍🗨️</span> Hide from Feed</>
                 ) : (
                   <><span>📢</span> Post to Feed</>
@@ -431,35 +362,61 @@ export default function ThingInteractionCard({
         </div>
       )}
 
-      {/* Status and Actions */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        {/* Status */}
-        <div className="flex items-center space-x-2">
-          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStateColor()}`}>
-            {getStateIcon()}
-            <span className="ml-1">{getStateLabel()}</span>
-          </span>
-          <span className="text-xs text-gray-500">
-            Added {formatDate(interaction.date)}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center space-x-2">
-          {/* Complete Button - only show if in bucket list */}
-          {interaction.state === 'bucketList' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleStateChange('completed');
-              }}
-              disabled={loading}
-              className="px-3 py-1 text-xs font-medium text-green-600 bg-green-50 hover:bg-green-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              Mark Complete
-            </button>
+      {/* Action Bar */}
+      <div className="flex items-center space-x-1 pt-3 border-t border-gray-100">
+        {/* Save Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (displayInteraction.state === 'bucketList') {
+              // Already saved - show as disabled
+              return;
+            } else {
+              // Change from completed back to saved
+              handleStateChange('bucketList');
+            }
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            displayInteraction.state === 'bucketList'
+              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+          }`}
+        >
+          {displayInteraction.state === 'bucketList' ? (
+            <BookmarkIconSolid className="h-5 w-5" />
+          ) : (
+            <BookmarkIcon className="h-5 w-5" />
           )}
-        </div>
+          <span className="text-sm font-medium">Saved</span>
+        </button>
+
+        {/* Completed Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (displayInteraction.state === 'completed') {
+              // Already completed - show as disabled
+              return;
+            } else {
+              // Change from saved to completed
+              handleStateChange('completed');
+            }
+          }}
+          disabled={loading}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+            displayInteraction.state === 'completed'
+              ? 'bg-green-50 text-green-600 hover:bg-green-100'
+              : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+          }`}
+        >
+          {displayInteraction.state === 'completed' ? (
+            <CheckCircleIconSolid className="h-5 w-5" />
+          ) : (
+            <CheckCircleIcon className="h-5 w-5" />
+          )}
+          <span className="text-sm font-medium">Completed</span>
+        </button>
       </div>
 
       {/* Detail Modal */}
