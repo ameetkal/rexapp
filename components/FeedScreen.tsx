@@ -47,10 +47,14 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
       const getDate = (dateObj: Date | { seconds: number; nanoseconds?: number } | { toDate: () => Date } | null): Date | null => {
         if (!dateObj) return null;
         if (dateObj instanceof Date) return dateObj;
-        if (dateObj.toDate && typeof dateObj.toDate === 'function') return dateObj.toDate();
+        
+        // Type guard for objects with toDate method
+        if ('toDate' in dateObj && typeof dateObj.toDate === 'function') {
+          return dateObj.toDate();
+        }
         
         // Handle plain timestamp objects with seconds/nanoseconds
-        if (dateObj.seconds && typeof dateObj.seconds === 'number') {
+        if ('seconds' in dateObj && typeof dateObj.seconds === 'number') {
           return new Date(dateObj.seconds * 1000 + (dateObj.nanoseconds || 0) / 1000000);
         }
         
