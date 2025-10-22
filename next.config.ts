@@ -1,13 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Disable webpack caching to prevent build issues
-  webpack: (config) => {
-    config.cache = false;
-    return config;
-  },
-  // Force clean builds
-  cleanDistDir: true,
   images: {
     remotePatterns: [
       {

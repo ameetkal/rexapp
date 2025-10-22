@@ -36,11 +36,8 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
       setLoading(false);
       
       
-      // If user is on profile completion page, don't run ClerkAuthProvider
-      if (window.location.href.includes('step=profile')) {
-        setLoading(false);
-        return;
-      }
+      // Check if we're on profile completion page
+      const isOnProfilePage = window.location.href.includes('step=profile');
       
 
       if (!isSignedIn || !clerkUser || !userId) {
@@ -162,14 +159,12 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             localStorage.removeItem('pendingProfileData');
           } else {
             // User hasn't completed profile yet - redirect to profile completion
-            if (!window.location.href.includes('step=profile')) {
+            if (!isOnProfilePage) {
               window.location.href = '/?step=profile';
-              setLoading(false);
-              return;
-            } else {
-              setLoading(false);
-              return;
+              return; // Don't set loading false here, let the redirect handle it
             }
+            setLoading(false);
+            return;
           }
         }
         

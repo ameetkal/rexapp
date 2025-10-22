@@ -39,7 +39,14 @@ export default function PhoneSignUp({ onSignUpComplete }: PhoneSignUpProps) {
     } catch (err) {
       console.error('Error sending code:', err);
       const clerkError = err as { errors?: Array<{ message: string }> };
-      setError(clerkError.errors?.[0]?.message || 'Failed to send code. Please check your phone number.');
+      const errorMessage = clerkError.errors?.[0]?.message || 'Failed to send code. Please check your phone number.';
+      
+      // Handle rate limiting specifically
+      if (errorMessage.includes('Too many verification code requests')) {
+        setError('Rate limit exceeded. This is a development environment limitation. Try using a different phone number or wait a few hours. In production, limits are much higher.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
