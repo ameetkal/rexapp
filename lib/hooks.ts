@@ -136,14 +136,28 @@ export const useFeedData = () => {
   const [error, setError] = useState<string | null>(null);
 
   const loadFeedData = useCallback(async () => {
-    if (!userProfile?.following || !userProfile.id) return;
+    if (!userProfile?.following || !userProfile.id) {
+      console.log('📱 useFeedData: Skipping load - no following list or user ID', {
+        following: userProfile?.following,
+        userId: userProfile?.id
+      });
+      return;
+    }
+    
+    console.log('📱 useFeedData: Loading feed data...', {
+      following: userProfile.following,
+      userId: userProfile.id,
+      followingCount: userProfile.following.length
+    });
     
     setLoading(true);
     setError(null);
     
     try {
       await dataService.loadFeedData(userProfile.following, userProfile.id);
+      console.log('✅ useFeedData: Feed data loaded successfully');
     } catch (err) {
+      console.error('❌ useFeedData: Error loading feed data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load feed data');
     } finally {
       setLoading(false);

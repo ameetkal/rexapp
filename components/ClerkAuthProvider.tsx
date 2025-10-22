@@ -33,14 +33,17 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
         return;
       }
       
-      setLoading(false);
+      // Check if this is account creation (has pending profile data)
+      const hasPendingProfileData = localStorage.getItem('pendingProfileData');
+      const isOnProfilePage = window.location.href.includes('step=profile');
+      const isAccountCreationFlow = hasPendingProfileData || isOnProfilePage;
       
-      
-      // If user is on profile completion page, don't run ClerkAuthProvider
-      if (window.location.href.includes('step=profile')) {
+      if (isAccountCreationFlow) {
+        setLoading(true);
+      } else {
         setLoading(false);
-        return;
       }
+      
       
 
       if (!isSignedIn || !clerkUser || !userId) {
@@ -162,19 +165,25 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             localStorage.removeItem('pendingProfileData');
           } else {
             // User hasn't completed profile yet - redirect to profile completion
-            if (!window.location.href.includes('step=profile')) {
+            if (!isOnProfilePage) {
               window.location.href = '/?step=profile';
-              setLoading(false);
-              return;
-            } else {
-              setLoading(false);
-              return;
+              return; // Don't set loading false here, let the redirect handle it
             }
+            setLoading(false);
+            return;
           }
         }
         
         // Process invitation if present (for both new and existing users)
         if (inviteCode && !inviteProcessed) {
+          console.log('🎁 ClerkAuthProvider: Processing invitation...', {
+            inviteCode,
+            userId,
+            userName: userProfileData.name,
+            isNewUser: !userDoc.exists(),
+            userProfileData
+          });
+          
           const inviteSuccess = await processInvitation(
             userId,
             userProfileData.name,
@@ -182,8 +191,19 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             !userDoc.exists()
           );
           
+          console.log('🎁 ClerkAuthProvider: Invitation processing result:', inviteSuccess);
+          
           if (inviteSuccess) {
             setInviteProcessed(true);
+            
+            // Refresh user profile to get updated following list
+            console.log('🔄 Refreshing user profile after invitation processing...');
+            const updatedUserDoc = await getDoc(userDocRef);
+            if (updatedUserDoc.exists()) {
+              const updatedProfile = updatedUserDoc.data() as User;
+              setUserProfile(updatedProfile);
+              console.log('✅ User profile refreshed with following:', updatedProfile.following);
+            }
           }
         }
 

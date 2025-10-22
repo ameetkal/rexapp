@@ -15,6 +15,7 @@ import { User, Thing, UserThingInteraction } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { cleanupDuplicateInteractions, migrateInProgressToBucketList } from '@/lib/firestore';
+import Image from 'next/image';
 
 type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
 type AppScreenType = 'notifications' | 'main';
@@ -101,13 +102,34 @@ export default function MainApp() {
   }, [searchParams, user]);
 
   if (loading) {
-    const loadingMessage = isSignupProcess ? 'Setting up your account...' : 'Loading Rex...';
+    const loadingMessage = isSignupProcess ? 'Creating your Rex account...' : 'Loading Rex...';
     
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
+          {/* Rex Logo */}
+          <div className="mb-6">
+            <Image 
+              src="/rexlogo.png" 
+              alt="Rex" 
+              width={64}
+              height={64}
+              className="mx-auto rounded-lg shadow-sm"
+            />
+          </div>
+          
+          {/* Loading Spinner */}
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">{loadingMessage}</p>
+          
+          {/* Loading Message */}
+          <p className="text-gray-600 text-lg font-medium">{loadingMessage}</p>
+          
+          {/* Additional context for signup */}
+          {isSignupProcess && (
+            <p className="text-gray-500 text-sm mt-2">
+              Setting up your profile and connecting your account...
+            </p>
+          )}
         </div>
       </div>
     );
