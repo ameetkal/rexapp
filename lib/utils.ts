@@ -14,7 +14,7 @@ export const sendSMSInvite = (
   const firstName = recommenderName.split(' ')[0];
   const displayName = firstName || recommenderName;
   
-  const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out and join me: ${window.location.origin}/?i=${inviteCode}`;
+  const message = `Hey ${displayName}! I just added "${itemTitle}" to Rex and said you recommended it. Check it out: ${window.location.origin}/?i=${inviteCode}`;
   
   console.log('📱 SMS Invite - Message:', message);
   console.log('📱 SMS Invite - Attempting to open SMS app...');

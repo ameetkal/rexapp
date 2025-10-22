@@ -27,15 +27,14 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const [tempRating, setTempRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
-  const [localMyInteraction, setLocalMyInteraction] = useState<UserThingInteraction | undefined>(myInteraction);
   
   const { user, userProfile } = useAuthStore();
-  const { getUserInteractionByThingId, removeUserInteraction, addUserInteraction, updateUserInteraction, userInteractions } = useAppStore();
+  const { getUserInteractionByThingId, removeUserInteraction, addUserInteraction, updateUserInteraction } = useAppStore();
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   const allInteractions = useMemo(() => {
-    // Start with feed interactions
-    const feedInteractions = [...interactions.completed, ...interactions.saved];
+    // Use interactions directly (now it's a flat array)
+    const feedInteractions = interactions;
     
     // Get current user's interaction from global store
     const storeInteraction = getUserInteractionByThingId(thing.id);
@@ -50,7 +49,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     }
     
     return feedInteractions;
-  }, [interactions.completed, interactions.saved, getUserInteractionByThingId, thing.id, userInteractions]);
+  }, [interactions, getUserInteractionByThingId, thing.id]);
 
   // Dynamically calculate completed and saved interactions based on current states
   const dynamicInteractions = useMemo(() => ({
@@ -58,20 +57,8 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     saved: allInteractions.filter(int => int.state === 'bucketList')
   }), [allInteractions]);
 
-  // Sync local interaction with prop and global store
-  useEffect(() => {
-    // First, try to get the most recent interaction from the global store
-    const storeInteraction = getUserInteractionByThingId(thing.id);
-    if (storeInteraction) {
-      setLocalMyInteraction(storeInteraction);
-    } else {
-      // Fall back to the prop if not in store
-      setLocalMyInteraction(myInteraction);
-    }
-  }, [myInteraction, getUserInteractionByThingId, thing.id]);
-
   // Determine button states
-  const currentMyInteraction = localMyInteraction;
+  const currentMyInteraction = myInteraction;
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
 
@@ -94,22 +81,12 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     loadUsers();
   }, [allInteractions]);
 
-  const formatDate = (timestamp: Timestamp | Date | { seconds: number } | undefined) => {
-    if (!timestamp) return 'Recently';
+  const formatDate = (timestamp: Date | null) => {
+    if (!timestamp) return 'No recent activity';
     
-    let date: Date;
-    if (timestamp instanceof Date) {
-      date = timestamp;
-    } else if ('toDate' in timestamp && typeof timestamp.toDate === 'function') {
-      date = timestamp.toDate();
-    } else if ('seconds' in timestamp) {
-      date = new Date(timestamp.seconds * 1000);
-    } else {
-      return 'Recently';
-    }
-    
+    // Format time since someone first interacted with this item
     const now = new Date();
-    const diffInMs = now.getTime() - date.getTime();
+    const diffInMs = now.getTime() - timestamp.getTime();
     const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
     const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
     const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
@@ -140,21 +117,28 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     
     setLoading(true);
     try {
-      if (isInBucketList && currentMyInteraction) {
+      if (isInBucketList && myInteraction) {
         // Remove from bucket list
         if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
           setLoading(false);
           return;
         }
         
-        setLocalMyInteraction(undefined);
-        await deleteUserThingInteraction(currentMyInteraction.id);
-        removeUserInteraction(currentMyInteraction.id);
+        await deleteUserThingInteraction(myInteraction.id);
+        removeUserInteraction(myInteraction.id);
         console.log('🗑️ Removed from bucket list');
       } else {
         // Add to bucket list
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thing.id,
+          'bucketList',
+          'public'
+        );
+        
         const newInteraction: UserThingInteraction = {
-          id: '',
+          id: interactionId,
           userId: user.uid,
           userName: userProfile.name,
           thingId: thing.id,
@@ -166,24 +150,11 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           commentCount: 0,
         };
         
-        setLocalMyInteraction(newInteraction);
-        
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          userProfile.name,
-          thing.id,
-          'bucketList',
-          'public'
-        );
-        
-        newInteraction.id = interactionId;
-        setLocalMyInteraction(newInteraction);
         addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
       }
     } catch (error) {
       console.error('Error toggling save:', error);
-      setLocalMyInteraction(currentMyInteraction); // Revert on error
     } finally {
       setLoading(false);
     }
@@ -193,9 +164,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const handleCompleteToggle = () => {
     if (!user || !userProfile) return;
     
-    if (isCompleted && onEdit && currentMyInteraction) {
+    if (isCompleted && onEdit && myInteraction) {
       // Already completed - open edit modal with existing data
-      onEdit(currentMyInteraction, thing);
+      onEdit(myInteraction, thing);
     } else {
       // Not completed yet - show rating modal
       setShowRatingModal(true);
@@ -210,13 +181,10 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
-      if (currentMyInteraction) {
+      if (myInteraction) {
         // Update existing interaction to completed
-        const updated = { ...currentMyInteraction, state: 'completed' as const, rating };
-        setLocalMyInteraction(updated);
-        
         // Update the existing interaction's state directly in Firestore
-        const interactionRef = doc(db, 'user_thing_interactions', currentMyInteraction.id);
+        const interactionRef = doc(db, 'user_thing_interactions', myInteraction.id);
         await updateDoc(interactionRef, {
           state: 'completed',
           rating: rating || null,
@@ -224,15 +192,24 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         });
         
         // Update local store
-        updateUserInteraction(currentMyInteraction.id, { 
+        updateUserInteraction(myInteraction.id, { 
           state: 'completed',
           rating,
           date: Timestamp.now()
         });
       } else {
         // Create new completed interaction (first time completing)
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thing.id,
+          'completed',
+          'public',
+          { rating }
+        );
+        
         const newInteraction: UserThingInteraction = {
-          id: '',
+          id: interactionId,
           userId: user.uid,
           userName: userProfile.name,
           thingId: thing.id,
@@ -245,19 +222,6 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           commentCount: 0,
         };
         
-        setLocalMyInteraction(newInteraction);
-        
-        const interactionId = await createUserThingInteraction(
-          user.uid,
-          userProfile.name,
-          thing.id,
-          'completed',
-          'public',
-          { rating }
-        );
-        
-        newInteraction.id = interactionId;
-        setLocalMyInteraction(newInteraction);
         addUserInteraction(newInteraction);
       }
       
@@ -266,7 +230,6 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       setTempRating(0);
     } catch (error) {
       console.error('Error marking as completed:', error);
-      setLocalMyInteraction(currentMyInteraction); // Revert on error
     } finally {
       setLoading(false);
     }
@@ -471,7 +434,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       )}
 
       {/* Detail Modal */}
-      {showDetailModal && (
+      {showDetailModal && (myInteraction || allInteractions[0]) && (
         <InteractionDetailModal
           interaction={myInteraction || allInteractions[0]}
           thing={thing}

@@ -1779,6 +1779,21 @@ export const createRecommendation = async (
   message?: string
 ): Promise<string> => {
   try {
+    // Check if recommendation already exists
+    const existingQuery = query(
+      collection(db, 'recommendations'),
+      where('fromUserId', '==', fromUserId),
+      where('toUserId', '==', toUserId),
+      where('thingId', '==', thingId)
+    );
+    
+    const existingRecommendations = await getDocs(existingQuery);
+    
+    if (!existingRecommendations.empty) {
+      console.log('⚠️ Recommendation already exists, skipping creation');
+      return existingRecommendations.docs[0].id;
+    }
+    
     const recommendationData: Omit<Recommendation, 'id'> = {
       fromUserId,
       toUserId,
@@ -2096,20 +2111,17 @@ export const getFeedThings = async (
       
       feedThings.push({
         thing,
-        interactions: {
-          completed: ints.filter(i => i.state === 'completed'),
-          saved: ints.filter(i => i.state === 'bucketList')
-        },
+        interactions: ints,
         myInteraction: ints.find(i => i.userId === currentUserId),
         avgRating: await getThingAverageRating(thingId),
-        mostRecentUpdate: mostRecent.createdAt
+        mostRecentUpdate: mostRecent.createdAt.toDate()
       });
     }
     
     // Sort by most recent update
     feedThings.sort((a, b) => {
-      const aTime = (a.mostRecentUpdate as Timestamp)?.seconds || 0;
-      const bTime = (b.mostRecentUpdate as Timestamp)?.seconds || 0;
+      const aTime = a.mostRecentUpdate?.getTime() || 0;
+      const bTime = b.mostRecentUpdate?.getTime() || 0;
       return bTime - aTime;
     });
     

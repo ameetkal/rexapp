@@ -158,10 +158,16 @@ export interface Thing {
     // Movies/TV
     director?: string;
     year?: number;
+    tmdbId?: string | number;  // For deduplication
     tmdbRating?: number;
     type?: 'movie' | 'tv';
+    genre?: string;
+    runtime?: number;
+    episodes?: number;
+    seasons?: number;
     // Places
     address?: string;
+    placeId?: string;  // For deduplication
     rating?: number;
     priceLevel?: 1 | 2 | 3 | 4;
     phoneNumber?: string;
@@ -215,13 +221,10 @@ export interface Recommendation {
 // Feed data structure - groups interactions by thing
 export interface FeedThing {
   thing: Thing;
-  interactions: {
-    completed: UserThingInteraction[];
-    saved: UserThingInteraction[];
-  };
+  interactions: UserThingInteraction[]; // Now a flat array instead of object
   myInteraction?: UserThingInteraction;
   avgRating: number | null;
-  mostRecentUpdate: Timestamp;
+  mostRecentUpdate: Date | null; // Changed from Timestamp to Date | null for practical use
 }
 
 // Invitation system

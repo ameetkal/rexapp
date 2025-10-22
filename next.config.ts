@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Disable webpack caching to prevent build issues
+  webpack: (config) => {
+    config.cache = false;
+    return config;
+  },
+  // Force clean builds
+  cleanDistDir: true,
   images: {
     remotePatterns: [
       {
@@ -13,13 +20,13 @@ const nextConfig: NextConfig = {
         protocol: 'http',
         hostname: 'books.google.com',
         port: '',
-        pathname: '/books/content**',
+        pathname: '/books/content*',
       },
       {
         protocol: 'https',
         hostname: 'books.google.com',
         port: '',
-        pathname: '/books/content**',
+        pathname: '/books/content*',
       },
       {
         protocol: 'https',
@@ -34,17 +41,6 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
     ],
-  },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      };
-    }
-    return config;
   },
 };
 

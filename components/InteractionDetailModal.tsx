@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Thing, UserThingInteraction } from '@/lib/types';
 import { createUserThingInteraction, createRecommendation } from '@/lib/firestore';
@@ -39,7 +39,8 @@ export default function InteractionDetailModal({
   const { addUserInteraction } = useAppStore();
   
   // Load user name if missing and tagged user names
-  useState(() => {
+  useEffect(() => {
+    if (!interaction) return;
     const loadUserData = async () => {
       // Load display user name if missing
       if (!interaction.userName && interaction.userId) {
@@ -63,7 +64,7 @@ export default function InteractionDetailModal({
       setExperiencedWithNames(names);
     };
     loadUserData();
-  });
+  }, [interaction]);
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
@@ -167,6 +168,11 @@ export default function InteractionDetailModal({
       setLoading(false);
     }
   };
+
+  // Safety check - don't render if interaction is undefined
+  if (!interaction) {
+    return null;
+  }
 
   return (
     <>

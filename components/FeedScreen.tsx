@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuthStore } from '@/lib/store';
-import { universalSearch, followUser, unfollowUser, getFeedInteractions, getFeedThings, getThing, getThingAverageRating, getUserThingInteractions } from '@/lib/firestore';
-import { getUserProfile } from '@/lib/auth';
-import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
+import { followUser, unfollowUser } from '@/lib/firestore';
+import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingFeedCard from './ThingFeedCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
+import { useFeedData, useSearch } from '@/lib/hooks';
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
@@ -15,68 +15,93 @@ interface FeedScreenProps {
 }
 
 export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEditInteraction }: FeedScreenProps = {}) {
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [searchResults, setSearchResults] = useState<{ users: User[] }>({ users: [] });
-  const [searching, setSearching] = useState(false);
-  const [showingSearchResults, setShowingSearchResults] = useState(false);
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
-  
-  const [feedThings, setFeedThings] = useState<FeedThing[]>([]);
   const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
   
   const { user, userProfile, setUserProfile } = useAuthStore();
+  
+  // Use our new custom hooks for clean data access
+  const { things, interactions, loading: feedLoading } = useFeedData();
+  const { searchResults, loading: searchLoading, search } = useSearch();
 
-  const loadFeedPosts = useCallback(async () => {
-    if (!userProfile || !user) return;
-    
-    try {
-      if (useThingFeed) {
-        // Load thing-centric feed
-        console.log('📱 Loading thing-centric feed...');
-        const things = await getFeedThings(userProfile.following, user.uid);
-        setFeedThings(things);
-      }
-      // Map view doesn't need to load any data - it's just a coming soon page
-    } catch (error) {
-      console.error('Error loading feed:', error);
-    } finally {
-      setLoading(false);
+  // Convert feed data to FeedThing format for compatibility
+  const feedThings: FeedThing[] = things
+    .filter((thing, index, self) => {
+      // Remove duplicates based on thing.id
+      const isDuplicate = index !== self.findIndex(t => t.id === thing.id);
+      // Silently filter out duplicates
+      return !isDuplicate;
+    })
+    .map(thing => {
+      const thingInteractions = interactions.filter(i => i.thingId === thing.id);
+      const myInteraction = thingInteractions.find(i => i.userId === user?.uid);
+      
+      // Calculate average rating
+      const completedWithRatings = thingInteractions.filter(i => i.state === 'completed' && i.rating && i.rating > 0);
+      const avgRating = completedWithRatings.length > 0 
+        ? completedWithRatings.reduce((sum, i) => sum + (i.rating || 0), 0) / completedWithRatings.length
+        : null;
+      
+      // Safe conversion: handle both Timestamp and Date objects
+      const getDate = (dateObj: Date | { seconds: number; nanoseconds?: number } | { toDate: () => Date } | null): Date | null => {
+        if (!dateObj) return null;
+        if (dateObj instanceof Date) return dateObj;
+        if (dateObj.toDate && typeof dateObj.toDate === 'function') return dateObj.toDate();
+        
+        // Handle plain timestamp objects with seconds/nanoseconds
+        if (dateObj.seconds && typeof dateObj.seconds === 'number') {
+          return new Date(dateObj.seconds * 1000 + (dateObj.nanoseconds || 0) / 1000000);
+        }
+        
+        return null;
+      };
+      
+      // Find most recent interaction creation (when someone first interacted with this thing)
+      const mostRecentUpdate = thingInteractions.reduce((latest, i) => {
+        // Use createdAt to show when the interaction was first created
+        const interactionCreatedAt = i.createdAt;
+        
+        const currentDate = getDate(interactionCreatedAt);
+        if (!latest) return currentDate;
+        if (!currentDate) return latest;
+        return currentDate > latest ? currentDate : latest;
+      }, null as Date | null);
+      
+      // If no valid dates found, use thing creation date as fallback
+      const finalMostRecentUpdate = mostRecentUpdate || (thing.createdAt ? 
+        getDate(thing.createdAt) : null);
+      
+      return {
+        thing,
+        interactions: thingInteractions,
+        myInteraction,
+        avgRating,
+        mostRecentUpdate: finalMostRecentUpdate
+      };
+    })
+    .sort((a, b) => {
+      // Sort by most recent activity (newest first)
+      const getTimestamp = (timestamp: Date | null): number => {
+        if (!timestamp) return 0;
+        return timestamp.getTime();
+      };
+      
+      const aTime = getTimestamp(a.mostRecentUpdate);
+      const bTime = getTimestamp(b.mostRecentUpdate);
+      
+      // Sort by most recent activity (newest first)
+      return bTime - aTime;
+    });
+
+  const handleSearch = useCallback(() => {
+    if (searchTerm.trim()) {
+      search(searchTerm);
     }
-  }, [userProfile, user, useThingFeed]);
-
-
-  const performSearch = async (term: string) => {
-    if (!term.trim() || !user) {
-      setSearchResults({ users: [] });
-      setShowingSearchResults(false);
-      return;
-    }
-    
-    setSearching(true);
-    setShowingSearchResults(true);
-    try {
-      const results = await universalSearch(term);
-      // Filter out current user from user results
-      setSearchResults({
-        users: results.users.filter(u => u.id !== user.uid)
-      });
-    } catch (error) {
-      console.error('Error searching:', error);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const handleSearch = () => {
-    performSearch(searchTerm);
-  };
+  }, [searchTerm, search]);
 
   const clearSearch = () => {
     setSearchTerm('');
-    setSearchResults({ users: [] });
-    setShowingSearchResults(false);
   };
 
   const handleFollow = async (targetUserId: string) => {
@@ -123,41 +148,9 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     return userProfile?.following.includes(userId) || false;
   };
 
+  const showingSearchResults = searchResults.users.length > 0;
 
-  useEffect(() => {
-    if (userProfile && user) {
-      loadFeedPosts();
-    }
-  }, [userProfile, user, loadFeedPosts]);
-
-  // Refresh feed when component becomes visible (e.g., when switching from Add tab back to Feed)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden && userProfile && user) {
-        // Refresh feed when tab becomes visible
-        loadFeedPosts();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [userProfile, user, loadFeedPosts]);
-
-  // Debounced live search
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (searchTerm.trim()) {
-        performSearch(searchTerm);
-      } else {
-        setSearchResults({ users: [] });
-        setShowingSearchResults(false);
-      }
-    }, 300); // 300ms debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm, user]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (loading) {
+  if (feedLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
@@ -180,10 +173,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search people, posts, places..."
-              className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500"
+              className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white"
             />
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            {searching && (
+            {searchLoading && (
               <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
               </div>
@@ -191,10 +184,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           </div>
           <button
             onClick={handleSearch}
-            disabled={searching || !searchTerm.trim()}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            disabled={searchLoading || !searchTerm.trim()}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 font-medium"
           >
-            {searching ? 'Searching...' : 'Search'}
+            {searchLoading ? 'Searching...' : 'Search'}
           </button>
         </div>
         
@@ -274,7 +267,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
             )}
 
             {/* No Results */}
-            {searchResults.users.length === 0 && !searching && (
+            {searchResults.users.length === 0 && !searchLoading && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">

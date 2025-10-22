@@ -28,8 +28,20 @@ export default function MainApp() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
   const [editingInteraction, setEditingInteraction] = useState<{interaction: UserThingInteraction; thing: Thing} | null>(null);
+  const [isSignupProcess, setIsSignupProcess] = useState(false);
   
   const { user, loading } = useAuthStore();
+
+  // Check for signup process after hydration to avoid SSR mismatch
+  useEffect(() => {
+    const checkSignupProcess = () => {
+      const hasStepProfile = window.location.href.includes('step=profile');
+      const hasPendingProfileData = localStorage.getItem('pendingProfileData');
+      setIsSignupProcess(hasStepProfile || !!hasPendingProfileData);
+    };
+    
+    checkSignupProcess();
+  }, []);
 
   // Expose cleanup functions to window for debugging
   useEffect(() => {
@@ -89,11 +101,13 @@ export default function MainApp() {
   }, [searchParams, user]);
 
   if (loading) {
+    const loadingMessage = isSignupProcess ? 'Setting up your account...' : 'Loading Rex...';
+    
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading Rex...</p>
+          <p className="text-gray-600">{loadingMessage}</p>
         </div>
       </div>
     );
@@ -143,9 +157,6 @@ export default function MainApp() {
   };
 
   // Navigation handlers for profile screens
-  const handleShowFollowingList = () => {
-    setProfileScreen('following');
-  };
 
   const handleShowPublicProfile = (user: User) => {
     setSelectedUser(user);
@@ -253,7 +264,6 @@ export default function MainApp() {
               />
             ) : (
               <ProfileScreen 
-                onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
                 onEditInteraction={(interaction, thing) => {
@@ -267,7 +277,6 @@ export default function MainApp() {
           default:
             return (
               <ProfileScreen 
-                onShowFollowingList={handleShowFollowingList} 
                 onUserClick={handleProfileClickFromFeed}
                 onSettingsClick={handleSettingsClick}
                 onEditInteraction={(interaction, thing) => {

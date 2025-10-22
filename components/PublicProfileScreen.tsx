@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
-import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount, getUserThingInteraction } from '@/lib/firestore';
+import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
 import { User, Thing, UserThingInteraction } from '@/lib/types';
 import ThingInteractionCard from './ThingInteractionCard';
 
@@ -15,7 +15,6 @@ interface PublicProfileScreenProps {
 export default function PublicProfileScreen({ user: profileUser, onBack }: PublicProfileScreenProps) {
   const [userInteractions, setUserInteractions] = useState<UserThingInteraction[]>([]);
   const [things, setThings] = useState<Thing[]>([]);
-  const [myInteractions, setMyInteractions] = useState<Map<string, UserThingInteraction>>(new Map());
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [recsGivenCount, setRecsGivenCount] = useState(0);
@@ -40,15 +39,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
 
         // Load current user's interactions for button states
         if (currentUser) {
-          const uniqueThingIds = [...new Set(visibleInteractions.map(i => i.thingId))];
-          const myInteractionsMap = new Map<string, UserThingInteraction>();
-          
-          for (const thingId of uniqueThingIds) {
-            const myInteraction = await getUserThingInteraction(currentUser.uid, thingId);
-            if (myInteraction) myInteractionsMap.set(thingId, myInteraction);
-          }
-          
-          setMyInteractions(myInteractionsMap);
+          // Note: We removed myInteractions state as it wasn't being used
         }
 
         // Get recs given count
@@ -201,7 +192,6 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
             <div className="space-y-4">
               {userInteractions.map((interaction) => {
                 const thing = things.find(t => t.id === interaction.thingId);
-                const myInteraction = myInteractions.get(interaction.thingId);
                 
                 if (!thing) {
                   console.warn('Thing not found for interaction:', interaction.id);

@@ -63,6 +63,10 @@ export default function PhoneSignUp({ onSignUpComplete }: PhoneSignUpProps) {
         const userId = result.createdUserId;
         console.log('✅ Phone verified! User ID:', userId);
         
+        // Store phone number in localStorage for profile completion
+        localStorage.setItem('verifiedPhoneNumber', phoneNumber);
+        console.log('💾 Stored verified phone number:', phoneNumber);
+        
         // Call parent to show profile completion step
         onSignUpComplete(userId!, phoneNumber);
       } else {

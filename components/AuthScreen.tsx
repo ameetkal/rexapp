@@ -15,8 +15,9 @@ export default function AuthScreen() {
   const [signupPhoneNumber, setSignupPhoneNumber] = useState('');
   const [invitation, setInvitation] = useState<Invitation | null>(null);
   
-  // Get invite code from URL
+  // Get invite code and step from URL
   const inviteCode = searchParams.get('i') || searchParams.get('invite');
+  const step = searchParams.get('step');
 
   // Load invitation data if code present
   useEffect(() => {
@@ -38,6 +39,23 @@ export default function AuthScreen() {
     
     loadInvitation();
   }, [inviteCode]);
+
+  // Handle step parameter from URL
+  useEffect(() => {
+    
+    if (step === 'profile') {
+      setActiveTab('signup');
+      setSignupStep('profile');
+      
+      // Try to get the verified phone number from localStorage
+      const storedPhoneNumber = localStorage.getItem('verifiedPhoneNumber');
+      if (storedPhoneNumber) {
+        setSignupPhoneNumber(storedPhoneNumber);
+      } else {
+        setSignupPhoneNumber('Verified');
+      }
+    }
+  }, [step]);
 
   const handleSignUpComplete = (userId: string, phone: string) => {
     setSignupPhoneNumber(phone);
@@ -107,10 +125,6 @@ export default function AuthScreen() {
             ) : (
               <ProfileCompletion 
                 phoneNumber={signupPhoneNumber}
-                onBack={() => {
-                  setSignupStep('phone');
-                  setActiveTab('signup');
-                }}
                 invitationData={invitation ? {
                   inviterName: invitation.inviterName,
                   thingTitle: invitation.thingTitle,
