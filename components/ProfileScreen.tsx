@@ -6,7 +6,8 @@ import { getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore
 import { UserThingInteraction, Thing, Category, CATEGORIES } from '@/lib/types';
 import { MagnifyingGlassIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon, BookmarkIcon, CheckCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ThingInteractionCard from './ThingInteractionCard';
-import { useFilteredInteractions, useUserProfile, useThings } from '@/lib/hooks';
+import { useFilteredInteractions, useAnyFilteredInteractions, useUserProfile, useAnyUserProfile, useThings } from '@/lib/hooks';
+import { dataService } from '@/lib/dataService';
 
 interface ProfileScreenProps {
   viewingUserId?: string; // If provided, shows that user's profile; otherwise shows own profile
@@ -17,6 +18,7 @@ interface ProfileScreenProps {
 }
 
 export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
+  console.log('🔍 ProfileScreen: Component mounted/rendered', { viewingUserId });
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);
@@ -33,10 +35,20 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
   const isOwnProfile = !viewingUserId || viewingUserId === user?.uid;
   const displayedUserId = isOwnProfile ? user?.uid : viewingUserId;
   
-  // Use our new custom hooks for clean data access
-  const { interactions: allInteractions, loading: interactionsLoading } = useFilteredInteractions(displayedUserId, 'all'); // Get ALL interactions for counting
-  const { interactions } = useFilteredInteractions(displayedUserId, selectedState); // Get filtered interactions for display
-  const { userProfile: viewingUserProfile, loading: profileLoading } = useUserProfile(viewingUserId);
+  // Use our new custom hooks for clean data access - load once, filter locally
+  const { interactions: allInteractions, loading: interactionsLoading } = isOwnProfile 
+    ? useFilteredInteractions(displayedUserId, 'all') 
+    : useAnyFilteredInteractions(displayedUserId, 'all');
+  
+  // Filter interactions locally instead of loading again
+  const interactions = useMemo(() => {
+    if (selectedState === 'all') return allInteractions;
+    return allInteractions.filter(interaction => interaction.state === selectedState);
+  }, [allInteractions, selectedState]);
+  
+  const { userProfile: viewingUserProfile, loading: profileLoading } = viewingUserId 
+    ? useAnyUserProfile(viewingUserId) 
+    : { userProfile: null, loading: false };
   
   // Get things for the interactions
   const thingIds = useMemo(() => interactions.map(i => i.thingId), [interactions]);
@@ -80,20 +92,28 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
 
   // Handle follow/unfollow
   const handleFollowToggle = async () => {
-    if (!userProfile || !viewingUserProfile) return;
+    if (!user || !userProfile || !viewingUserProfile) return;
     
     setFollowLoading(true);
     try {
       const isFollowing = userProfile.following.includes(viewingUserProfile.id);
       
       if (isFollowing) {
-        await unfollowUser(userProfile.id, viewingUserProfile.id);
+        await unfollowUser(user.uid, viewingUserProfile.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(user.uid);
+        
         setUserProfile({
           ...userProfile,
           following: userProfile.following.filter(id => id !== viewingUserProfile.id)
         });
       } else {
-        await followUser(userProfile.id, viewingUserProfile.id);
+        await followUser(user.uid, viewingUserProfile.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(user.uid);
+        
         setUserProfile({
           ...userProfile,
           following: [...userProfile.following, viewingUserProfile.id]
@@ -156,8 +176,15 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
   
   // Debug logging to track interaction changes
   useEffect(() => {
-    // Interactions changed - update counts
-  }, [allInteractions, interactions, selectedCategory, selectedState]);
+    console.log('🔍 ProfileScreen: Interactions changed', {
+      isOwnProfile,
+      displayedUserId,
+      allInteractionsCount: allInteractions.length,
+      interactionsCount: interactions.length,
+      selectedState,
+      userIds: allInteractions.map(i => i.userId).slice(0, 5) // First 5 user IDs
+    });
+  }, [allInteractions, interactions, selectedCategory, selectedState, isOwnProfile, displayedUserId]);
   
   const completedCount = allInteractions.filter((i: UserThingInteraction) => i.state === 'completed').length;
   const loading = interactionsLoading || profileLoading || thingsLoading;
@@ -279,13 +306,13 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
               {state === 'bucketList' && (
                 <>
                   <BookmarkIcon className="h-4 w-4 inline mr-1" />
-                  Saved ({getStateCount('bucketList')})
+                  ({getStateCount('bucketList')})
                 </>
               )}
               {state === 'completed' && (
                 <>
                   <CheckCircleIcon className="h-4 w-4 inline mr-1" />
-                  Completed ({getStateCount('completed')})
+                  ({getStateCount('completed')})
                 </>
               )}
             </button>

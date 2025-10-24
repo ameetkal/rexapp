@@ -44,6 +44,20 @@ export default function MainApp() {
     checkSignupProcess();
   }, []);
 
+  // Listen for invitation completion to switch to feed tab
+  useEffect(() => {
+    const handleSwitchToFeed = () => {
+      console.log('🎁 MainApp: Switching to feed tab after invitation...');
+      setActiveTab('feed');
+    };
+
+    window.addEventListener('switchToFeed', handleSwitchToFeed);
+    
+    return () => {
+      window.removeEventListener('switchToFeed', handleSwitchToFeed);
+    };
+  }, []);
+
   // Expose cleanup functions to window for debugging
   useEffect(() => {
     if (typeof window !== 'undefined' && user) {
@@ -318,7 +332,7 @@ export default function MainApp() {
       {/* Only show navigation on main app screens, not notifications/settings */}
       {appScreen === 'main' && profileScreen !== 'settings' && (
         <Navigation 
-          activeTab={profileScreen === 'public' ? 'feed' : activeTab}
+          activeTab={profileScreen === 'public' ? null : activeTab}
           onTabChange={handleTabChange} 
           onNotificationsClick={handleNotificationsClick}
         />

@@ -6,6 +6,7 @@ import { useAuthStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
 import { User, Thing, UserThingInteraction } from '@/lib/types';
 import ThingInteractionCard from './ThingInteractionCard';
+import { dataService } from '@/lib/dataService';
 
 interface PublicProfileScreenProps {
   user: User;
@@ -63,6 +64,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     try {
       if (isFollowing) {
         await unfollowUser(currentUser.uid, profileUser.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(currentUser.uid);
+        
         const updatedFollowing = userProfile.following.filter(id => id !== profileUser.id);
         setUserProfile({
           ...userProfile,
@@ -70,6 +75,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
         });
       } else {
         await followUser(currentUser.uid, profileUser.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(currentUser.uid);
+        
         setUserProfile({
           ...userProfile,
           following: [...userProfile.following, profileUser.id]

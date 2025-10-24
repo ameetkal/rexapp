@@ -3,7 +3,7 @@
  * Provides reusable hooks that use the centralized DataService
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from './store';
 import { useAuthStore } from './store';
 import { dataService } from './dataService';
@@ -20,24 +20,26 @@ export const useUserInteractions = (userId?: string) => {
 
   const targetUserId = userId || user?.uid;
 
-  const loadInteractions = useCallback(async () => {
-    if (!targetUserId) return;
+  const loadInteractions = useCallback(async (targetId: string) => {
+    if (!targetId) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      await dataService.loadUserInteractions(targetUserId);
+      await dataService.loadUserInteractions(targetId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load interactions');
     } finally {
       setLoading(false);
     }
-  }, [targetUserId]);
+  }, []);
 
   useEffect(() => {
-    loadInteractions();
-  }, [loadInteractions]);
+    if (targetUserId) {
+      loadInteractions(targetUserId);
+    }
+  }, [targetUserId, loadInteractions]);
 
   // Return data directly from Zustand store (which gets updated by other components)
   // Filter by userId if viewing someone else's profile
@@ -49,7 +51,45 @@ export const useUserInteractions = (userId?: string) => {
     interactions: filteredInteractions,
     loading,
     error,
-    refetch: loadInteractions,
+    refetch: () => targetUserId ? loadInteractions(targetUserId) : Promise.resolve(),
+  };
+};
+
+/**
+ * Hook for loading any user's interactions without affecting global state
+ */
+export const useAnyUserInteractions = (userId: string) => {
+  const [interactions, setInteractions] = useState<UserThingInteraction[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadInteractions = useCallback(async (targetId: string) => {
+    if (!targetId) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const userInteractions = await dataService.loadAnyUserInteractions(targetId);
+      setInteractions(userInteractions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load interactions');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (userId) {
+      loadInteractions(userId);
+    }
+  }, [userId, loadInteractions]);
+
+  return {
+    interactions,
+    loading,
+    error,
+    refetch: () => userId ? loadInteractions(userId) : Promise.resolve(),
   };
 };
 
@@ -61,30 +101,35 @@ export const useThings = (thingIds?: string[]) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadThings = useCallback(async () => {
-    if (!thingIds || thingIds.length === 0) return;
+  // Memoize the thingIds array to prevent infinite loops
+  const memoizedThingIds = useMemo(() => thingIds, [thingIds?.join(',')]);
+
+  const loadThings = useCallback(async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      await dataService.loadThings(thingIds);
+      await dataService.loadThings(ids);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load things');
     } finally {
       setLoading(false);
     }
-  }, [thingIds]);
+  }, []);
 
   useEffect(() => {
-    loadThings();
-  }, [loadThings]);
+    if (memoizedThingIds && memoizedThingIds.length > 0) {
+      loadThings(memoizedThingIds);
+    }
+  }, [memoizedThingIds, loadThings]);
 
   return {
     things,
     loading,
     error,
-    refetch: loadThings,
+    refetch: () => memoizedThingIds ? loadThings(memoizedThingIds) : Promise.resolve(),
   };
 };
 
@@ -99,30 +144,32 @@ export const useRecommendations = (userId?: string) => {
 
   const targetUserId = userId || user?.uid;
 
-  const loadRecommendations = useCallback(async () => {
-    if (!targetUserId) return;
+  const loadRecommendations = useCallback(async (targetId: string) => {
+    if (!targetId) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      await dataService.loadRecommendations(targetUserId);
+      await dataService.loadRecommendations(targetId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load recommendations');
     } finally {
       setLoading(false);
     }
-  }, [targetUserId]);
+  }, []);
 
   useEffect(() => {
-    loadRecommendations();
-  }, [loadRecommendations]);
+    if (targetUserId) {
+      loadRecommendations(targetUserId);
+    }
+  }, [targetUserId, loadRecommendations]);
 
   return {
     recommendations,
     loading,
     error,
-    refetch: loadRecommendations,
+    refetch: () => targetUserId ? loadRecommendations(targetUserId) : Promise.resolve(),
   };
 };
 
@@ -130,31 +177,70 @@ export const useRecommendations = (userId?: string) => {
  * Hook for loading and accessing feed data
  */
 export const useFeedData = () => {
-  const { things, userInteractions } = useAppStore();
+  const { things } = useAppStore();
   const { userProfile } = useAuthStore();
+  const [feedInteractions, setFeedInteractions] = useState<UserThingInteraction[]>([]);
+  const [myInteractions, setMyInteractions] = useState<UserThingInteraction[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadFeedData = useCallback(async () => {
-    if (!userProfile?.following || !userProfile.id) {
+  // Debug when userProfile changes
+  useEffect(() => {
+    console.log('🔍 useFeedData: userProfile changed', {
+      userId: userProfile?.id,
+      userName: userProfile?.name,
+      followingCount: userProfile?.following?.length,
+      following: userProfile?.following
+    });
+  }, [userProfile]);
+
+  // Memoize the following array to prevent infinite loops
+  const memoizedFollowing = useMemo(() => {
+    console.log('🔍 useFeedData: memoizedFollowing recalculated', {
+      following: userProfile?.following,
+      followingLength: userProfile?.following?.length,
+      userId: userProfile?.id
+    });
+    return userProfile?.following;
+  }, [userProfile?.following?.join(',')]);
+  
+  const memoizedUserId = useMemo(() => {
+    console.log('🔍 useFeedData: memoizedUserId recalculated', {
+      userId: userProfile?.id,
+      userName: userProfile?.name
+    });
+    return userProfile?.id;
+  }, [userProfile?.id]);
+
+  const loadFeedData = useCallback(async (following: string[], userId: string) => {
+    console.log('🔍 useFeedData: loadFeedData function called', {
+      following: following?.length,
+      userId,
+      stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
+    });
+    
+    if (!following || !userId) {
       console.log('📱 useFeedData: Skipping load - no following list or user ID', {
-        following: userProfile?.following,
-        userId: userProfile?.id
+        following,
+        userId
       });
       return;
     }
     
     console.log('📱 useFeedData: Loading feed data...', {
-      following: userProfile.following,
-      userId: userProfile.id,
-      followingCount: userProfile.following.length
+      following,
+      userId,
+      followingCount: following.length
     });
     
     setLoading(true);
     setError(null);
     
     try {
-      await dataService.loadFeedData(userProfile.following, userProfile.id);
+      const feedData = await dataService.loadFeedData(following, userId);
+      // Store feed interactions and my interactions locally
+      setFeedInteractions(feedData.interactions);
+      setMyInteractions(feedData.myInteractions);
       console.log('✅ useFeedData: Feed data loaded successfully');
     } catch (err) {
       console.error('❌ useFeedData: Error loading feed data:', err);
@@ -162,18 +248,65 @@ export const useFeedData = () => {
     } finally {
       setLoading(false);
     }
-  }, [userProfile?.following, userProfile?.id]);
+  }, []);
 
+  // Use refs to store current values for event listener
+  const followingRef = useRef(memoizedFollowing);
+  const userIdRef = useRef(memoizedUserId);
+  const loadFeedDataRef = useRef<typeof loadFeedData>();
+  
+  // Update refs when values change
   useEffect(() => {
-    loadFeedData();
-  }, [loadFeedData]);
+    followingRef.current = memoizedFollowing;
+    userIdRef.current = memoizedUserId;
+    loadFeedDataRef.current = loadFeedData;
+  }, [memoizedFollowing, memoizedUserId, loadFeedData]);
+
+  // Single effect to load feed data
+  useEffect(() => {
+    console.log('🔍 useFeedData: Main effect triggered', {
+      memoizedFollowing: memoizedFollowing?.length,
+      memoizedUserId,
+      hasFollowing: !!memoizedFollowing,
+      hasUserId: !!memoizedUserId
+    });
+    
+    if (memoizedFollowing && memoizedFollowing.length > 0 && memoizedUserId) {
+      console.log('📱 useFeedData: Loading feed data... (MAIN EFFECT)', {
+        following: memoizedFollowing,
+        userId: memoizedUserId,
+        followingCount: memoizedFollowing.length
+      });
+      loadFeedData(memoizedFollowing, memoizedUserId);
+    }
+  }, [memoizedFollowing, memoizedUserId]); // Removed loadFeedData from dependencies
+
+  // Listen for invitation processing events to reload feed
+  useEffect(() => {
+    console.log('🔍 useFeedData: Event listener effect triggered');
+    
+    const handleInvitationProcessed = (event: CustomEvent) => {
+      console.log('🎁 useFeedData: Invitation processed, reloading feed... (EVENT LISTENER)', event.detail);
+      if (followingRef.current && userIdRef.current && loadFeedDataRef.current) {
+        loadFeedDataRef.current(followingRef.current, userIdRef.current);
+      }
+    };
+
+    window.addEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
+    
+    return () => {
+      console.log('🔍 useFeedData: Event listener cleanup');
+      window.removeEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
+    };
+  }, []); // Empty dependency array - only set up listener once
 
   return {
     things,
-    interactions: userInteractions,
+    interactions: feedInteractions,
+    myInteractions,
     loading,
     error,
-    refetch: loadFeedData,
+    refetch: () => memoizedFollowing && memoizedUserId ? loadFeedData(memoizedFollowing, memoizedUserId) : Promise.resolve(),
   };
 };
 
@@ -212,6 +345,42 @@ export const useUserProfile = (userId?: string) => {
     loading,
     error,
     refetch: loadUserProfile,
+  };
+};
+
+/**
+ * Hook for loading any user's profile without affecting global state
+ */
+export const useAnyUserProfile = (userId: string) => {
+  const [profile, setProfile] = useState<User | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(async () => {
+    if (!userId) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const userProfile = await dataService.loadAnyUserProfile(userId);
+      setProfile(userProfile);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load user profile');
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  return {
+    userProfile: profile,
+    loading,
+    error,
+    refetch: loadProfile,
   };
 };
 
@@ -255,18 +424,39 @@ export const useSearch = () => {
  */
 export const useFilteredInteractions = (userId?: string, filter?: 'bucketList' | 'completed' | 'inProgress' | 'all') => {
   const { interactions, loading, error } = useUserInteractions(userId);
-  const [filteredInteractions, setFilteredInteractions] = useState<UserThingInteraction[]>([]);
 
-  useEffect(() => {
-    if (!interactions) {
-      setFilteredInteractions([]);
-      return;
-    }
-
+  // Memoize filtered interactions to prevent unnecessary re-renders
+  const filteredInteractions = useMemo(() => {
+    if (!interactions) return [];
+    
     if (filter === 'all' || !filter) {
-      setFilteredInteractions(interactions);
+      return interactions;
     } else {
-      setFilteredInteractions(interactions.filter(interaction => interaction.state === filter));
+      return interactions.filter(interaction => interaction.state === filter);
+    }
+  }, [interactions, filter]);
+
+  return {
+    interactions: filteredInteractions,
+    loading,
+    error,
+  };
+};
+
+/**
+ * Hook for filtered interactions of any user without affecting global state
+ */
+export const useAnyFilteredInteractions = (userId: string, filter?: 'bucketList' | 'completed' | 'inProgress' | 'all') => {
+  const { interactions, loading, error } = useAnyUserInteractions(userId);
+
+  // Memoize filtered interactions to prevent unnecessary re-renders
+  const filteredInteractions = useMemo(() => {
+    if (!interactions) return [];
+    
+    if (filter === 'all' || !filter) {
+      return interactions;
+    } else {
+      return interactions.filter(interaction => interaction.state === filter);
     }
   }, [interactions, filter]);
 

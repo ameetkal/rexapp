@@ -203,6 +203,29 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
               const updatedProfile = updatedUserDoc.data() as User;
               setUserProfile(updatedProfile);
               console.log('✅ User profile refreshed with following:', updatedProfile.following);
+              
+              // Trigger feed reload by dispatching a custom event
+              // This ensures the feed loads with the updated following list
+              console.log('🔄 Triggering feed reload after invitation...');
+              window.dispatchEvent(new CustomEvent('invitationProcessed', { 
+                detail: { following: updatedProfile.following } 
+              }));
+              
+              // Also redirect to feed tab to show the new content
+              console.log('🔄 Redirecting to feed tab after invitation...');
+              setTimeout(() => {
+                if (typeof window !== 'undefined') {
+                  // Update URL to show feed tab
+                  const currentUrl = new URL(window.location.href);
+                  currentUrl.searchParams.delete('invite');
+                  currentUrl.searchParams.delete('i');
+                  currentUrl.searchParams.delete('step');
+                  window.history.replaceState({}, '', currentUrl.toString());
+                  
+                  // Dispatch event to switch to feed tab
+                  window.dispatchEvent(new CustomEvent('switchToFeed'));
+                }
+              }, 1000); // Small delay to ensure profile is updated
             }
           }
         }

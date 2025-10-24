@@ -5,6 +5,7 @@ import { ArrowLeftIcon, UserMinusIcon, UserPlusIcon, MagnifyingGlassIcon } from 
 import { useAuthStore } from '@/lib/store';
 import { getUsersByIds, unfollowUser, followUser, universalSearch } from '@/lib/firestore';
 import { User } from '@/lib/types';
+import { dataService } from '@/lib/dataService';
 
 interface FollowingListScreenProps {
   onBack: () => void;
@@ -65,6 +66,9 @@ export default function FollowingListScreen({ onBack, onUserClick }: FollowingLi
     try {
       await unfollowUser(user.uid, targetUserId);
       
+      // Clear feed cache to force fresh data load
+      dataService.clearFeedCache(user.uid);
+      
       // Update local state
       setFollowingUsers(prev => prev.filter(u => u.id !== targetUserId));
       
@@ -94,6 +98,9 @@ export default function FollowingListScreen({ onBack, onUserClick }: FollowingLi
     
     try {
       await followUser(user.uid, targetUserId);
+      
+      // Clear feed cache to force fresh data load
+      dataService.clearFeedCache(user.uid);
       
       // Update local state
       const updatedProfile = {
