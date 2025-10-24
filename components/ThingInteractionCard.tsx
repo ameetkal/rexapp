@@ -8,6 +8,7 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { CATEGORIES } from '@/lib/types';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { dataService } from '@/lib/dataService';
 import { 
   BookmarkIcon, 
   CheckCircleIcon,
@@ -128,6 +129,10 @@ export default function ThingInteractionCard({
       });
       
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
+      
       setShowRatingModal(false);
       setTempRating(0);
     } catch (error) {
@@ -156,6 +161,10 @@ export default function ThingInteractionCard({
       await deleteUserThingInteraction(interaction.id);
       removeUserInteraction(interaction.id);
       console.log('🗑️ Deleted from list');
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
+      
       window.location.reload();
     } catch (error) {
       console.error('Error deleting item:', error);

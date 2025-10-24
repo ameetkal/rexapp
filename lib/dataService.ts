@@ -65,6 +65,13 @@ export class DataService {
   clearFeedCache(userId: string): void {
     this.clearCachePattern(`loadFeedData_v2`);
     console.log('🔄 DataService: Cleared feed cache for user:', userId);
+    
+    // Dispatch event to trigger feed reload
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('feedCacheCleared', { 
+        detail: { userId } 
+      }));
+    }
   }
 
   /**
@@ -215,8 +222,15 @@ export class DataService {
    * Only loads interactions from followed users, not the current user
    */
   async loadFeedData(following: string[], userId: string): Promise<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }> {
-    // TEMPORARY: Disable caching to debug fresh loads
-    console.log('🔍 DataService: Loading fresh feed data (cache disabled for debugging)');
+    // Force fresh load with new data structure (v2)
+    const cacheKey = this.getCacheKey('loadFeedData_v2', following.join(','), userId);
+    const cached = this.getCachedData<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }>(cacheKey);
+    
+    if (cached) {
+      console.log('📱 DataService: Using cached feed data for following:', following.length, 'users');
+      // Use cached feed data if available
+      return cached;
+    }
     
     try {
       // Load feed data from Firestore
@@ -226,19 +240,8 @@ export class DataService {
         ? await this.getInteractionsForUsers(following)
         : [];
       
-      console.log('🔍 DataService: Fresh load - Feed interactions from followed users:', {
-        followingUsers: following,
-        feedInteractionsCount: feedInteractions.length,
-        feedInteractionUserIds: [...new Set(feedInteractions.map(i => i.userId))]
-      });
-      
       // Get current user's interactions separately for badges
       const myInteractions = await getUserThingInteractions(userId);
-      
-      console.log('🔍 DataService: Fresh load - My interactions for badges:', {
-        myInteractionsCount: myInteractions.length,
-        myInteractionThingIds: myInteractions.map(i => i.thingId).slice(0, 5)
-      });
       
       // Get unique thing IDs from followed users' interactions only
       const thingIds = [...new Set(feedInteractions.map(i => i.thingId))];

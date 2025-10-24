@@ -235,10 +235,19 @@ export const useFeedData = () => {
       }
     };
 
+    const handleFeedCacheCleared = (event: CustomEvent) => {
+      if (followingRef.current && userIdRef.current && loadFeedDataRef.current) {
+        console.log('🔄 useFeedData: Feed cache cleared, reloading data...');
+        loadFeedDataRef.current(followingRef.current, userIdRef.current);
+      }
+    };
+
     window.addEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
+    window.addEventListener('feedCacheCleared', handleFeedCacheCleared as EventListener);
     
     return () => {
       window.removeEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
+      window.removeEventListener('feedCacheCleared', handleFeedCacheCleared as EventListener);
     };
   }, []); // Empty dependency array - only set up listener once
 

@@ -6,6 +6,7 @@ import { Thing, UserThingInteraction } from '@/lib/types';
 import { createUserThingInteraction, createRecommendation } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { useAuthStore, useAppStore } from '@/lib/store';
+import { dataService } from '@/lib/dataService';
 import { CATEGORIES } from '@/lib/types';
 import { XMarkIcon, BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import StarRating from './StarRating';
@@ -113,6 +114,10 @@ export default function InteractionDetailModal({
       }
       
       console.log('✅ Added to bucket list');
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
+      
       onClose();
     } catch (error) {
       console.error('Error saving:', error);
@@ -159,6 +164,10 @@ export default function InteractionDetailModal({
       addUserInteraction(newInteraction);
       
       console.log('✅ Marked as completed');
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
+      
       setShowRatingModal(false);
       onClose();
     } catch (error) {

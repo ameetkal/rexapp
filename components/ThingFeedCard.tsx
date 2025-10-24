@@ -13,6 +13,7 @@ import { Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
+import { dataService } from '@/lib/dataService';
 
 interface ThingFeedCardProps {
   feedThing: FeedThing;
@@ -57,8 +58,8 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     saved: allInteractions.filter(int => int.state === 'bucketList')
   }), [allInteractions]);
 
-  // Determine button states
-  const currentMyInteraction = myInteraction;
+  // Determine button states - use store interaction if available, otherwise fall back to prop
+  const currentMyInteraction = getUserInteractionByThingId(thing.id) || myInteraction;
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
 
@@ -153,6 +154,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
       }
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
     } catch (error) {
       console.error('Error toggling save:', error);
     } finally {
@@ -228,6 +232,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
       setShowRatingModal(false);
       setTempRating(0);
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
     } catch (error) {
       console.error('Error marking as completed:', error);
     } finally {
