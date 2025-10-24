@@ -388,7 +388,7 @@ export default function ThingInteractionCard({
           ) : (
             <BookmarkIcon className="h-5 w-5" />
           )}
-          <span className="text-sm font-medium">Saved</span>
+          <span className="text-sm font-medium">Save</span>
         </button>
 
         {/* Completed Button */}

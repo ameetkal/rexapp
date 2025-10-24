@@ -63,7 +63,7 @@ export class DataService {
    * Clear feed cache when following list changes
    */
   clearFeedCache(userId: string): void {
-    this.clearCachePattern(`loadFeedData`);
+    this.clearCachePattern(`loadFeedData_v2`);
     console.log('🔄 DataService: Cleared feed cache for user:', userId);
   }
 
@@ -215,17 +215,8 @@ export class DataService {
    * Only loads interactions from followed users, not the current user
    */
   async loadFeedData(following: string[], userId: string): Promise<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }> {
-    // TEMPORARY: Clear cache to force fresh load for debugging
-    this.clearAllCache();
-    
-    const cacheKey = this.getCacheKey('loadFeedData', following.join(','), userId);
-    const cached = this.getCachedData<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }>(cacheKey);
-    
-    if (cached) {
-      console.log('📱 DataService: Using cached feed data for following:', following.length, 'users');
-      // Use cached feed data if available
-      return cached;
-    }
+    // TEMPORARY: Disable caching to debug fresh loads
+    console.log('🔍 DataService: Loading fresh feed data (cache disabled for debugging)');
     
     try {
       // Load feed data from Firestore
@@ -235,7 +226,7 @@ export class DataService {
         ? await this.getInteractionsForUsers(following)
         : [];
       
-      console.log('🔍 DataService: Feed interactions from followed users:', {
+      console.log('🔍 DataService: Fresh load - Feed interactions from followed users:', {
         followingUsers: following,
         feedInteractionsCount: feedInteractions.length,
         feedInteractionUserIds: [...new Set(feedInteractions.map(i => i.userId))]
@@ -244,9 +235,9 @@ export class DataService {
       // Get current user's interactions separately for badges
       const myInteractions = await getUserThingInteractions(userId);
       
-      console.log('🔍 DataService: My interactions for badges:', {
+      console.log('🔍 DataService: Fresh load - My interactions for badges:', {
         myInteractionsCount: myInteractions.length,
-        myInteractionThingIds: myInteractions.map(i => i.thingId).slice(0, 5) // First 5 for debugging
+        myInteractionThingIds: myInteractions.map(i => i.thingId).slice(0, 5)
       });
       
       // Get unique thing IDs from followed users' interactions only
@@ -272,11 +263,8 @@ export class DataService {
       setThings(validThings);
       // Don't update global userInteractions - feed data should stay separate
       
-      // Cache the result
+      // Return the result (caching disabled for debugging)
       const result = { things: validThings, interactions: feedInteractions, myInteractions };
-      this.setCachedData(cacheKey, result);
-      
-      console.log('✅ DataService: Feed data loaded - things:', validThings.length, 'feed interactions:', feedInteractions.length, 'my interactions:', myInteractions.length);
       
       // Feed data loaded successfully
       return result;

@@ -184,54 +184,14 @@ export const useFeedData = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Debug when userProfile changes
-  useEffect(() => {
-    console.log('🔍 useFeedData: userProfile changed', {
-      userId: userProfile?.id,
-      userName: userProfile?.name,
-      followingCount: userProfile?.following?.length,
-      following: userProfile?.following
-    });
-  }, [userProfile]);
-
   // Memoize the following array to prevent infinite loops
-  const memoizedFollowing = useMemo(() => {
-    console.log('🔍 useFeedData: memoizedFollowing recalculated', {
-      following: userProfile?.following,
-      followingLength: userProfile?.following?.length,
-      userId: userProfile?.id
-    });
-    return userProfile?.following;
-  }, [userProfile?.following?.join(',')]);
-  
-  const memoizedUserId = useMemo(() => {
-    console.log('🔍 useFeedData: memoizedUserId recalculated', {
-      userId: userProfile?.id,
-      userName: userProfile?.name
-    });
-    return userProfile?.id;
-  }, [userProfile?.id]);
+  const memoizedFollowing = useMemo(() => userProfile?.following, [userProfile?.following?.join(',')]);
+  const memoizedUserId = useMemo(() => userProfile?.id, [userProfile?.id]);
 
   const loadFeedData = useCallback(async (following: string[], userId: string) => {
-    console.log('🔍 useFeedData: loadFeedData function called', {
-      following: following?.length,
-      userId,
-      stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
-    });
-    
     if (!following || !userId) {
-      console.log('📱 useFeedData: Skipping load - no following list or user ID', {
-        following,
-        userId
-      });
       return;
     }
-    
-    console.log('📱 useFeedData: Loading feed data...', {
-      following,
-      userId,
-      followingCount: following.length
-    });
     
     setLoading(true);
     setError(null);
@@ -241,9 +201,7 @@ export const useFeedData = () => {
       // Store feed interactions and my interactions locally
       setFeedInteractions(feedData.interactions);
       setMyInteractions(feedData.myInteractions);
-      console.log('✅ useFeedData: Feed data loaded successfully');
     } catch (err) {
-      console.error('❌ useFeedData: Error loading feed data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load feed data');
     } finally {
       setLoading(false);
@@ -264,29 +222,14 @@ export const useFeedData = () => {
 
   // Single effect to load feed data
   useEffect(() => {
-    console.log('🔍 useFeedData: Main effect triggered', {
-      memoizedFollowing: memoizedFollowing?.length,
-      memoizedUserId,
-      hasFollowing: !!memoizedFollowing,
-      hasUserId: !!memoizedUserId
-    });
-    
     if (memoizedFollowing && memoizedFollowing.length > 0 && memoizedUserId) {
-      console.log('📱 useFeedData: Loading feed data... (MAIN EFFECT)', {
-        following: memoizedFollowing,
-        userId: memoizedUserId,
-        followingCount: memoizedFollowing.length
-      });
       loadFeedData(memoizedFollowing, memoizedUserId);
     }
   }, [memoizedFollowing, memoizedUserId]); // Removed loadFeedData from dependencies
 
   // Listen for invitation processing events to reload feed
   useEffect(() => {
-    console.log('🔍 useFeedData: Event listener effect triggered');
-    
     const handleInvitationProcessed = (event: CustomEvent) => {
-      console.log('🎁 useFeedData: Invitation processed, reloading feed... (EVENT LISTENER)', event.detail);
       if (followingRef.current && userIdRef.current && loadFeedDataRef.current) {
         loadFeedDataRef.current(followingRef.current, userIdRef.current);
       }
@@ -295,7 +238,6 @@ export const useFeedData = () => {
     window.addEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
     
     return () => {
-      console.log('🔍 useFeedData: Event listener cleanup');
       window.removeEventListener('invitationProcessed', handleInvitationProcessed as EventListener);
     };
   }, []); // Empty dependency array - only set up listener once

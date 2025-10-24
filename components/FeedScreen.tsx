@@ -7,6 +7,7 @@ import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingFeedCard from './ThingFeedCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch } from '@/lib/hooks';
+import { dataService } from '@/lib/dataService';
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
@@ -15,8 +16,6 @@ interface FeedScreenProps {
 }
 
 export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEditInteraction }: FeedScreenProps = {}) {
-  console.log('🔍 FeedScreen: Component mounted/rendered');
-  
   const [searchTerm, setSearchTerm] = useState('');
   const [loadingFollow, setLoadingFollow] = useState<string | null>(null);
   const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
@@ -44,6 +43,11 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
       const isDuplicate = index !== self.findIndex(t => t.id === thing.id);
       // Silently filter out duplicates
       return !isDuplicate;
+    })
+    .filter(thing => {
+      // Only show things that have interactions from followed users (not just your own)
+      const thingInteractions = interactions.filter(i => i.thingId === thing.id);
+      return thingInteractions.length > 0; // Only show if there are interactions from followed users
     })
     .map(thing => {
       const thingInteractions = interactions.filter(i => i.thingId === thing.id);

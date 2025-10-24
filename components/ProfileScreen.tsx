@@ -18,7 +18,6 @@ interface ProfileScreenProps {
 }
 
 export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
-  console.log('🔍 ProfileScreen: Component mounted/rendered', { viewingUserId });
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);

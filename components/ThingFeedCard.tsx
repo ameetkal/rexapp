@@ -303,7 +303,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           </div>
         )}
         
-        {/* Saved By */}
+        {/* Save By */}
         {dynamicInteractions.saved.length > 0 && (
           <div className="flex items-center space-x-2">
             <BookmarkIcon className="h-4 w-4 text-blue-600 flex-shrink-0" />
@@ -366,7 +366,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           ) : (
             <BookmarkIcon className="h-5 w-5" />
           )}
-          <span className="text-sm font-medium">Saved</span>
+          <span className="text-sm font-medium">Save</span>
         </button>
 
         {/* Completed Button */}

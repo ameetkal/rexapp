@@ -108,7 +108,7 @@ export default function InteractionDetailModal({
           interaction.userId,
           user.uid,
           thing.id,
-          'Saved from detail view'
+          'Save from detail view'
         );
       }
       
@@ -514,18 +514,18 @@ export default function InteractionDetailModal({
                     <button
                       onClick={handleSave}
                       disabled={loading}
-                      className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      className="flex-1 py-3 px-4 border border-blue-600 text-blue-600 bg-white rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
                     >
                       <BookmarkIcon className="h-5 w-5 inline mr-2" />
-                      Save to List
+                      Save
                     </button>
                     <button
                       onClick={handleComplete}
                       disabled={loading}
-                      className="flex-1 py-3 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                      className="flex-1 py-3 px-4 border border-green-600 text-green-600 bg-white rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50"
                     >
                       <CheckCircleIcon className="h-5 w-5 inline mr-2" />
-                      Complete
+                      Completed
                     </button>
                   </>
                 ) : isInBucketList ? (
@@ -536,15 +536,15 @@ export default function InteractionDetailModal({
                       className="flex-1 py-3 px-4 bg-blue-100 text-blue-700 rounded-lg cursor-not-allowed"
                     >
                       <BookmarkIcon className="h-5 w-5 inline mr-2 fill-current" />
-                      Saved
+                      Save
                     </button>
                     <button
                       onClick={handleComplete}
                       disabled={loading}
-                      className="flex-1 py-3 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                      className="flex-1 py-3 px-4 border border-green-600 text-green-600 bg-white rounded-lg hover:bg-green-50 transition-colors disabled:opacity-50"
                     >
                       <CheckCircleIcon className="h-5 w-5 inline mr-2" />
-                      Mark Complete
+                      Mark Completed
                     </button>
                   </>
                 ) : isCompleted ? (
@@ -604,9 +604,9 @@ export default function InteractionDetailModal({
               <button
                 onClick={() => handleRatingSubmit(false)}
                 disabled={loading}
-                className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="flex-1 py-3 px-4 border border-blue-600 text-blue-600 bg-white rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-50"
               >
-                {loading ? 'Saving...' : tempRating > 0 ? 'Submit Rating' : 'Complete'}
+                {loading ? 'Saving...' : tempRating > 0 ? 'Submit Rating' : 'Completed'}
               </button>
             </div>
           </div>
