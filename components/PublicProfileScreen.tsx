@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
-import { User, Thing, UserThingInteraction } from '@/lib/types';
-import ThingInteractionCard from './ThingInteractionCard';
+import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
+import ThingCard from './ThingCard';
 import { dataService } from '@/lib/dataService';
 
 interface PublicProfileScreenProps {
@@ -23,6 +23,17 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
   const { user: currentUser, userProfile, setUserProfile } = useAuthStore();
 
   const isFollowing = userProfile?.following.includes(profileUser.id) || false;
+
+  // Helper function to safely convert Timestamp to Date
+  const getDate = (timestamp: Date | { toDate: () => Date } | null | undefined): Date => {
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return new Date(); // Fallback
+  };
 
   useEffect(() => {
     const loadUserData = async () => {
@@ -207,11 +218,19 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
                   return null;
                 }
                 
+                // Convert interaction to FeedThing format
+                const feedThing: FeedThing = {
+                  thing,
+                  interactions: [interaction], // Single interaction for profile view
+                  myInteraction: interaction, // This is the user's interaction
+                  avgRating: interaction.rating || null, // Use the interaction's rating
+                  mostRecentUpdate: getDate(interaction.createdAt)
+                };
+                
                 return (
-                  <ThingInteractionCard 
+                  <ThingCard 
                     key={interaction.id} 
-                    interaction={interaction}
-                    thing={thing}
+                    feedThing={feedThing}
                   />
                 );
               })}

@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useAuthStore } from '@/lib/store';
 import { followUser, unfollowUser } from '@/lib/firestore';
 import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
-import ThingFeedCard from './ThingFeedCard';
+import ThingCard from './ThingCard';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
@@ -690,7 +690,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               /* Thing-Centric Feed */
               <div className="space-y-4">
                 {feedThings.map((feedThing) => (
-                  <ThingFeedCard
+                  <ThingCard
                     key={feedThing.thing.id}
                     feedThing={feedThing}
                     onEdit={onEditInteraction}

@@ -7,7 +7,7 @@ import { getUserProfile } from '@/lib/auth';
 import { CATEGORIES } from '@/lib/types';
 import { BookmarkIcon, CheckCircleIcon, ChatBubbleLeftIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
-import InteractionDetailModal from './InteractionDetailModal';
+import ThingDetailModal from './ThingDetailModal';
 import StarRating from './StarRating';
 import CommentSection from './CommentSection';
 import { Timestamp, doc, updateDoc } from 'firebase/firestore';
@@ -16,13 +16,13 @@ import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/fi
 import { db } from '@/lib/firebase';
 import { dataService } from '@/lib/dataService';
 
-interface ThingFeedCardProps {
+interface ThingCardProps {
   feedThing: FeedThing;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
 }
 
-export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingFeedCardProps) {
+export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -62,8 +62,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     saved: allInteractions.filter(int => int.state === 'bucketList')
   }), [allInteractions]);
 
-  // Determine button states - use store interaction if available, otherwise fall back to prop
-  const currentMyInteraction = getUserInteractionByThingId(thing.id) || myInteraction;
+  // Determine button states - ONLY use store data (current user's interaction)
+  // Ignore myInteraction prop as it represents the profile owner's interaction, not current user's
+  const currentMyInteraction = getUserInteractionByThingId(thing.id);
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
 
@@ -122,15 +123,15 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     
     setLoading(true);
     try {
-      if (isInBucketList && myInteraction) {
+      if (isInBucketList && currentMyInteraction) {
         // Remove from bucket list
         if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
           setLoading(false);
           return;
         }
         
-        await deleteUserThingInteraction(myInteraction.id);
-        removeUserInteraction(myInteraction.id);
+        await deleteUserThingInteraction(currentMyInteraction.id);
+        removeUserInteraction(currentMyInteraction.id);
         console.log('🗑️ Removed from bucket list');
       } else {
         // Add to bucket list
@@ -172,9 +173,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const handleCompleteToggle = () => {
     if (!user || !userProfile) return;
     
-    if (isCompleted && onEdit && myInteraction) {
+    if (isCompleted && onEdit && currentMyInteraction) {
       // Already completed - open edit modal with existing data
-      onEdit(myInteraction, thing);
+      onEdit(currentMyInteraction, thing);
     } else {
       // Not completed yet - show rating modal
       setShowRatingModal(true);
@@ -189,10 +190,10 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
-      if (myInteraction) {
+      if (currentMyInteraction) {
         // Update existing interaction to completed
         // Update the existing interaction's state directly in Firestore
-        const interactionRef = doc(db, 'user_thing_interactions', myInteraction.id);
+        const interactionRef = doc(db, 'user_thing_interactions', currentMyInteraction.id);
         await updateDoc(interactionRef, {
           state: 'completed',
           rating: rating || null,
@@ -200,7 +201,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         });
         
         // Update local store
-        updateUserInteraction(myInteraction.id, { 
+        updateUserInteraction(currentMyInteraction.id, { 
           state: 'completed',
           rating,
           date: Timestamp.now()
@@ -250,37 +251,6 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const handleMenuToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     setShowMenu(!showMenu);
-  };
-
-  // Handle visibility toggle (Hide/Post to Feed)
-  const handleToggleVisibility = async () => {
-    if (!user || !currentMyInteraction) return;
-    
-    const newVisibility = currentMyInteraction.visibility === 'friends' ? 'private' : 'friends';
-    
-    setShowMenu(false);
-    setLoading(true);
-    
-    try {
-      console.log(`🔄 Toggling visibility from ${currentMyInteraction.visibility} to ${newVisibility}`);
-      
-      const interactionRef = doc(db, 'user_thing_interactions', currentMyInteraction.id);
-      await updateDoc(interactionRef, {
-        visibility: newVisibility
-      });
-      
-      updateUserInteraction(currentMyInteraction.id, { visibility: newVisibility });
-      
-      console.log(`✅ Visibility updated to ${newVisibility}`);
-      
-      // Clear feed cache to ensure immediate UI update
-      dataService.clearFeedCache(user.uid);
-    } catch (error) {
-      console.error('❌ Error toggling visibility:', error);
-      alert(`Failed to change visibility: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setLoading(false);
-    }
   };
 
   // Handle share
@@ -531,19 +501,6 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                       <span>✏️</span> Edit
                     </button>
                     
-                    {/* Visibility Toggle */}
-                    <button
-                      onClick={handleToggleVisibility}
-                      disabled={loading}
-                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                      {currentMyInteraction.visibility === 'friends' ? (
-                        <><span>👁️‍🗨️</span> Hide from Feed</>
-                      ) : (
-                        <><span>📢</span> Post to Feed</>
-                      )}
-                    </button>
-                    
                     <div className="border-t border-gray-100 my-1"></div>
                     
                     {/* Share */}
@@ -616,16 +573,13 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       )}
 
       {/* Detail Modal */}
-      {showDetailModal && (myInteraction || allInteractions[0]) && (
-        <InteractionDetailModal
-          interaction={myInteraction || allInteractions[0]}
+      {showDetailModal && (
+        <ThingDetailModal
           thing={thing}
-          myInteraction={myInteraction}
-          isOwnInteraction={!!myInteraction}
           onClose={() => setShowDetailModal(false)}
-          onEdit={myInteraction && onEdit ? () => {
+          onEdit={currentMyInteraction && onEdit ? () => {
             setShowDetailModal(false);
-            onEdit(myInteraction, thing);
+            onEdit(currentMyInteraction, thing);
           } : undefined}
           onUserClick={onUserClick}
         />

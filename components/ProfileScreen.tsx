@@ -5,7 +5,7 @@ import { useAuthStore } from '@/lib/store';
 import { getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore';
 import { UserThingInteraction, Thing, Category, CATEGORIES, FeedThing } from '@/lib/types';
 import { MagnifyingGlassIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon, BookmarkIcon, CheckCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import ThingFeedCard from './ThingFeedCard';
+import ThingCard from './ThingCard';
 import { useFilteredInteractions, useAnyFilteredInteractions, useAnyUserProfile, useThings } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
 
@@ -449,7 +449,7 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
                 };
                 
                 return (
-                  <ThingFeedCard
+                  <ThingCard
                     key={interaction.id}
                     feedThing={feedThing}
                     onEdit={onEditInteraction}

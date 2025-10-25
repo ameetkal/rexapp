@@ -262,9 +262,11 @@ export class DataService {
       const validThings = things.filter(thing => thing !== null) as Thing[];
       
       // Sync with Zustand store
-      const { setThings } = useAppStore.getState();
+      const { setThings, setUserInteractions } = useAppStore.getState();
       setThings(validThings);
-      // Don't update global userInteractions - feed data should stay separate
+      
+      // Update global store with current user's interactions for badge display
+      setUserInteractions(myInteractions);
       
       // Return the result (caching disabled for debugging)
       const result = { things: validThings, interactions: feedInteractions, myInteractions };
