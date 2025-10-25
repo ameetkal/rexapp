@@ -24,9 +24,6 @@ interface ThingFeedCardProps {
 
 export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingFeedCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
-  
-  // Debug comment count
-  console.log(`🔍 ThingFeedCard: ${thing.title} - commentCount:`, thing.commentCount, typeof thing.commentCount);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -420,6 +417,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           <CommentSection 
             thingId={thing.id} 
             showAllComments={false} // Filtered view for feed
+            onUserClick={onUserClick}
           />
         </div>
       )}

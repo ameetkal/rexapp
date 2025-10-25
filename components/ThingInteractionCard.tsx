@@ -28,12 +28,14 @@ interface ThingInteractionCardProps {
   interaction: UserThingInteraction;
   onThingClick?: (thingId: string) => void;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
+  onUserClick?: (username: string) => void;
 }
 
 export default function ThingInteractionCard({ 
   thing, 
   interaction,
-  onEdit
+  onEdit,
+  onUserClick
 }: ThingInteractionCardProps) {
   const [loading, setLoading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -345,6 +347,12 @@ export default function ThingInteractionCard({
           <CommentSection 
             thingId={thing.id} 
             showAllComments={true} // Show all comments on own profile
+            onUserClick={(username) => {
+              // Navigate to user profile by username
+              if (onUserClick) {
+                onUserClick(username);
+              }
+            }}
           />
         </div>
       )}

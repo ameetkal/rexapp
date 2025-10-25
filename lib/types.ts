@@ -294,7 +294,7 @@ export interface Comment {
   content: string;
   createdAt: Timestamp;
   likedBy: string[];      // userIds who liked this comment
-  taggedUsers?: string[]; // userIds of tagged users
+  taggedUsers?: string[]; // usernames of tagged users
   parentCommentId?: string; // For threaded replies (future)
 }
 

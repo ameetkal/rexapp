@@ -102,7 +102,7 @@ export const useThings = (thingIds?: string[]) => {
   const [error, setError] = useState<string | null>(null);
 
   // Memoize the thingIds array to prevent infinite loops
-  const memoizedThingIds = useMemo(() => thingIds, [thingIds?.join(',')]);
+  const memoizedThingIds = useMemo(() => thingIds, [thingIds]);
 
   const loadThings = useCallback(async (ids: string[]) => {
     if (!ids || ids.length === 0) return;
@@ -185,7 +185,7 @@ export const useFeedData = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Memoize the following array to prevent infinite loops
-  const memoizedFollowing = useMemo(() => userProfile?.following, [userProfile?.following?.join(',')]);
+  const memoizedFollowing = useMemo(() => userProfile?.following, [userProfile?.following]);
   const memoizedUserId = useMemo(() => userProfile?.id, [userProfile?.id]);
 
   const loadFeedData = useCallback(async (following: string[], userId: string) => {
@@ -211,7 +211,7 @@ export const useFeedData = () => {
   // Use refs to store current values for event listener
   const followingRef = useRef(memoizedFollowing);
   const userIdRef = useRef(memoizedUserId);
-  const loadFeedDataRef = useRef<typeof loadFeedData>();
+  const loadFeedDataRef = useRef<typeof loadFeedData>(async () => {});
   
   // Update refs when values change
   useEffect(() => {
@@ -225,17 +225,17 @@ export const useFeedData = () => {
     if (memoizedFollowing && memoizedFollowing.length > 0 && memoizedUserId) {
       loadFeedData(memoizedFollowing, memoizedUserId);
     }
-  }, [memoizedFollowing, memoizedUserId]); // Removed loadFeedData from dependencies
+  }, [memoizedFollowing, memoizedUserId, loadFeedData]);
 
   // Listen for invitation processing events to reload feed
   useEffect(() => {
-    const handleInvitationProcessed = (event: CustomEvent) => {
+    const handleInvitationProcessed = () => {
       if (followingRef.current && userIdRef.current && loadFeedDataRef.current) {
         loadFeedDataRef.current(followingRef.current, userIdRef.current);
       }
     };
 
-    const handleFeedCacheCleared = (event: CustomEvent) => {
+    const handleFeedCacheCleared = () => {
       if (followingRef.current && userIdRef.current && loadFeedDataRef.current) {
         console.log('🔄 useFeedData: Feed cache cleared, reloading data...');
         loadFeedDataRef.current(followingRef.current, userIdRef.current);

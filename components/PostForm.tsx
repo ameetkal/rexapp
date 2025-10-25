@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
-import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation, createTag, createNotification } from '@/lib/firestore';
+import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation, createTag, createNotification, createComment } from '@/lib/firestore';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
 import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';

@@ -345,9 +345,23 @@ export const searchUsers = async (searchTerm: string): Promise<User[]> => {
       const usernameMatch = user.username ? user.username.toLowerCase().includes(term) : false;
       
       if (nameMatch || emailMatch || usernameMatch) {
-        console.log(`✅ User match: ${user.name}`, { nameMatch, emailMatch });
+        console.log(`✅ User match: ${user.username || user.name}`, { nameMatch, emailMatch, usernameMatch });
         users.push(user);
       }
+    });
+
+    // Sort results to prioritize username matches
+    users.sort((a, b) => {
+      const term = searchTerm.toLowerCase();
+      const aUsernameMatch = a.username ? a.username.toLowerCase().includes(term) : false;
+      const bUsernameMatch = b.username ? b.username.toLowerCase().includes(term) : false;
+      
+      // Username matches first
+      if (aUsernameMatch && !bUsernameMatch) return -1;
+      if (!aUsernameMatch && bUsernameMatch) return 1;
+      
+      // Then by name
+      return a.name.localeCompare(b.name);
     });
     
     console.log(`🎯 Found ${users.length} matching users`);
@@ -2620,16 +2634,22 @@ export const createComment = async (
       commentCount: increment(1)
     });
     
-    console.log('✅ Incremented comment count for thing:', thingId);
-    
     // Get thing title for notification
     const thingDoc = await getDoc(thingRef);
     const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'an item';
     
     // Notify tagged users first
     if (taggedUsers && taggedUsers.length > 0) {
-      for (const taggedUserId of taggedUsers) {
-        if (taggedUserId !== authorId) { // Don't notify yourself
+      for (const taggedUsername of taggedUsers) {
+        // Look up user ID from username
+        const userQuery = query(
+          collection(db, 'users'),
+          where('username', '==', taggedUsername)
+        );
+        const userSnapshot = await getDocs(userQuery);
+        
+        if (!userSnapshot.empty && userSnapshot.docs[0].id !== authorId) {
+          const taggedUserId = userSnapshot.docs[0].id;
           await createNotification(
             taggedUserId,
             'tagged',
@@ -2658,7 +2678,18 @@ export const createComment = async (
     
     // Add tagged users to the set so we don't notify them twice
     if (taggedUsers) {
-      taggedUsers.forEach(userId => notifiedUsers.add(userId));
+      for (const taggedUsername of taggedUsers) {
+        // Look up user ID from username
+        const userQuery = query(
+          collection(db, 'users'),
+          where('username', '==', taggedUsername)
+        );
+        const userSnapshot = await getDocs(userQuery);
+        
+        if (!userSnapshot.empty) {
+          notifiedUsers.add(userSnapshot.docs[0].id);
+        }
+      }
     }
     
     for (const interactionDoc of interactionsSnapshot.docs) {
@@ -2731,7 +2762,7 @@ export const getCommentsForThing = async (
 };
 
 // LEGACY: Keep for backwards compatibility
-export const getCommentsForInteraction = async (interactionId: string): Promise<Comment[]> => {
+export const getCommentsForInteraction = async (): Promise<Comment[]> => {
   console.log('⚠️ getCommentsForInteraction is deprecated, use getCommentsForThing instead');
   // This will need to be updated to work with the new system
   // For now, return empty array to avoid breaking existing code
@@ -2739,9 +2770,9 @@ export const getCommentsForInteraction = async (interactionId: string): Promise<
 };
 
 // LEGACY: Keep for backwards compatibility
-export const getCommentsForPost = async (postId: string): Promise<Comment[]> => {
-  console.log('⚠️ getCommentsForPost is deprecated, use getCommentsForInteraction instead');
-  return getCommentsForInteraction(postId);
+export const getCommentsForPost = async (): Promise<Comment[]> => {
+  console.log('⚠️ getCommentsForPost is deprecated, use getCommentsForThing instead');
+  return getCommentsForInteraction();
 };
 
 // Migration function to initialize commentCount for existing things
@@ -2792,7 +2823,7 @@ export const initializeCommentCounts = async (): Promise<void> => {
 
 // Make migration function available globally for console access
 if (typeof window !== 'undefined') {
-  (window as any).initializeCommentCounts = initializeCommentCounts;
+  (window as unknown as Window & { initializeCommentCounts: typeof initializeCommentCounts }).initializeCommentCounts = initializeCommentCounts;
 }
 
 export const deleteComment = async (commentId: string, thingId: string): Promise<void> => {
@@ -2805,7 +2836,6 @@ export const deleteComment = async (commentId: string, thingId: string): Promise
       commentCount: increment(-1)
     });
     
-    console.log('✅ Decremented comment count for thing:', thingId);
     console.log('✅ Deleted comment:', commentId);
   } catch (error) {
     console.error('Error deleting comment:', error);

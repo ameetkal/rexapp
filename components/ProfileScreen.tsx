@@ -6,7 +6,7 @@ import { getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore
 import { UserThingInteraction, Thing, Category, CATEGORIES } from '@/lib/types';
 import { MagnifyingGlassIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon, BookmarkIcon, CheckCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import ThingInteractionCard from './ThingInteractionCard';
-import { useFilteredInteractions, useAnyFilteredInteractions, useUserProfile, useAnyUserProfile, useThings } from '@/lib/hooks';
+import { useFilteredInteractions, useAnyFilteredInteractions, useAnyUserProfile, useThings } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
 
 interface ProfileScreenProps {
@@ -17,10 +17,38 @@ interface ProfileScreenProps {
   onBack?: () => void; // For going back when viewing other's profile
 }
 
-export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
+export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);
+  
+  // Wrapper function to handle both user IDs and usernames
+  const handleUserClick = async (userIdOrUsername: string) => {
+    if (!onUserClick) return;
+    
+    // If it looks like a username (starts with @ or doesn't contain special characters), look up user ID
+    if (userIdOrUsername.startsWith('@') || !userIdOrUsername.includes('-')) {
+      const username = userIdOrUsername.startsWith('@') ? userIdOrUsername.slice(1) : userIdOrUsername;
+      
+      try {
+        // Search for user by username
+        const { searchUsers } = await import('@/lib/firestore');
+        const users = await searchUsers(username);
+        const matchingUser = users.find(u => u.username === username);
+        
+        if (matchingUser) {
+          onUserClick(matchingUser.id);
+        } else {
+          console.log('User not found:', username);
+        }
+      } catch (error) {
+        console.error('Error looking up user:', error);
+      }
+    } else {
+      // Assume it's a user ID, pass it directly
+      onUserClick(userIdOrUsername);
+    }
+  };
   
   // State and Category filters
   const [selectedState, setSelectedState] = useState<'all' | 'bucketList' | 'completed'>('all');
@@ -35,9 +63,11 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
   const displayedUserId = isOwnProfile ? user?.uid : viewingUserId;
   
   // Use our new custom hooks for clean data access - load once, filter locally
-  const { interactions: allInteractions, loading: interactionsLoading } = isOwnProfile 
-    ? useFilteredInteractions(displayedUserId, 'all') 
-    : useAnyFilteredInteractions(displayedUserId, 'all');
+  const { interactions: ownInteractions, loading: ownInteractionsLoading } = useFilteredInteractions(displayedUserId || '', 'all');
+  const { interactions: otherInteractions, loading: otherInteractionsLoading } = useAnyFilteredInteractions(displayedUserId || '', 'all');
+  
+  const allInteractions = isOwnProfile ? ownInteractions : otherInteractions;
+  const interactionsLoading = isOwnProfile ? ownInteractionsLoading : otherInteractionsLoading;
   
   // Filter interactions locally instead of loading again
   const interactions = useMemo(() => {
@@ -45,16 +75,14 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
     return allInteractions.filter(interaction => interaction.state === selectedState);
   }, [allInteractions, selectedState]);
   
-  const { userProfile: viewingUserProfile, loading: profileLoading } = viewingUserId 
-    ? useAnyUserProfile(viewingUserId) 
-    : { userProfile: null, loading: false };
+  const { userProfile: viewingUserProfile, loading: profileLoading } = useAnyUserProfile(viewingUserId || '');
   
   // Get things for the interactions
   const thingIds = useMemo(() => interactions.map(i => i.thingId), [interactions]);
   const { things, loading: thingsLoading } = useThings(thingIds);
   
   // Determine which profile to display
-  const displayedProfile = isOwnProfile ? userProfile : viewingUserProfile;
+  const displayedProfile = isOwnProfile ? userProfile : (viewingUserId ? viewingUserProfile : null);
   
   // Load recs given count
   const loadRecsGivenCount = useCallback(async () => {
@@ -91,7 +119,7 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
 
   // Handle follow/unfollow
   const handleFollowToggle = async () => {
-    if (!user || !userProfile || !viewingUserProfile) return;
+    if (!user || !userProfile || !viewingUserId || !viewingUserProfile) return;
     
     setFollowLoading(true);
     try {
@@ -125,7 +153,7 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
     }
   };
 
-  const isFollowing = userProfile && viewingUserProfile 
+  const isFollowing = userProfile && viewingUserId && viewingUserProfile 
     ? userProfile.following.includes(viewingUserProfile.id) 
     : false;
 
@@ -249,7 +277,7 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
           </div>
 
           {/* Follow Button (for other users) */}
-          {!isOwnProfile && viewingUserProfile && (
+          {!isOwnProfile && viewingUserId && viewingUserProfile && (
             <button
               onClick={handleFollowToggle}
               disabled={followLoading}
@@ -406,6 +434,7 @@ export default function ProfileScreen({ viewingUserId, onSettingsClick, onEditIn
                     thing={thing}
                     interaction={interaction}
                     onEdit={onEditInteraction}
+                    onUserClick={handleUserClick}
                   />
                 );
               })

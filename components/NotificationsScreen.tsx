@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeftIcon, BellIcon, UserPlusIcon, EyeIcon, HeartIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, BellIcon, UserPlusIcon, EyeIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, followUser } from '@/lib/firestore';
 import { Notification } from '@/lib/types';
@@ -19,7 +19,6 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [lastVisible, setLastVisible] = useState<any>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   
   // Pull-to-refresh state
@@ -65,6 +64,21 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     }
   }, [isPulling, startY, pullDistance, triggerHaptic]);
 
+  const handleRefresh = useCallback(async () => {
+    if (!user || refreshing) return;
+    
+    setRefreshing(true);
+    try {
+      const userNotifications = await getUserNotifications(user.uid);
+      setNotifications(userNotifications);
+      setHasMore(true);
+    } catch (error) {
+      console.error('Error refreshing notifications:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [user, refreshing]);
+
   const handleTouchEnd = useCallback(async () => {
     if (!isPulling) return;
     
@@ -76,23 +90,7 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     }
     
     setPullDistance(0);
-  }, [isPulling, pullDistance, triggerHaptic]);
-
-  const handleRefresh = useCallback(async () => {
-    if (!user || refreshing) return;
-    
-    setRefreshing(true);
-    try {
-      const userNotifications = await getUserNotifications(user.uid);
-      setNotifications(userNotifications);
-      setHasMore(true);
-      setLastVisible(null);
-    } catch (error) {
-      console.error('Error refreshing notifications:', error);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [user, refreshing]);
+  }, [isPulling, pullDistance, triggerHaptic, handleRefresh]);
 
   // Infinite scroll handler
   const handleScroll = useCallback(async () => {
@@ -135,6 +133,8 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
   const handleFollowAction = async (userId: string, userName: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent notification click
     triggerHaptic('light');
+    
+    if (!user) return;
     
     try {
       await followUser(user.uid, userId);
@@ -381,6 +381,8 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
         return mostRecent.message;
     }
   };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   if (loading) {
     return (

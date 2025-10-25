@@ -23,6 +23,34 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   
   const { user, userProfile, setUserProfile } = useAuthStore();
+
+  // Wrapper function to handle both user IDs and usernames
+  const handleUserClick = async (userIdOrUsername: string) => {
+    if (!onUserProfileClick) return;
+    
+    // If it looks like a username (starts with @ or doesn't contain special characters), look up user ID
+    if (userIdOrUsername.startsWith('@') || !userIdOrUsername.includes('-')) {
+      const username = userIdOrUsername.startsWith('@') ? userIdOrUsername.slice(1) : userIdOrUsername;
+      
+      try {
+        // Search for user by username
+        const { searchUsers } = await import('@/lib/firestore');
+        const users = await searchUsers(username);
+        const matchingUser = users.find(u => u.username === username);
+        
+        if (matchingUser) {
+          onUserProfileClick(matchingUser.id);
+        } else {
+          console.log('User not found:', username);
+        }
+      } catch (error) {
+        console.error('Error looking up user:', error);
+      }
+    } else {
+      // Assume it's a user ID, pass it directly
+      onUserProfileClick(userIdOrUsername);
+    }
+  };
   
   // Use our new custom hooks for clean data access
   const { things, interactions, myInteractions, loading: feedLoading } = useFeedData();
@@ -666,7 +694,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                     key={feedThing.thing.id}
                     feedThing={feedThing}
                     onEdit={onEditInteraction}
-                    onUserClick={onUserProfileClick}
+                    onUserClick={handleUserClick}
                   />
                 ))}
               </div>
