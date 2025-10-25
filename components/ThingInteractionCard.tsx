@@ -180,7 +180,7 @@ export default function ThingInteractionCard({
   const handleTogglePostToFeed = async () => {
     if (!user) return;
     
-    const newVisibility = displayInteraction.visibility === 'public' ? 'private' : 'public';
+    const newVisibility = displayInteraction.visibility === 'friends' ? 'private' : 'friends';
     
     setShowMenu(false);
     setLoading(true);
@@ -301,7 +301,7 @@ export default function ThingInteractionCard({
                 disabled={loading}
                 className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
-                {displayInteraction.visibility === 'public' ? (
+                      {displayInteraction.visibility === 'friends' ? (
                   <><span>👁️‍🗨️</span> Hide from Feed</>
                 ) : (
                   <><span>📢</span> Post to Feed</>

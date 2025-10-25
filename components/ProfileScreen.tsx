@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuthStore } from '@/lib/store';
 import { getUserRecsGivenCount, followUser, unfollowUser } from '@/lib/firestore';
-import { UserThingInteraction, Thing, Category, CATEGORIES } from '@/lib/types';
+import { UserThingInteraction, Thing, Category, CATEGORIES, FeedThing } from '@/lib/types';
 import { MagnifyingGlassIcon, CogIcon, ArrowLeftIcon, UserPlusIcon, UserMinusIcon, BookmarkIcon, CheckCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import ThingInteractionCard from './ThingInteractionCard';
+import ThingFeedCard from './ThingFeedCard';
 import { useFilteredInteractions, useAnyFilteredInteractions, useAnyUserProfile, useThings } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
 
@@ -156,6 +156,17 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
   const isFollowing = userProfile && viewingUserId && viewingUserProfile 
     ? userProfile.following.includes(viewingUserProfile.id) 
     : false;
+
+  // Helper function to safely convert Timestamp to Date
+  const getDate = (timestamp: Date | { toDate: () => Date } | null | undefined): Date => {
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return new Date(); // Fallback
+  };
 
   // Filter interactions by category and search
   const filteredInteractions = interactions.filter((interaction: UserThingInteraction) => {
@@ -428,11 +439,19 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
                 const thing = things.find(t => t.id === interaction.thingId);
                 if (!thing) return null;
                 
+                // Convert interaction to FeedThing format
+                const feedThing: FeedThing = {
+                  thing,
+                  interactions: [interaction], // Single interaction for profile view
+                  myInteraction: interaction, // This is the user's interaction
+                  avgRating: interaction.rating || null, // Use the interaction's rating
+                  mostRecentUpdate: getDate(interaction.createdAt)
+                };
+                
                 return (
-                  <ThingInteractionCard
+                  <ThingFeedCard
                     key={interaction.id}
-                    thing={thing}
-                    interaction={interaction}
+                    feedThing={feedThing}
                     onEdit={onEditInteraction}
                     onUserClick={handleUserClick}
                   />

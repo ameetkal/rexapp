@@ -191,7 +191,7 @@ export interface UserThingInteraction {
   thingId: string;
   state: UserThingInteractionState;
   date: Timestamp; // Last state change date
-  visibility: 'private' | 'friends' | 'public';
+  visibility: 'private' | 'friends';
   
   // Personal tracking (always present)
   rating?: number; // 1-5 star rating

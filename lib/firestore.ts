@@ -1564,7 +1564,7 @@ export const createUserThingInteraction = async (
   userName: string,
   thingId: string,
   state: UserThingInteractionState,
-  visibility: 'private' | 'friends' | 'public' = 'friends',
+  visibility: 'private' | 'friends' = 'friends',
   options?: {
     rating?: number;
     notes?: string;
@@ -2057,7 +2057,7 @@ export const getFeedThings = async (
     const q = query(
       interactionsRef,
       where('userId', 'in', allUserIds),
-      where('visibility', 'in', ['public', 'friends']),
+      where('visibility', 'in', ['friends']),
       orderBy('createdAt', 'desc'),
       limit(100)
     );
@@ -2150,7 +2150,7 @@ export const getFeedInteractions = async (following: string[], currentUserId: st
       const interactionsQuery = query(
         collection(db, 'user_thing_interactions'),
         where('userId', 'in', allUserIds),
-        where('visibility', 'in', ['public', 'friends']),
+        where('visibility', 'in', ['friends']),
         orderBy('createdAt', 'desc'),
         limit(50)
       );
@@ -2169,7 +2169,7 @@ export const getFeedInteractions = async (following: string[], currentUserId: st
       // Fallback: get all public interactions
       const allPublicQuery = query(
         collection(db, 'user_thing_interactions'),
-        where('visibility', 'in', ['public', 'friends']),
+        where('visibility', 'in', ['friends']),
         orderBy('createdAt', 'desc'),
         limit(50)
       );
@@ -2189,7 +2189,7 @@ export const getFeedInteractions = async (following: string[], currentUserId: st
       console.log('📭 No interactions from followed users, loading all recent public...');
       const allPublicQuery = query(
         collection(db, 'user_thing_interactions'),
-        where('visibility', '==', 'public'),
+        where('visibility', '==', 'friends'),
         orderBy('createdAt', 'desc'),
         limit(20)
       );
@@ -2411,7 +2411,7 @@ export const createPostWithNewSystem = async (
     
     // 3. Create user interaction
     const interactionState: UserThingInteractionState = status === 'completed' ? 'completed' : 'bucketList';
-    const visibility = postToFeed ? 'public' : 'private';
+    const visibility = postToFeed ? 'friends' : 'private';
     const interactionId = await createUserThingInteraction(
       authorId,
       authorName,

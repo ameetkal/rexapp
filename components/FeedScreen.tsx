@@ -28,8 +28,8 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const handleUserClick = async (userIdOrUsername: string) => {
     if (!onUserProfileClick) return;
     
-    // If it looks like a username (starts with @ or doesn't contain special characters), look up user ID
-    if (userIdOrUsername.startsWith('@') || !userIdOrUsername.includes('-')) {
+    // If it looks like a username (starts with @ or is a short string without underscores), look up user ID
+    if (userIdOrUsername.startsWith('@') || (!userIdOrUsername.includes('_') && userIdOrUsername.length < 20)) {
       const username = userIdOrUsername.startsWith('@') ? userIdOrUsername.slice(1) : userIdOrUsername;
       
       try {

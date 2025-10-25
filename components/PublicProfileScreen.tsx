@@ -32,7 +32,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
         
         // Filter to only public/friends visibility (respect privacy)
         const visibleInteractions = interactions.filter(i => 
-          i.visibility === 'public' || i.visibility === 'friends'
+          i.visibility === 'friends'
         );
         
         setUserInteractions(visibleInteractions);

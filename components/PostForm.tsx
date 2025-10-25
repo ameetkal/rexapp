@@ -40,7 +40,7 @@ export default function PostForm({
     editMode?.interaction.state === 'completed' ? 'completed' : 'want_to_try'
   );
   const [postToFeed, setPostToFeed] = useState(
-    editMode ? editMode.interaction.visibility === 'public' : true
+    editMode ? editMode.interaction.visibility === 'friends' : true
   );
   const [description, setDescription] = useState(editMode?.interaction.content || '');
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
@@ -209,7 +209,7 @@ export default function PostForm({
       
       // 2. Create user interaction
       const interactionState = status === 'completed' ? 'completed' : 'bucketList';
-      const visibility = postToFeed ? 'public' : 'private';
+      const visibility = postToFeed ? 'friends' : 'private';
       
         const interactionId = await createUserThingInteraction(
           user.uid,

@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { FeedThing, UserThingInteraction, Thing, User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { CATEGORIES } from '@/lib/types';
-import { BookmarkIcon, CheckCircleIcon, ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, CheckCircleIcon, ChatBubbleLeftIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
 import StarRating from './StarRating';
@@ -30,6 +30,8 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const [tempRating, setTempRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   
   const { user, userProfile } = useAuthStore();
   const { getUserInteractionByThingId, removeUserInteraction, addUserInteraction, updateUserInteraction } = useAppStore();
@@ -137,7 +139,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           userProfile.name,
           thing.id,
           'bucketList',
-          'public'
+          'friends'
         );
         
         const newInteraction: UserThingInteraction = {
@@ -147,7 +149,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           thingId: thing.id,
           state: 'bucketList',
           date: Timestamp.now(),
-          visibility: 'public',
+          visibility: 'friends',
           createdAt: Timestamp.now(),
           likedBy: [],
           commentCount: 0,
@@ -210,7 +212,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           userProfile.name,
           thing.id,
           'completed',
-          'public',
+          'friends',
           { rating }
         );
         
@@ -221,7 +223,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           thingId: thing.id,
           state: 'completed',
           date: Timestamp.now(),
-          visibility: 'public',
+          visibility: 'friends',
           rating,
           createdAt: Timestamp.now(),
           likedBy: [],
@@ -243,6 +245,98 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       setLoading(false);
     }
   };
+
+  // Handle menu toggle
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMenu(!showMenu);
+  };
+
+  // Handle visibility toggle (Hide/Post to Feed)
+  const handleToggleVisibility = async () => {
+    if (!user || !currentMyInteraction) return;
+    
+    const newVisibility = currentMyInteraction.visibility === 'friends' ? 'private' : 'friends';
+    
+    setShowMenu(false);
+    setLoading(true);
+    
+    try {
+      console.log(`🔄 Toggling visibility from ${currentMyInteraction.visibility} to ${newVisibility}`);
+      
+      const interactionRef = doc(db, 'user_thing_interactions', currentMyInteraction.id);
+      await updateDoc(interactionRef, {
+        visibility: newVisibility
+      });
+      
+      updateUserInteraction(currentMyInteraction.id, { visibility: newVisibility });
+      
+      console.log(`✅ Visibility updated to ${newVisibility}`);
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
+    } catch (error) {
+      console.error('❌ Error toggling visibility:', error);
+      alert(`Failed to change visibility: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle share
+  const handleShare = async () => {
+    if (!user || !userProfile) return;
+    
+    setShowMenu(false);
+    setLoading(true);
+    
+    try {
+      const shareUrl = `${window.location.origin}/post/${thing.id}`;
+      
+      if (navigator.share) {
+        await navigator.share({
+          title: thing.title,
+          text: `Check out "${thing.title}" on Rex!`,
+          url: shareUrl,
+        });
+      } else {
+        // Fallback to clipboard
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Link copied to clipboard!');
+      }
+      
+      console.log('✅ Shared successfully');
+    } catch (error) {
+      console.error('❌ Error sharing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle edit
+  const handleEdit = () => {
+    if (!onEdit || !currentMyInteraction) return;
+    
+    setShowMenu(false);
+    onEdit(currentMyInteraction, thing);
+  };
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMenu]);
 
   return (
     <div 
@@ -327,6 +421,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          console.log('🔍 Saved username clicked:', int.userId, displayName);
                           onUserClick?.(int.userId);
                         }}
                         className={`hover:underline ${int.userId === myInteraction?.userId ? 'font-medium text-blue-600' : 'text-gray-700'}`}
@@ -392,23 +487,79 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           </button>
         </div>
 
-        {/* Comments Button - Right side */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowComments(!showComments);
-          }}
-          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors ${
-            showComments
-              ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
-              : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'
-          }`}
-        >
-          <ChatBubbleLeftIcon className="h-5 w-5" />
-          <span className="text-sm font-medium">
-            {thing.commentCount ?? 0}
-          </span>
-        </button>
+        {/* Right side - Comments and Menu */}
+        <div className="flex items-center space-x-1">
+          {/* Comments Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowComments(!showComments);
+            }}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors ${
+              showComments
+                ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'
+            }`}
+          >
+            <ChatBubbleLeftIcon className="h-5 w-5" />
+            <span className="text-sm font-medium">
+              {thing.commentCount ?? 0}
+            </span>
+          </button>
+
+          {/* 3-Dot Menu - Only show if user has interaction */}
+          {currentMyInteraction && (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={handleMenuToggle}
+                disabled={loading}
+                className="flex items-center justify-center w-10 h-10 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                <EllipsisVerticalIcon className="h-5 w-5" />
+              </button>
+
+              {/* Dropdown Menu */}
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                  <div className="py-1">
+                    {/* Edit */}
+                    <button
+                      onClick={handleEdit}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <span>✏️</span> Edit
+                    </button>
+                    
+                    {/* Visibility Toggle */}
+                    <button
+                      onClick={handleToggleVisibility}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {currentMyInteraction.visibility === 'friends' ? (
+                        <><span>👁️‍🗨️</span> Hide from Feed</>
+                      ) : (
+                        <><span>📢</span> Post to Feed</>
+                      )}
+                    </button>
+                    
+                    <div className="border-t border-gray-100 my-1"></div>
+                    
+                    {/* Share */}
+                    <button
+                      onClick={handleShare}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <span>🔗</span> Share
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Comments Section - Only show when expanded */}
