@@ -46,7 +46,44 @@ export class DataService {
   }
 
   /**
-   * Load user interactions and sync with store
+   * Clear cache entries that match a pattern
+   */
+  private clearCachePattern(pattern: string): void {
+    const keysToDelete: string[] = [];
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(key => this.cache.delete(key));
+    console.log('🗑️ DataService: Cleared cache entries:', keysToDelete.length);
+  }
+
+  /**
+   * Clear feed cache when following list changes
+   */
+  clearFeedCache(userId: string): void {
+    this.clearCachePattern(`loadFeedData_v2`);
+    console.log('🔄 DataService: Cleared feed cache for user:', userId);
+    
+    // Dispatch event to trigger feed reload
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('feedCacheCleared', { 
+        detail: { userId } 
+      }));
+    }
+  }
+
+  /**
+   * Clear all cache (for debugging)
+   */
+  clearAllCache(): void {
+    this.cache.clear();
+    console.log('🗑️ DataService: Cleared all cache');
+  }
+
+  /**
+   * Load user interactions and sync with store (only for current user)
    */
   async loadUserInteractions(userId: string): Promise<UserThingInteraction[]> {
     const cacheKey = this.getCacheKey('loadUserInteractions', userId);
@@ -61,9 +98,12 @@ export class DataService {
       // Load user interactions from Firestore
       const interactions = await getUserThingInteractions(userId);
       
-      // Sync with Zustand store
-      const { setUserInteractions } = useAppStore.getState();
-      setUserInteractions(interactions);
+      // Only sync with Zustand store if this is the current user's interactions
+      const { user } = useAuthStore.getState();
+      if (user?.uid === userId) {
+        const { setUserInteractions } = useAppStore.getState();
+        setUserInteractions(interactions);
+      }
       
       // Cache the result
       this.setCachedData(cacheKey, interactions);
@@ -72,6 +112,31 @@ export class DataService {
       return interactions;
     } catch (error) {
       console.error('❌ DataService: Error loading user interactions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load any user's interactions without affecting global state
+   */
+  async loadAnyUserInteractions(userId: string): Promise<UserThingInteraction[]> {
+    const cacheKey = this.getCacheKey('loadAnyUserInteractions', userId);
+    const cached = this.getCachedData<UserThingInteraction[]>(cacheKey);
+    
+    if (cached) {
+      return cached;
+    }
+    
+    try {
+      // Load user interactions from Firestore without syncing to global store
+      const interactions = await getUserThingInteractions(userId);
+      
+      // Cache the result
+      this.setCachedData(cacheKey, interactions);
+      
+      return interactions;
+    } catch (error) {
+      console.error('❌ DataService: Error loading any user interactions:', error);
       throw error;
     }
   }
@@ -154,12 +219,15 @@ export class DataService {
 
   /**
    * Load feed data (things + interactions) and sync with store
+   * Only loads interactions from followed users, not the current user
    */
-  async loadFeedData(following: string[], userId: string): Promise<{ things: Thing[]; interactions: UserThingInteraction[] }> {
-    const cacheKey = this.getCacheKey('loadFeedData', following.join(','), userId);
-    const cached = this.getCachedData<{ things: Thing[]; interactions: UserThingInteraction[] }>(cacheKey);
+  async loadFeedData(following: string[], userId: string): Promise<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }> {
+    // Force fresh load with new data structure (v2)
+    const cacheKey = this.getCacheKey('loadFeedData_v2', following.join(','), userId);
+    const cached = this.getCachedData<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }>(cacheKey);
     
     if (cached) {
+      console.log('📱 DataService: Using cached feed data for following:', following.length, 'users');
       // Use cached feed data if available
       return cached;
     }
@@ -167,12 +235,16 @@ export class DataService {
     try {
       // Load feed data from Firestore
       
-      // Get all interactions from followed users + current user
-      const allUserIds = [...following, userId];
-      const interactions = await this.getInteractionsForUsers(allUserIds);
+      // Get interactions from followed users ONLY (not including current user)
+      const feedInteractions = following.length > 0 
+        ? await this.getInteractionsForUsers(following)
+        : [];
       
-      // Get unique thing IDs
-      const thingIds = [...new Set(interactions.map(i => i.thingId))];
+      // Get current user's interactions separately for badges
+      const myInteractions = await getUserThingInteractions(userId);
+      
+      // Get unique thing IDs from followed users' interactions only
+      const thingIds = [...new Set(feedInteractions.map(i => i.thingId))];
       
       // Load things in parallel (more efficient than sequential)
       const things = await Promise.all(
@@ -192,11 +264,12 @@ export class DataService {
       // Sync with Zustand store
       const { setThings, setUserInteractions } = useAppStore.getState();
       setThings(validThings);
-      setUserInteractions(interactions);
       
-      // Cache the result
-      const result = { things: validThings, interactions };
-      this.setCachedData(cacheKey, result);
+      // Update global store with current user's interactions for badge display
+      setUserInteractions(myInteractions);
+      
+      // Return the result (caching disabled for debugging)
+      const result = { things: validThings, interactions: feedInteractions, myInteractions };
       
       // Feed data loaded successfully
       return result;
@@ -207,21 +280,38 @@ export class DataService {
   }
 
   /**
-   * Load user profile and sync with auth store
+   * Load user profile and sync with auth store (only for current user)
    */
   async loadUserProfile(userId: string): Promise<User | null> {
     try {
       // Load user profile from Firestore
       const userProfile = await getUserProfile(userId);
       
-      // Sync with auth store
-      const { setUserProfile } = useAuthStore.getState();
-      setUserProfile(userProfile);
+      // Only sync with auth store if this is the current user's profile
+      const { user } = useAuthStore.getState();
+      if (user?.uid === userId) {
+        const { setUserProfile } = useAuthStore.getState();
+        setUserProfile(userProfile);
+      }
       
       // User profile loaded successfully
       return userProfile;
     } catch (error) {
       console.error('❌ DataService: Error loading user profile:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Load any user profile without affecting global state
+   */
+  async loadAnyUserProfile(userId: string): Promise<User | null> {
+    try {
+      // Load user profile from Firestore without syncing to auth store
+      const userProfile = await getUserProfile(userId);
+      return userProfile;
+    } catch (error) {
+      console.error('❌ DataService: Error loading any user profile:', error);
       throw error;
     }
   }

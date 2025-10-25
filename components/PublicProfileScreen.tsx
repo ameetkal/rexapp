@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { ArrowLeftIcon, UserPlusIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { getUserThingInteractionsWithThings, followUser, unfollowUser, getUserRecsGivenCount } from '@/lib/firestore';
-import { User, Thing, UserThingInteraction } from '@/lib/types';
-import ThingInteractionCard from './ThingInteractionCard';
+import { User, Thing, UserThingInteraction, FeedThing } from '@/lib/types';
+import ThingCard from './ThingCard';
+import { dataService } from '@/lib/dataService';
 
 interface PublicProfileScreenProps {
   user: User;
@@ -23,6 +24,17 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
 
   const isFollowing = userProfile?.following.includes(profileUser.id) || false;
 
+  // Helper function to safely convert Timestamp to Date
+  const getDate = (timestamp: Date | { toDate: () => Date } | null | undefined): Date => {
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate();
+    }
+    return new Date(); // Fallback
+  };
+
   useEffect(() => {
     const loadUserData = async () => {
       try {
@@ -31,7 +43,7 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
         
         // Filter to only public/friends visibility (respect privacy)
         const visibleInteractions = interactions.filter(i => 
-          i.visibility === 'public' || i.visibility === 'friends'
+          i.visibility === 'friends'
         );
         
         setUserInteractions(visibleInteractions);
@@ -63,6 +75,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
     try {
       if (isFollowing) {
         await unfollowUser(currentUser.uid, profileUser.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(currentUser.uid);
+        
         const updatedFollowing = userProfile.following.filter(id => id !== profileUser.id);
         setUserProfile({
           ...userProfile,
@@ -70,6 +86,10 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
         });
       } else {
         await followUser(currentUser.uid, profileUser.id);
+        
+        // Clear feed cache to force fresh data load
+        dataService.clearFeedCache(currentUser.uid);
+        
         setUserProfile({
           ...userProfile,
           following: [...userProfile.following, profileUser.id]
@@ -198,11 +218,19 @@ export default function PublicProfileScreen({ user: profileUser, onBack }: Publi
                   return null;
                 }
                 
+                // Convert interaction to FeedThing format
+                const feedThing: FeedThing = {
+                  thing,
+                  interactions: [interaction], // Single interaction for profile view
+                  myInteraction: interaction, // This is the user's interaction
+                  avgRating: interaction.rating || null, // Use the interaction's rating
+                  mostRecentUpdate: getDate(interaction.createdAt)
+                };
+                
                 return (
-                  <ThingInteractionCard 
+                  <ThingCard 
                     key={interaction.id} 
-                    interaction={interaction}
-                    thing={thing}
+                    feedThing={feedThing}
                   />
                 );
               })}

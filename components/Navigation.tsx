@@ -9,7 +9,7 @@ import { subscribeToNotifications } from '@/lib/firestore';
 import { Notification } from '@/lib/types';
 
 interface NavigationProps {
-  activeTab: 'feed' | 'post' | 'profile';
+  activeTab: 'feed' | 'post' | 'profile' | null;
   onTabChange: (tab: 'feed' | 'post' | 'profile') => void;
   onNotificationsClick: () => void;
 }

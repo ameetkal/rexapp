@@ -1,32 +1,37 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import { FeedThing, UserThingInteraction, Thing, User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { CATEGORIES } from '@/lib/types';
-import { BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, CheckCircleIcon, ChatBubbleLeftIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
-import InteractionDetailModal from './InteractionDetailModal';
+import ThingDetailModal from './ThingDetailModal';
 import StarRating from './StarRating';
+import CommentSection from './CommentSection';
 import { Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
+import { dataService } from '@/lib/dataService';
 
-interface ThingFeedCardProps {
+interface ThingCardProps {
   feedThing: FeedThing;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
 }
 
-export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingFeedCardProps) {
+export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [tempRating, setTempRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   
   const { user, userProfile } = useAuthStore();
   const { getUserInteractionByThingId, removeUserInteraction, addUserInteraction, updateUserInteraction } = useAppStore();
@@ -57,8 +62,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     saved: allInteractions.filter(int => int.state === 'bucketList')
   }), [allInteractions]);
 
-  // Determine button states
-  const currentMyInteraction = myInteraction;
+  // Determine button states - ONLY use store data (current user's interaction)
+  // Ignore myInteraction prop as it represents the profile owner's interaction, not current user's
+  const currentMyInteraction = getUserInteractionByThingId(thing.id);
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
 
@@ -117,15 +123,15 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     
     setLoading(true);
     try {
-      if (isInBucketList && myInteraction) {
+      if (isInBucketList && currentMyInteraction) {
         // Remove from bucket list
         if (!confirm(`Delete "${thing.title}" from your profile? Your notes, photos, and rating will be lost.`)) {
           setLoading(false);
           return;
         }
         
-        await deleteUserThingInteraction(myInteraction.id);
-        removeUserInteraction(myInteraction.id);
+        await deleteUserThingInteraction(currentMyInteraction.id);
+        removeUserInteraction(currentMyInteraction.id);
         console.log('🗑️ Removed from bucket list');
       } else {
         // Add to bucket list
@@ -134,7 +140,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           userProfile.name,
           thing.id,
           'bucketList',
-          'public'
+          'friends'
         );
         
         const newInteraction: UserThingInteraction = {
@@ -144,7 +150,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           thingId: thing.id,
           state: 'bucketList',
           date: Timestamp.now(),
-          visibility: 'public',
+          visibility: 'friends',
           createdAt: Timestamp.now(),
           likedBy: [],
           commentCount: 0,
@@ -153,6 +159,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
       }
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
     } catch (error) {
       console.error('Error toggling save:', error);
     } finally {
@@ -164,9 +173,9 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const handleCompleteToggle = () => {
     if (!user || !userProfile) return;
     
-    if (isCompleted && onEdit && myInteraction) {
+    if (isCompleted && onEdit && currentMyInteraction) {
       // Already completed - open edit modal with existing data
-      onEdit(myInteraction, thing);
+      onEdit(currentMyInteraction, thing);
     } else {
       // Not completed yet - show rating modal
       setShowRatingModal(true);
@@ -181,10 +190,10 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
-      if (myInteraction) {
+      if (currentMyInteraction) {
         // Update existing interaction to completed
         // Update the existing interaction's state directly in Firestore
-        const interactionRef = doc(db, 'user_thing_interactions', myInteraction.id);
+        const interactionRef = doc(db, 'user_thing_interactions', currentMyInteraction.id);
         await updateDoc(interactionRef, {
           state: 'completed',
           rating: rating || null,
@@ -192,7 +201,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         });
         
         // Update local store
-        updateUserInteraction(myInteraction.id, { 
+        updateUserInteraction(currentMyInteraction.id, { 
           state: 'completed',
           rating,
           date: Timestamp.now()
@@ -204,7 +213,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           userProfile.name,
           thing.id,
           'completed',
-          'public',
+          'friends',
           { rating }
         );
         
@@ -215,7 +224,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           thingId: thing.id,
           state: 'completed',
           date: Timestamp.now(),
-          visibility: 'public',
+          visibility: 'friends',
           rating,
           createdAt: Timestamp.now(),
           likedBy: [],
@@ -228,12 +237,76 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
       setShowRatingModal(false);
       setTempRating(0);
+      
+      // Clear feed cache to ensure immediate UI update
+      dataService.clearFeedCache(user.uid);
     } catch (error) {
       console.error('Error marking as completed:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Handle menu toggle
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMenu(!showMenu);
+  };
+
+  // Handle share
+  const handleShare = async () => {
+    if (!user || !userProfile) return;
+    
+    setShowMenu(false);
+    setLoading(true);
+    
+    try {
+      const shareUrl = `${window.location.origin}/post/${thing.id}`;
+      
+      if (navigator.share) {
+        await navigator.share({
+          title: thing.title,
+          text: `Check out "${thing.title}" on Rex!`,
+          url: shareUrl,
+        });
+      } else {
+        // Fallback to clipboard
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Link copied to clipboard!');
+      }
+      
+      console.log('✅ Shared successfully');
+    } catch (error) {
+      console.error('❌ Error sharing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle edit
+  const handleEdit = () => {
+    if (!onEdit || !currentMyInteraction) return;
+    
+    setShowMenu(false);
+    onEdit(currentMyInteraction, thing);
+  };
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showMenu]);
 
   return (
     <div 
@@ -303,7 +376,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
           </div>
         )}
         
-        {/* Saved By */}
+        {/* Save By */}
         {dynamicInteractions.saved.length > 0 && (
           <div className="flex items-center space-x-2">
             <BookmarkIcon className="h-4 w-4 text-blue-600 flex-shrink-0" />
@@ -318,6 +391,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          console.log('🔍 Saved username clicked:', int.userId, displayName);
                           onUserClick?.(int.userId);
                         }}
                         className={`hover:underline ${int.userId === myInteraction?.userId ? 'font-medium text-blue-600' : 'text-gray-700'}`}
@@ -337,59 +411,124 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         )}
       </div>
 
-      {/* First Person's Take (or yours if you have one) */}
-      {(myInteraction?.content || allInteractions[0]?.content) && (
-        <div className="mb-3 p-3 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-700 line-clamp-2">
-            {myInteraction?.content || allInteractions[0]?.content}
-          </p>
+      {/* Action Bar */}
+      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        <div className="flex items-center space-x-1">
+          {/* Save Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSaveToggle();
+            }}
+            disabled={loading}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+              isInBucketList
+                ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+            }`}
+          >
+            {isInBucketList ? (
+              <BookmarkIconSolid className="h-5 w-5" />
+            ) : (
+              <BookmarkIcon className="h-5 w-5" />
+            )}
+            <span className="text-sm font-medium">Save</span>
+          </button>
+
+          {/* Completed Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCompleteToggle();
+            }}
+            disabled={loading}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+              isCompleted
+                ? 'bg-green-50 text-green-600 hover:bg-green-100'
+                : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+            }`}
+          >
+            {isCompleted ? (
+              <CheckCircleIconSolid className="h-5 w-5" />
+            ) : (
+              <CheckCircleIcon className="h-5 w-5" />
+            )}
+            <span className="text-sm font-medium">Completed</span>
+          </button>
+        </div>
+
+        {/* Right side - Comments and Menu */}
+        <div className="flex items-center space-x-1">
+          {/* Comments Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowComments(!showComments);
+            }}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors ${
+              showComments
+                ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+                : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'
+            }`}
+          >
+            <ChatBubbleLeftIcon className="h-5 w-5" />
+            <span className="text-sm font-medium">
+              {thing.commentCount ?? 0}
+            </span>
+          </button>
+
+          {/* 3-Dot Menu - Only show if user has interaction */}
+          {currentMyInteraction && (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={handleMenuToggle}
+                disabled={loading}
+                className="flex items-center justify-center w-10 h-10 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                <EllipsisVerticalIcon className="h-5 w-5" />
+              </button>
+
+              {/* Dropdown Menu */}
+              {showMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                  <div className="py-1">
+                    {/* Edit */}
+                    <button
+                      onClick={handleEdit}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <span>✏️</span> Edit
+                    </button>
+                    
+                    <div className="border-t border-gray-100 my-1"></div>
+                    
+                    {/* Share */}
+                    <button
+                      onClick={handleShare}
+                      disabled={loading}
+                      className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <span>🔗</span> Share
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Comments Section - Only show when expanded */}
+      {showComments && (
+        <div className="mt-3">
+          <CommentSection 
+            thingId={thing.id} 
+            showAllComments={false} // Filtered view for feed
+            onUserClick={onUserClick}
+          />
         </div>
       )}
-
-      {/* Action Bar */}
-      <div className="flex items-center space-x-1 pt-3 border-t border-gray-100">
-        {/* Save Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSaveToggle();
-          }}
-          disabled={loading}
-          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
-            isInBucketList
-              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
-          }`}
-        >
-          {isInBucketList ? (
-            <BookmarkIconSolid className="h-5 w-5" />
-          ) : (
-            <BookmarkIcon className="h-5 w-5" />
-          )}
-          <span className="text-sm font-medium">Saved</span>
-        </button>
-
-        {/* Completed Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleCompleteToggle();
-          }}
-          disabled={loading}
-          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
-            isCompleted
-              ? 'bg-green-50 text-green-600 hover:bg-green-100'
-              : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-          }`}
-        >
-          {isCompleted ? (
-            <CheckCircleIconSolid className="h-5 w-5" />
-          ) : (
-            <CheckCircleIcon className="h-5 w-5" />
-          )}
-          <span className="text-sm font-medium">Completed</span>
-        </button>
-      </div>
 
       {/* Rating Modal */}
       {showRatingModal && (
@@ -434,16 +573,13 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
       )}
 
       {/* Detail Modal */}
-      {showDetailModal && (myInteraction || allInteractions[0]) && (
-        <InteractionDetailModal
-          interaction={myInteraction || allInteractions[0]}
+      {showDetailModal && (
+        <ThingDetailModal
           thing={thing}
-          myInteraction={myInteraction}
-          isOwnInteraction={!!myInteraction}
           onClose={() => setShowDetailModal(false)}
-          onEdit={myInteraction && onEdit ? () => {
+          onEdit={currentMyInteraction && onEdit ? () => {
             setShowDetailModal(false);
-            onEdit(myInteraction, thing);
+            onEdit(currentMyInteraction, thing);
           } : undefined}
           onUserClick={onUserClick}
         />
