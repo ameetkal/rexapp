@@ -137,12 +137,23 @@ export default function PostForm({
         // Combine existing photos + new photos
         const allPhotoUrls = [...existingPhotoUrls, ...newPhotoUrls];
         
-        // Update interaction content
+        // Update interaction content (remove content field)
         await updateInteractionContent(editMode.interaction.id, {
-          content: description.trim() || undefined,
           rating: rating > 0 ? rating : undefined,
           photos: allPhotoUrls.length > 0 ? allPhotoUrls : undefined,
         });
+        
+        // If description provided, create or update comment
+        if (description.trim()) {
+          // For now, we'll create a new comment each time
+          // TODO: In the future, we could update existing comments
+          await createComment(
+            editMode.thing.id,
+            user.uid,
+            userProfile.name,
+            description.trim()
+          );
+        }
         
         // Update state and visibility if changed
         const newState = status === 'completed' ? 'completed' : 'bucketList';
@@ -200,22 +211,33 @@ export default function PostForm({
       const interactionState = status === 'completed' ? 'completed' : 'bucketList';
       const visibility = postToFeed ? 'public' : 'private';
       
-      const interactionId = await createUserThingInteraction(
-        user.uid,
-        userProfile.name,
-        thingId,
-        interactionState as 'completed' | 'bucketList',
-        visibility,
-        {
-          rating: rating > 0 ? rating : undefined,
-          notes: internalNotes.trim() || undefined,
-          content: postToFeed ? description.trim() || undefined : undefined,
-          photos: postToFeed ? (photoUrls.length > 0 ? photoUrls : undefined) : undefined,
-        }
-      );
+        const interactionId = await createUserThingInteraction(
+          user.uid,
+          userProfile.name,
+          thingId,
+          interactionState as 'completed' | 'bucketList',
+          visibility,
+          {
+            rating: rating > 0 ? rating : undefined,
+            notes: internalNotes.trim() || undefined,
+            // Remove content field - comments will be created separately
+            photos: postToFeed ? (photoUrls.length > 0 ? photoUrls : undefined) : undefined,
+          }
+        );
       console.log('✅ User interaction created:', interactionId);
       
-      // 3. Create recommendation if applicable
+      // 3. Create comment if description provided
+      if (description.trim()) {
+        await createComment(
+          thingId,
+          user.uid,
+          userProfile.name,
+          description.trim()
+        );
+        console.log('✅ Comment created');
+      }
+      
+      // 4. Create recommendation if applicable
       if (recommendedByUser && recommendedByUser.id !== user.uid) {
         await createRecommendation(
           recommendedByUser.id,
@@ -567,15 +589,15 @@ export default function PostForm({
             </div>
           )}
 
-          {/* Comments for Post */}
+          {/* Comments */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              💬 Comments for Post <span className="text-gray-400 font-normal">(optional)</span>
+              💬 Comments <span className="text-gray-400 font-normal">(optional)</span>
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Share your thoughts..."
+              placeholder="What did you think? Any tips for others?"
               className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-white"
               rows={3}
             />

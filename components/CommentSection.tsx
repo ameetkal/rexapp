@@ -5,12 +5,13 @@ import { Timestamp } from 'firebase/firestore';
 import { Comment } from '@/lib/types';
 import { 
   createComment, 
-  getCommentsForInteraction, 
+  getCommentsForThing, 
   deleteComment,
   likeComment,
   unlikeComment 
 } from '@/lib/firestore';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAppStore } from '@/lib/store';
+import UserTagInput from './UserTagInput';
 import { 
   HeartIcon, 
   TrashIcon,
@@ -19,20 +20,25 @@ import {
 import { HeartIcon as HeartIconFilled } from '@heroicons/react/24/solid';
 
 interface CommentSectionProps {
-  interactionId: string;
+  thingId: string;
+  showAllComments?: boolean; // For profile views
 }
 
-export default function CommentSection({ interactionId }: CommentSectionProps) {
+export default function CommentSection({ thingId, showAllComments = false }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState('');
+  const [taggedUsers, setTaggedUsers] = useState<{id: string; name: string; email: string}[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const { user, userProfile } = useAuthStore();
+  const { following } = useAppStore();
 
   const loadComments = async () => {
     setLoading(true);
     try {
-      const loadedComments = await getCommentsForInteraction(interactionId);
+      const loadedComments = showAllComments 
+        ? await getCommentsForThing(thingId) // All comments
+        : await getCommentsForThing(thingId, user?.uid || '', following); // Filtered
       setComments(loadedComments);
     } catch (error) {
       console.error('Error loading comments:', error);
@@ -44,7 +50,7 @@ export default function CommentSection({ interactionId }: CommentSectionProps) {
   useEffect(() => {
     loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interactionId]);
+  }, [thingId]);
 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,25 +59,28 @@ export default function CommentSection({ interactionId }: CommentSectionProps) {
     setSubmitting(true);
     try {
       const commentId = await createComment(
-        interactionId,
+        thingId,
         user.uid,
         userProfile.name,
-        newComment.trim()
+        newComment.trim(),
+        taggedUsers.map(u => u.id)
       );
 
       // Add comment to local state
       const newCommentObj: Comment = {
         id: commentId,
-        interactionId,
+        thingId,
         authorId: user.uid,
         authorName: userProfile.name,
         content: newComment.trim(),
         createdAt: Timestamp.now(),
         likedBy: [],
+        taggedUsers: taggedUsers.map(u => u.id),
       };
       
       setComments(prev => [...prev, newCommentObj]);
       setNewComment('');
+      setTaggedUsers([]); // Clear tagged users
     } catch (error) {
       console.error('Error creating comment:', error);
     } finally {
@@ -83,7 +92,7 @@ export default function CommentSection({ interactionId }: CommentSectionProps) {
     if (!confirm('Delete this comment?')) return;
 
     try {
-      await deleteComment(commentId, interactionId);
+      await deleteComment(commentId, thingId);
       setComments(prev => prev.filter(c => c.id !== commentId));
     } catch (error) {
       console.error('Error deleting comment:', error);
@@ -171,6 +180,14 @@ export default function CommentSection({ interactionId }: CommentSectionProps) {
                       <p className="text-xs text-gray-500">
                         {formatDate(comment.createdAt)}
                       </p>
+                      {comment.taggedUsers && comment.taggedUsers.length > 0 && (
+                        <div className="flex items-center space-x-1 mt-1">
+                          <span className="text-xs text-blue-600">@</span>
+                          <span className="text-xs text-blue-600">
+                            {comment.taggedUsers.length} user{comment.taggedUsers.length > 1 ? 's' : ''} tagged
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {isAuthor && (
@@ -218,6 +235,17 @@ export default function CommentSection({ interactionId }: CommentSectionProps) {
               {userProfile?.name.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex-1">
+              {/* User Tagging */}
+              <div className="mb-2">
+                <UserTagInput
+                  selectedUsers={taggedUsers}
+                  onUserSelect={(users) => setTaggedUsers(users)}
+                  excludeCurrentUser={true}
+                  currentUserId={user?.uid}
+                  placeholder="Tag users..."
+                />
+              </div>
+              
               <textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}

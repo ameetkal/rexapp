@@ -5,10 +5,11 @@ import Image from 'next/image';
 import { FeedThing, UserThingInteraction, Thing, User } from '@/lib/types';
 import { getUserProfile } from '@/lib/auth';
 import { CATEGORIES } from '@/lib/types';
-import { BookmarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { BookmarkIcon, CheckCircleIcon, ChatBubbleLeftIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import InteractionDetailModal from './InteractionDetailModal';
 import StarRating from './StarRating';
+import CommentSection from './CommentSection';
 import { Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
@@ -25,6 +26,7 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
   const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [tempRating, setTempRating] = useState(0);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
@@ -344,12 +346,13 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         )}
       </div>
 
-      {/* First Person's Take (or yours if you have one) */}
-      {(myInteraction?.content || allInteractions[0]?.content) && (
-        <div className="mb-3 p-3 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-700 line-clamp-2">
-            {myInteraction?.content || allInteractions[0]?.content}
-          </p>
+      {/* Comments Section - Only show when expanded */}
+      {showComments && (
+        <div className="mb-3">
+          <CommentSection 
+            thingId={thing.id} 
+            showAllComments={false} // Filtered view for feed
+          />
         </div>
       )}
 
@@ -395,6 +398,24 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
             <CheckCircleIcon className="h-5 w-5" />
           )}
           <span className="text-sm font-medium">Completed</span>
+        </button>
+
+        {/* Comments Button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowComments(!showComments);
+          }}
+          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors ${
+            showComments
+              ? 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+              : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50'
+          }`}
+        >
+          <ChatBubbleLeftIcon className="h-5 w-5" />
+          <span className="text-sm font-medium">
+            {thing.commentCount || 0}
+          </span>
         </button>
       </div>
 

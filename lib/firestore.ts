@@ -190,29 +190,6 @@ export const savePostAsPersonalItem = async (
       savedBy: arrayUnion(userId)
     });
     
-    // Create notification for post author (unless it's their own post)
-    if (post.authorId !== userId) {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        const userName = userDoc.exists() ? userDoc.data().name : 'Someone';
-        
-        await createNotification(
-          post.authorId,
-          'post_liked',
-          `${userName} saved your post!`,
-          `"${post.title}"`,
-          {
-            postId: post.id,
-            fromUserId: userId,
-            fromUserName: userName
-          }
-        );
-      } catch (error) {
-        console.error('Error creating save notification:', error);
-        // Don't fail the save operation if notification fails
-      }
-    }
-    
     return docRef.id;
   } catch (error) {
     console.error('Error saving post as personal item:', error);
@@ -1117,7 +1094,7 @@ export const unsharePost = async (
 // Notification functions
 export const createNotification = async (
   userId: string,
-  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed',
+  type: 'tagged' | 'rec_given' | 'comment' | 'followed',
   title: string,
   message: string,
   data: {
@@ -1500,6 +1477,7 @@ export const createOrGetThing = async (
         source: universalItem.source,
         createdAt: Timestamp.now(),
         createdBy,
+        commentCount: 0, // Initialize comment count
       };
       
       // Clean undefined values before writing to Firestore
@@ -1535,6 +1513,7 @@ export const createOrGetThing = async (
       source: universalItem.source,
       createdAt: Timestamp.now(),
       createdBy,
+      commentCount: 0, // Initialize comment count
     };
     
     // Clean undefined values before writing to Firestore
@@ -2615,52 +2594,88 @@ export const migratePersonalItemToNewSystem = async (personalItem: PersonalItem)
 // ============================================================================
 
 export const createComment = async (
-  interactionId: string,
+  thingId: string,
   authorId: string,
   authorName: string,
-  content: string
+  content: string,
+  taggedUsers?: string[]
 ): Promise<string> => {
   try {
     const commentData: Omit<Comment, 'id'> = {
-      interactionId,
+      thingId,
       authorId,
       authorName,
       content,
       createdAt: Timestamp.now(),
       likedBy: [],
+      taggedUsers: taggedUsers || [],
     };
     
     const docRef = await addDoc(collection(db, 'comments'), commentData);
     console.log('✅ Created comment:', docRef.id);
     
-    // Increment comment count on the interaction
-    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
-    await updateDoc(interactionRef, {
+    // Increment comment count on the thing
+    const thingRef = doc(db, 'things', thingId);
+    await updateDoc(thingRef, {
       commentCount: increment(1)
     });
     
-    // Notify the interaction owner (if not commenting on own post)
-    const interactionDoc = await getDoc(interactionRef);
-    if (interactionDoc.exists()) {
+    // Get thing title for notification
+    const thingDoc = await getDoc(thingRef);
+    const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'an item';
+    
+    // Notify tagged users first
+    if (taggedUsers && taggedUsers.length > 0) {
+      for (const taggedUserId of taggedUsers) {
+        if (taggedUserId !== authorId) { // Don't notify yourself
+          await createNotification(
+            taggedUserId,
+            'tagged',
+            'Tagged in comment',
+            `${authorName} tagged you in a comment on ${thingTitle}`,
+            {
+              fromUserId: authorId,
+              fromUserName: authorName,
+              thingId,
+              thingTitle,
+            }
+          );
+        }
+      }
+    }
+    
+    // Notify users who have interacted with this thing (except the commenter and tagged users)
+    const interactionsQuery = query(
+      collection(db, 'user_thing_interactions'),
+      where('thingId', '==', thingId),
+      where('userId', '!=', authorId) // Exclude the commenter
+    );
+    
+    const interactionsSnapshot = await getDocs(interactionsQuery);
+    const notifiedUsers = new Set<string>();
+    
+    // Add tagged users to the set so we don't notify them twice
+    if (taggedUsers) {
+      taggedUsers.forEach(userId => notifiedUsers.add(userId));
+    }
+    
+    for (const interactionDoc of interactionsSnapshot.docs) {
       const interactionData = interactionDoc.data();
-      const postOwnerId = interactionData.userId;
+      const userId = interactionData.userId;
       
-      // Don't notify if commenting on your own post
-      if (postOwnerId !== authorId) {
-        // Get thing title for notification
-        const thingDoc = await getDoc(doc(db, 'things', interactionData.thingId));
-        const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'your post';
+      // Don't notify the same user multiple times
+      if (!notifiedUsers.has(userId)) {
+        notifiedUsers.add(userId);
         
         await createNotification(
-          postOwnerId,
+          userId,
           'comment',
           'New comment',
           `${authorName} commented on ${thingTitle}`,
           {
             fromUserId: authorId,
             fromUserName: authorName,
-            interactionId,
-            thingId: interactionData.thingId,
+            thingId,
             thingTitle,
           }
         );
@@ -2674,27 +2689,51 @@ export const createComment = async (
   }
 };
 
-export const getCommentsForInteraction = async (interactionId: string): Promise<Comment[]> => {
+export const getCommentsForThing = async (
+  thingId: string,
+  currentUserId: string,
+  following: string[] = []
+): Promise<Comment[]> => {
   try {
     const q = query(
       collection(db, 'comments'),
-      where('interactionId', '==', interactionId),
+      where('thingId', '==', thingId),
       orderBy('createdAt', 'asc') // Oldest first for natural conversation flow
     );
     
     const querySnapshot = await getDocs(q);
-    const comments: Comment[] = [];
+    const allComments: Comment[] = [];
     
     querySnapshot.forEach((doc) => {
-      comments.push({ id: doc.id, ...doc.data() } as Comment);
+      allComments.push({ id: doc.id, ...doc.data() } as Comment);
     });
     
-    console.log(`✅ Loaded ${comments.length} comments for interaction ${interactionId}`);
-    return comments;
+    // Filter comments based on following
+    const visibleComments = allComments.filter(comment => {
+      // Always show your own comments
+      if (comment.authorId === currentUserId) return true;
+      
+      // Show comments from people you follow
+      if (following.includes(comment.authorId)) return true;
+      
+      // Don't show comments from people you don't follow
+      return false;
+    });
+    
+    console.log(`✅ Loaded ${visibleComments.length} visible comments (${allComments.length} total) for thing ${thingId}`);
+    return visibleComments;
   } catch (error) {
     console.error('Error getting comments:', error);
     return [];
   }
+};
+
+// LEGACY: Keep for backwards compatibility
+export const getCommentsForInteraction = async (interactionId: string): Promise<Comment[]> => {
+  console.log('⚠️ getCommentsForInteraction is deprecated, use getCommentsForThing instead');
+  // This will need to be updated to work with the new system
+  // For now, return empty array to avoid breaking existing code
+  return [];
 };
 
 // LEGACY: Keep for backwards compatibility
@@ -2703,13 +2742,13 @@ export const getCommentsForPost = async (postId: string): Promise<Comment[]> => 
   return getCommentsForInteraction(postId);
 };
 
-export const deleteComment = async (commentId: string, interactionId: string): Promise<void> => {
+export const deleteComment = async (commentId: string, thingId: string): Promise<void> => {
   try {
     await deleteDoc(doc(db, 'comments', commentId));
     
-    // Decrement comment count on the interaction
-    const interactionRef = doc(db, 'user_thing_interactions', interactionId);
-    await updateDoc(interactionRef, {
+    // Decrement comment count on the thing
+    const thingRef = doc(db, 'things', thingId);
+    await updateDoc(thingRef, {
       commentCount: increment(-1)
     });
     

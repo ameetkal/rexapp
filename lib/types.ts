@@ -115,7 +115,7 @@ export interface CategoryInfo {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'tagged' | 'rec_given' | 'comment' | 'post_liked' | 'followed';
+  type: 'tagged' | 'rec_given' | 'comment' | 'followed';
   title: string;
   message: string;
   read: boolean;
@@ -136,7 +136,6 @@ export interface NotificationPreferences {
   tagged: boolean;
   rec_given: boolean;
   comment: boolean;
-  post_liked: boolean;
   followed: boolean;
   email_notifications: boolean;
 }
@@ -180,6 +179,7 @@ export interface Thing {
   source: 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual';
   createdAt: Timestamp;
   createdBy: string; // userId who first created this thing
+  commentCount?: number; // Number of comments (denormalized)
 }
 
 export type UserThingInteractionState = 'bucketList' | 'inProgress' | 'completed';
@@ -285,15 +285,16 @@ export interface PostV2 {
   taggedNonUsers?: { name: string; email?: string }[]; // for invites
 }
 
-// Comments on posts
+// Comments on things
 export interface Comment {
   id: string;
-  interactionId: string;  // Links to UserThingInteraction (must have visibility: public/friends)
+  thingId: string;        // Links to Thing (not UserThingInteraction)
   authorId: string;       // User who wrote the comment
   authorName: string;     // Denormalized for display
   content: string;
   createdAt: Timestamp;
   likedBy: string[];      // userIds who liked this comment
+  taggedUsers?: string[]; // userIds of tagged users
   parentCommentId?: string; // For threaded replies (future)
 }
 

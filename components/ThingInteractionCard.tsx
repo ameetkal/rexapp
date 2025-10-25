@@ -14,6 +14,7 @@ import {
   CheckCircleIcon,
   EllipsisVerticalIcon
 } from '@heroicons/react/24/outline';
+import CommentSection from './CommentSection';
 import { 
   BookmarkIcon as BookmarkIconSolid, 
   CheckCircleIcon as CheckCircleIconSolid
@@ -338,10 +339,13 @@ export default function ThingInteractionCard({
         </div>
       )}
 
-      {/* Your Content/Comments */}
-      {interaction.content && (
+      {/* Comments Section */}
+      {thing.commentCount && thing.commentCount > 0 && (
         <div className="mb-3">
-          <p className="text-gray-700 leading-relaxed">{interaction.content}</p>
+          <CommentSection 
+            thingId={thing.id} 
+            showAllComments={true} // Show all comments on own profile
+          />
         </div>
       )}
 
