@@ -2620,6 +2620,8 @@ export const createComment = async (
       commentCount: increment(1)
     });
     
+    console.log('✅ Incremented comment count for thing:', thingId);
+    
     // Get thing title for notification
     const thingDoc = await getDoc(thingRef);
     const thingTitle = thingDoc.exists() ? thingDoc.data().title : 'an item';
@@ -2742,6 +2744,57 @@ export const getCommentsForPost = async (postId: string): Promise<Comment[]> => 
   return getCommentsForInteraction(postId);
 };
 
+// Migration function to initialize commentCount for existing things
+export const initializeCommentCounts = async (): Promise<void> => {
+  try {
+    console.log('🔄 Starting commentCount migration...');
+    
+    // Get all things
+    const thingsSnapshot = await getDocs(collection(db, 'things'));
+    console.log(`📊 Found ${thingsSnapshot.docs.length} total things`);
+    
+    let updatedCount = 0;
+    
+    // Process each thing
+    for (const thingDoc of thingsSnapshot.docs) {
+      const thingId = thingDoc.id;
+      const thingData = thingDoc.data();
+      
+      // Check if commentCount field exists and is a number
+      if (typeof thingData.commentCount !== 'number') {
+        // Count actual comments for this thing
+        const commentsQuery = query(
+          collection(db, 'comments'),
+          where('thingId', '==', thingId)
+        );
+        
+        const commentsSnapshot = await getDocs(commentsQuery);
+        const actualCommentCount = commentsSnapshot.docs.length;
+        
+        // Update the thing with the correct comment count
+        await updateDoc(doc(db, 'things', thingId), {
+          commentCount: actualCommentCount
+        });
+        
+        console.log(`✅ Updated ${thingData.title}: ${actualCommentCount} comments`);
+        updatedCount++;
+      } else {
+        console.log(`⏭️ Skipped ${thingData.title}: already has commentCount (${thingData.commentCount})`);
+      }
+    }
+    
+    console.log(`✅ CommentCount migration completed. Updated ${updatedCount} things.`);
+  } catch (error) {
+    console.error('❌ Error during commentCount migration:', error);
+    throw error;
+  }
+};
+
+// Make migration function available globally for console access
+if (typeof window !== 'undefined') {
+  (window as any).initializeCommentCounts = initializeCommentCounts;
+}
+
 export const deleteComment = async (commentId: string, thingId: string): Promise<void> => {
   try {
     await deleteDoc(doc(db, 'comments', commentId));
@@ -2752,6 +2805,7 @@ export const deleteComment = async (commentId: string, thingId: string): Promise
       commentCount: increment(-1)
     });
     
+    console.log('✅ Decremented comment count for thing:', thingId);
     console.log('✅ Deleted comment:', commentId);
   } catch (error) {
     console.error('Error deleting comment:', error);

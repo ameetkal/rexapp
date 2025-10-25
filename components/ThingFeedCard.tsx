@@ -24,6 +24,9 @@ interface ThingFeedCardProps {
 
 export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingFeedCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
+  
+  // Debug comment count
+  console.log(`🔍 ThingFeedCard: ${thing.title} - commentCount:`, thing.commentCount, typeof thing.commentCount);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -346,61 +349,53 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         )}
       </div>
 
-      {/* Comments Section - Only show when expanded */}
-      {showComments && (
-        <div className="mb-3">
-          <CommentSection 
-            thingId={thing.id} 
-            showAllComments={false} // Filtered view for feed
-          />
-        </div>
-      )}
-
       {/* Action Bar */}
-      <div className="flex items-center space-x-1 pt-3 border-t border-gray-100">
-        {/* Save Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSaveToggle();
-          }}
-          disabled={loading}
-          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
-            isInBucketList
-              ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
-          }`}
-        >
-          {isInBucketList ? (
-            <BookmarkIconSolid className="h-5 w-5" />
-          ) : (
-            <BookmarkIcon className="h-5 w-5" />
-          )}
-          <span className="text-sm font-medium">Save</span>
-        </button>
+      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+        <div className="flex items-center space-x-1">
+          {/* Save Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSaveToggle();
+            }}
+            disabled={loading}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+              isInBucketList
+                ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+            }`}
+          >
+            {isInBucketList ? (
+              <BookmarkIconSolid className="h-5 w-5" />
+            ) : (
+              <BookmarkIcon className="h-5 w-5" />
+            )}
+            <span className="text-sm font-medium">Save</span>
+          </button>
 
-        {/* Completed Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleCompleteToggle();
-          }}
-          disabled={loading}
-          className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
-            isCompleted
-              ? 'bg-green-50 text-green-600 hover:bg-green-100'
-              : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-          }`}
-        >
-          {isCompleted ? (
-            <CheckCircleIconSolid className="h-5 w-5" />
-          ) : (
-            <CheckCircleIcon className="h-5 w-5" />
-          )}
-          <span className="text-sm font-medium">Completed</span>
-        </button>
+          {/* Completed Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCompleteToggle();
+            }}
+            disabled={loading}
+            className={`flex items-center space-x-1 px-3 py-2 rounded-full transition-colors disabled:opacity-50 ${
+              isCompleted
+                ? 'bg-green-50 text-green-600 hover:bg-green-100'
+                : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+            }`}
+          >
+            {isCompleted ? (
+              <CheckCircleIconSolid className="h-5 w-5" />
+            ) : (
+              <CheckCircleIcon className="h-5 w-5" />
+            )}
+            <span className="text-sm font-medium">Completed</span>
+          </button>
+        </div>
 
-        {/* Comments Button */}
+        {/* Comments Button - Right side */}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -414,10 +409,20 @@ export default function ThingFeedCard({ feedThing, onEdit, onUserClick }: ThingF
         >
           <ChatBubbleLeftIcon className="h-5 w-5" />
           <span className="text-sm font-medium">
-            {thing.commentCount || 0}
+            {thing.commentCount ?? 0}
           </span>
         </button>
       </div>
+
+      {/* Comments Section - Only show when expanded */}
+      {showComments && (
+        <div className="mt-3">
+          <CommentSection 
+            thingId={thing.id} 
+            showAllComments={false} // Filtered view for feed
+          />
+        </div>
+      )}
 
       {/* Rating Modal */}
       {showRatingModal && (

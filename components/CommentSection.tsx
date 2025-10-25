@@ -11,6 +11,7 @@ import {
   unlikeComment 
 } from '@/lib/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
+import { dataService } from '@/lib/dataService';
 import UserTagInput from './UserTagInput';
 import { 
   HeartIcon, 
@@ -81,6 +82,9 @@ export default function CommentSection({ thingId, showAllComments = false }: Com
       setComments(prev => [...prev, newCommentObj]);
       setNewComment('');
       setTaggedUsers([]); // Clear tagged users
+      
+      // Clear feed cache to update comment count in feed cards
+      dataService.clearFeedCache(user.uid);
     } catch (error) {
       console.error('Error creating comment:', error);
     } finally {
@@ -94,6 +98,11 @@ export default function CommentSection({ thingId, showAllComments = false }: Com
     try {
       await deleteComment(commentId, thingId);
       setComments(prev => prev.filter(c => c.id !== commentId));
+      
+      // Clear feed cache to update comment count in feed cards
+      if (user) {
+        dataService.clearFeedCache(user.uid);
+      }
     } catch (error) {
       console.error('Error deleting comment:', error);
     }
@@ -145,43 +154,34 @@ export default function CommentSection({ thingId, showAllComments = false }: Com
   };
 
   return (
-    <div className="mt-4 pt-4 border-t border-gray-100">
-      {/* Comments Header */}
-      <h3 className="text-sm font-semibold text-gray-900 mb-3">
-        Comments ({comments.length})
-      </h3>
-
+    <div className="mt-3 pt-3 border-t border-gray-100">
       {/* Comments List */}
       {loading ? (
-        <div className="text-center py-4">
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+        <div className="text-center py-2">
+          <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
         </div>
-      ) : comments.length === 0 ? (
-        <p className="text-sm text-gray-500 text-center py-4">
-          No comments yet. Be the first to comment!
-        </p>
-      ) : (
-        <div className="space-y-3 mb-4">
+      ) : comments.length > 0 && (
+        <div className="space-y-2 mb-3">
           {comments.map(comment => {
             const isLiked = user ? comment.likedBy.includes(user.uid) : false;
             const isAuthor = user?.uid === comment.authorId;
 
             return (
-              <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
+              <div key={comment.id} className="bg-gray-50 rounded-lg p-2">
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs">
+                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs">
                       {comment.authorName.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-xs font-medium text-gray-900">
                         {comment.authorName}
                       </p>
                       <p className="text-xs text-gray-500">
                         {formatDate(comment.createdAt)}
                       </p>
                       {comment.taggedUsers && comment.taggedUsers.length > 0 && (
-                        <div className="flex items-center space-x-1 mt-1">
+                        <div className="flex items-center space-x-1 mt-0.5">
                           <span className="text-xs text-blue-600">@</span>
                           <span className="text-xs text-blue-600">
                             {comment.taggedUsers.length} user{comment.taggedUsers.length > 1 ? 's' : ''} tagged
@@ -195,19 +195,22 @@ export default function CommentSection({ thingId, showAllComments = false }: Com
                       onClick={() => handleDeleteComment(comment.id)}
                       className="p-1 hover:bg-red-100 rounded-full transition-colors"
                     >
-                      <TrashIcon className="h-4 w-4 text-gray-400 hover:text-red-500" />
+                      <TrashIcon className="h-3 w-3 text-gray-400 hover:text-red-500" />
                     </button>
                   )}
                 </div>
 
-                <p className="text-sm text-gray-700 mb-2 ml-10">
+                <p className="text-xs text-gray-700 mb-1 ml-8">
                   {comment.content}
                 </p>
 
-                <div className="flex items-center space-x-2 ml-10">
+                <div className="flex items-center space-x-2 ml-8">
                   <button
-                    onClick={() => handleLikeToggle(comment)}
-                    className={`flex items-center space-x-1 px-2 py-1 rounded-full transition-colors text-xs ${
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLikeToggle(comment);
+                    }}
+                    className={`flex items-center space-x-1 px-1.5 py-0.5 rounded-full transition-colors text-xs ${
                       isLiked
                         ? 'text-red-500 bg-red-50'
                         : 'text-gray-500 hover:text-red-500 hover:bg-red-50'
@@ -229,55 +232,41 @@ export default function CommentSection({ thingId, showAllComments = false }: Com
 
       {/* Add Comment Form */}
       {user ? (
-        <form onSubmit={handleSubmitComment} className="mt-4">
+        <form onSubmit={handleSubmitComment} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-start space-x-2">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs flex-shrink-0">
+            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs flex-shrink-0">
               {userProfile?.name.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex-1">
-              {/* User Tagging */}
-              <div className="mb-2">
-                <UserTagInput
-                  selectedUsers={taggedUsers}
-                  onUserSelect={(users) => setTaggedUsers(users)}
-                  excludeCurrentUser={true}
-                  currentUserId={user?.uid}
-                  placeholder="Tag users..."
+              <div className="relative">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Add a comment... (use @ to tag users)"
+                  className="w-full px-3 py-2 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                  rows={2}
+                  disabled={submitting}
                 />
-              </div>
-              
-              <textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment..."
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
-                rows={2}
-                disabled={submitting}
-              />
-              <div className="flex justify-end mt-2">
                 <button
                   type="submit"
                   disabled={!newComment.trim() || submitting}
-                  className="flex items-center space-x-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      <span>Posting...</span>
-                    </>
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
                   ) : (
-                    <>
-                      <PaperAirplaneIcon className="h-4 w-4" />
-                      <span>Comment</span>
-                    </>
+                    <PaperAirplaneIcon className="h-3 w-3" />
                   )}
                 </button>
               </div>
+              
             </div>
           </div>
         </form>
       ) : (
-        <p className="text-sm text-gray-500 text-center py-3">
+        <p className="text-xs text-gray-500 text-center py-2">
           Sign in to comment
         </p>
       )}
