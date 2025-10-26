@@ -296,6 +296,10 @@ export interface Comment {
   likedBy: string[];      // userIds who liked this comment
   taggedUsers?: string[]; // usernames of tagged users
   parentCommentId?: string; // For threaded replies (future)
+  
+  // Voice note support
+  voiceNoteUrl?: string;     // Storage URL for voice note audio file
+  voiceNoteDuration?: number; // Duration in seconds (max 30)
 }
 
 

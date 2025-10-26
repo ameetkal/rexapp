@@ -2612,7 +2612,9 @@ export const createComment = async (
   authorId: string,
   authorName: string,
   content: string,
-  taggedUsers?: string[]
+  taggedUsers?: string[],
+  voiceNoteUrl?: string,
+  voiceNoteDuration?: number
 ): Promise<string> => {
   try {
     const commentData: Omit<Comment, 'id'> = {
@@ -2623,6 +2625,8 @@ export const createComment = async (
       createdAt: Timestamp.now(),
       likedBy: [],
       taggedUsers: taggedUsers || [],
+      ...(voiceNoteUrl && { voiceNoteUrl }),
+      ...(voiceNoteDuration && { voiceNoteDuration }),
     };
     
     const docRef = await addDoc(collection(db, 'comments'), commentData);
@@ -3121,23 +3125,22 @@ export const processInvitation = async (
     console.log('👥 Auto-following inviter:', invitation.inviterId);
     await followUser(userId, invitation.inviterId);
     
-    // 2. Save thing to bucket list
-    console.log('📌 Auto-saving thing to bucket list:', invitation.thingId);
+    // 2. Save thing as completed (not bucket list)
+    console.log('📌 Auto-saving thing as completed:', invitation.thingId);
     await createUserThingInteraction(
       userId,
       userName,
       invitation.thingId,
-      'bucketList',
-      'private', // Private by default
-      { notes: `Recommended by ${invitation.inviterName}` }
+      'completed',
+      'friends' // Visible to followers by default
     );
     
     // 3. Create recommendation record (you → inviter)
-    // The person being invited is the one who gave the recommendation
+    // The invited user recommended this thing to the inviter
     console.log('🎁 Creating recommendation record');
     await createRecommendation(
-      userId,                 // The person who gave the recommendation
-      invitation.inviterId,   // The person who received the recommendation
+      userId,                 // The person who gave the recommendation (invited user)
+      invitation.inviterId,   // The person who received the recommendation (inviter)
       invitation.thingId,
       `Via invite link`
     );

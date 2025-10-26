@@ -189,7 +189,7 @@ export const useFeedData = () => {
   const memoizedUserId = useMemo(() => userProfile?.id, [userProfile?.id]);
 
   const loadFeedData = useCallback(async (following: string[], userId: string) => {
-    if (!following || !userId) {
+    if (!userId) {
       return;
     }
     
@@ -197,7 +197,7 @@ export const useFeedData = () => {
     setError(null);
     
     try {
-      const feedData = await dataService.loadFeedData(following, userId);
+      const feedData = await dataService.loadFeedData(following || [], userId);
       // Store feed interactions and my interactions locally
       setFeedInteractions(feedData.interactions);
       setMyInteractions(feedData.myInteractions);
@@ -220,10 +220,11 @@ export const useFeedData = () => {
     loadFeedDataRef.current = loadFeedData;
   }, [memoizedFollowing, memoizedUserId, loadFeedData]);
 
-  // Single effect to load feed data
+  // Single effect to load feed data (loads even if not following anyone - to show own items)
   useEffect(() => {
-    if (memoizedFollowing && memoizedFollowing.length > 0 && memoizedUserId) {
-      loadFeedData(memoizedFollowing, memoizedUserId);
+    if (memoizedUserId) {
+      // Load feed data with following list (even if empty - this will include your own items)
+      loadFeedData(memoizedFollowing || [], memoizedUserId);
     }
   }, [memoizedFollowing, memoizedUserId, loadFeedData]);
 

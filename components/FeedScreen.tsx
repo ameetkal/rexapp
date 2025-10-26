@@ -73,9 +73,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
       return !isDuplicate;
     })
     .filter(thing => {
-      // Only show things that have interactions from followed users (not just your own)
+      // Show things that have interactions from followed users OR your own interactions
       const thingInteractions = interactions.filter(i => i.thingId === thing.id);
-      return thingInteractions.length > 0; // Only show if there are interactions from followed users
+      const myInteraction = myInteractions.find(i => i.thingId === thing.id);
+      return thingInteractions.length > 0 || !!myInteraction; // Show if interactions from followed users OR your own interaction
     })
     .map(thing => {
       const thingInteractions = interactions.filter(i => i.thingId === thing.id);
