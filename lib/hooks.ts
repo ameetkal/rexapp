@@ -7,7 +7,9 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from './store';
 import { useAuthStore } from './store';
 import { dataService } from './dataService';
-import { User, UserThingInteraction, Post } from './types';
+import { User, UserThingInteraction, Thing } from './types';
+import { Timestamp } from 'firebase/firestore';
+import { searchGoogleBooks, searchTMDb, searchGooglePlaces } from './firestore';
 
 /**
  * Hook for loading and accessing user interactions
@@ -340,13 +342,13 @@ export const useAnyUserProfile = (userId: string) => {
  * Hook for performing searches
  */
 export const useSearch = () => {
-  const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[] }>({ users: [], posts: [] });
+  const [searchResults, setSearchResults] = useState<{ users: User[]; things: Thing[] }>({ users: [], things: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const performSearch = useCallback(async (searchTerm: string) => {
     if (!searchTerm.trim()) {
-      setSearchResults({ users: [], posts: [] });
+      setSearchResults({ users: [], things: [] });
       return;
     }
     
@@ -418,6 +420,80 @@ export const usePlaceSearch = () => {
     loading,
     error,
     searchPlaces,
+  };
+};
+
+/**
+ * Hook for searching external APIs (Google Books, TMDB, Google Places)
+ */
+export const useAPISearch = () => {
+  const [results, setResults] = useState<Thing[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const searchAPIs = useCallback(async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setResults([]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔍 Searching APIs for:', searchTerm);
+      
+      // Search all APIs in parallel
+      const [books, movies, places] = await Promise.all([
+        searchGoogleBooks(searchTerm),
+        searchTMDb(searchTerm),
+        searchGooglePlaces(searchTerm),
+      ]);
+
+      console.log('📊 API Results:', {
+        books: books.length,
+        movies: movies.length,
+        places: places.length,
+      });
+
+      // Convert UniversalItems to Things (preview format)
+      // For preview things, we don't have an ID, so we use the source-specific ID
+      const allResults: Thing[] = [...books, ...movies, ...places].map((item) => {
+        console.log('🔍 Converting API item to preview Thing:', item);
+        
+        // Store source-specific ID for deduplication
+        const previewThing: Thing & { sourceId?: string } = {
+          id: '', // No ID yet - will be created on first interaction
+          title: item.title,
+          category: item.category,
+          description: item.description,
+          image: item.image,
+          metadata: item.metadata,
+          source: item.source,
+          createdAt: Timestamp.fromDate(new Date()),
+          createdBy: '',
+          sourceId: item.id, // Store original API ID for later use in createOrGetThing
+        };
+        
+        console.log('✅ Created preview Thing:', previewThing.title, 'sourceId:', previewThing.sourceId);
+        
+        return previewThing as Thing;
+      });
+
+      setResults(allResults);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search APIs');
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return {
+    results,
+    loading,
+    error,
+    searchAPIs,
   };
 };
 

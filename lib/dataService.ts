@@ -12,7 +12,7 @@ import {
   universalSearch
 } from './firestore';
 import { getUserProfile } from './auth';
-import { User, Thing, UserThingInteraction, Recommendation, Post } from './types';
+import { User, Thing, UserThingInteraction, Recommendation } from './types';
 
 /**
  * Data loading service that syncs Firestore data with Zustand store
@@ -321,7 +321,7 @@ export class DataService {
   /**
    * Perform universal search
    */
-  async performSearch(searchTerm: string): Promise<{ users: User[]; posts: Post[] }> {
+  async performSearch(searchTerm: string): Promise<{ users: User[]; things: Thing[] }> {
     try {
       // Perform search
       const results = await universalSearch(searchTerm);

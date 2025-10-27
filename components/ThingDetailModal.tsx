@@ -27,13 +27,15 @@ interface ThingDetailModalProps {
   onClose: () => void;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
+  onThingCreated?: (thing: Thing) => void; // Callback when Thing is created from preview
 }
 
 export default function ThingDetailModal({
   thing,
   onClose,
   onEdit,
-  onUserClick
+  onUserClick,
+  onThingCreated
 }: ThingDetailModalProps) {
   const [loading, setLoading] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -55,14 +57,24 @@ export default function ThingDetailModal({
   
   const category = CATEGORIES.find(c => c.id === thing.category);
   
-  // Get current user's interaction with this thing
-  const currentMyInteraction = getUserInteractionByThingId(thing.id);
+  // Check if this is a preview thing (no ID or empty ID means it hasn't been created yet)
+  const isPreview = !thing.id || thing.id === '';
+  
+  // Get current user's interaction with this thing (skip if preview)
+  const currentMyInteraction = !isPreview ? getUserInteractionByThingId(thing.id) : null;
   const isInBucketList = currentMyInteraction?.state === 'bucketList';
   const isCompleted = currentMyInteraction?.state === 'completed';
   
-  // Load all interactions for this thing
+  // Load all interactions for this thing (skip if preview)
   useEffect(() => {
     const loadInteractions = async () => {
+      // Skip loading if this is a preview thing
+      if (isPreview) {
+        setInteractions([]);
+        setLoadingInteractions(false);
+        return;
+      }
+      
       setLoadingInteractions(true);
       try {
         console.log('🔄 Loading interactions for thing:', thing.id);
@@ -100,7 +112,7 @@ export default function ThingDetailModal({
     };
     
     loadInteractions();
-  }, [thing.id]);
+  }, [thing.id, isPreview]);
   
   // Calculate friends average rating (only from you + people you follow)
   const friendsAvgRating = useMemo(() => {
@@ -132,29 +144,68 @@ export default function ThingDetailModal({
         console.log('🗑️ Removed from bucket list');
       } else {
         // Add to bucket list
+        let targetThingId = thing.id;
+        
+        // If preview thing, create the Thing first
+        if (isPreview) {
+          console.log('🔨 Creating Thing for preview:', thing.title);
+          
+          // Import the function dynamically to avoid circular dependencies
+          const { createOrGetThing } = await import('@/lib/firestore');
+          
+          // Convert preview thing to UniversalItem format
+          const previewThing = thing as Thing & { sourceId?: string; source?: string };
+          const universalItem = {
+            id: previewThing.sourceId || (previewThing.id || ''),
+            title: thing.title,
+            category: thing.category,
+            description: thing.description,
+            image: thing.image,
+            metadata: thing.metadata || {},
+            source: (previewThing.source || 'manual') as 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual',
+          };
+          
+          targetThingId = await createOrGetThing(universalItem, user.uid);
+          console.log('✅ Created Thing:', targetThingId);
+        }
+        
         const interactionId = await createUserThingInteraction(
           user.uid,
           userProfile.name,
-          thing.id,
+          targetThingId,
           'bucketList',
           'friends'
         );
         
-        const newInteraction: UserThingInteraction = {
+      const newInteraction: UserThingInteraction = {
           id: interactionId,
-          userId: user.uid,
-          userName: userProfile.name,
-          thingId: thing.id,
-          state: 'bucketList',
+        userId: user.uid,
+        userName: userProfile.name,
+          thingId: targetThingId,
+        state: 'bucketList',
           date: Timestamp.now(),
-          visibility: 'friends',
+        visibility: 'friends',
           createdAt: Timestamp.now(),
-          likedBy: [],
-          commentCount: 0,
-        };
-        
+        likedBy: [],
+        commentCount: 0,
+      };
+      
         addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
+        
+        // If this was a preview, fetch the real thing and update the modal
+        if (isPreview) {
+          console.log('🔄 Preview thing converted, fetching real thing...');
+          
+          // Fetch the real thing data
+          const { getThing } = await import('@/lib/firestore');
+          const realThing = await getThing(targetThingId);
+          
+          if (realThing && onThingCreated) {
+            console.log('✅ Got real thing, updating modal...');
+            onThingCreated(realThing);
+          }
+        }
       }
       
       // Clear feed cache to ensure immediate UI update
@@ -175,7 +226,7 @@ export default function ThingDetailModal({
       onEdit(currentMyInteraction, thing);
     } else {
       // Not completed yet - show rating modal
-      setShowRatingModal(true);
+    setShowRatingModal(true);
     }
   };
 
@@ -184,6 +235,8 @@ export default function ThingDetailModal({
     if (!user || !userProfile) return;
     
     setLoading(true);
+    let usedThingId = thing.id; // Track the thing ID that will be used
+    
     try {
       const rating = skipRating ? undefined : (tempRating > 0 ? tempRating : undefined);
       
@@ -204,29 +257,57 @@ export default function ThingDetailModal({
         });
       } else {
         // Create new completed interaction (first time completing)
+        let targetThingId = thing.id;
+        
+        // If preview thing, create the Thing first
+        if (isPreview) {
+          console.log('🔨 Creating Thing for preview (completed):', thing.title);
+          
+          // Import the function dynamically to avoid circular dependencies
+          const { createOrGetThing } = await import('@/lib/firestore');
+          
+          // Convert preview thing to UniversalItem format
+          const previewThing = thing as Thing & { sourceId?: string; source?: string };
+          const universalItem = {
+            id: previewThing.sourceId || (previewThing.id || ''),
+            title: thing.title,
+            category: thing.category,
+            description: thing.description,
+            image: thing.image,
+            metadata: thing.metadata || {},
+            source: (previewThing.source || 'manual') as 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual',
+          };
+          
+          targetThingId = await createOrGetThing(universalItem, user.uid);
+          console.log('✅ Created Thing:', targetThingId);
+        }
+        
+        // Store the thing ID for later use
+        usedThingId = targetThingId;
+        
         const interactionId = await createUserThingInteraction(
           user.uid,
           userProfile.name,
-          thing.id,
+          targetThingId,
           'completed',
           'friends',
           { rating }
         );
-        
-        const newInteraction: UserThingInteraction = {
+      
+      const newInteraction: UserThingInteraction = {
           id: interactionId,
-          userId: user.uid,
-          userName: userProfile.name,
-          thingId: thing.id,
-          state: 'completed',
+        userId: user.uid,
+        userName: userProfile.name,
+          thingId: targetThingId,
+        state: 'completed',
           date: Timestamp.now(),
-          visibility: 'friends',
-          rating,
+        visibility: 'friends',
+        rating,
           createdAt: Timestamp.now(),
-          likedBy: [],
-          commentCount: 0,
-        };
-        
+        likedBy: [],
+        commentCount: 0,
+      };
+      
         addUserInteraction(newInteraction);
       }
       
@@ -247,7 +328,7 @@ export default function ThingDetailModal({
           if (recordedAudio) {
             const blob = recordedAudio.blob;
             const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
-            const storageRef = ref(storage, `voice_notes/${user.uid}/${thing.id}/${fileName}`);
+            const storageRef = ref(storage, `voice_notes/${user.uid}/${usedThingId}/${fileName}`);
             
             await uploadBytes(storageRef, blob);
             voiceNoteUrl = await getDownloadURL(storageRef);
@@ -256,9 +337,9 @@ export default function ThingDetailModal({
           
           // Create the comment
           await createComment(
-            thing.id,
-            user.uid,
-            userProfile.name,
+            usedThingId,
+        user.uid,
+        userProfile.name,
             initialComment.trim() || (recordedAudio ? 'Voice note' : ''),
             mentionedUsernames.length > 0 ? mentionedUsernames : undefined,
             voiceNoteUrl,
@@ -268,6 +349,20 @@ export default function ThingDetailModal({
           console.log('✅ Created initial comment');
         } catch (commentError) {
           console.error('Error creating initial comment:', commentError);
+        }
+      }
+      
+      // If this was a preview, fetch the real thing and update the modal
+      if (isPreview) {
+        console.log('🔄 Preview thing converted (completed), fetching real thing...');
+        
+        // Fetch the real thing data using the thing ID that was used
+        const { getThing } = await import('@/lib/firestore');
+        const realThing = await getThing(usedThingId);
+        
+        if (realThing && onThingCreated) {
+          console.log('✅ Got real thing, updating modal...');
+          onThingCreated(realThing);
         }
       }
       
@@ -469,27 +564,27 @@ export default function ThingDetailModal({
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-visible">
       <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
+          {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <div className="flex items-center space-x-3">
-            <span className="text-3xl">{category?.emoji}</span>
-            <div>
+            <div className="flex items-center space-x-3">
+              <span className="text-3xl">{category?.emoji}</span>
+              <div>
               <h2 className="text-xl font-bold text-gray-900">{thing.title}</h2>
-              <p className="text-sm text-gray-500">{category?.name}</p>
+                <p className="text-sm text-gray-500">{category?.name}</p>
+              </div>
             </div>
-          </div>
-          <button
+            <button
             onClick={(e) => {
               e.stopPropagation();
               onClose();
             }}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-          >
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            >
             <XMarkIcon className="h-6 w-6 text-gray-500" />
-          </button>
-        </div>
+            </button>
+          </div>
 
-        {/* Content */}
+          {/* Content */}
         <div className="overflow-y-auto max-h-[calc(90vh-200px)] overflow-x-visible">
           <div className="p-6 space-y-6">
             {/* Thing Info */}
@@ -505,7 +600,7 @@ export default function ThingDetailModal({
                     />
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-700">{thing.description}</p>
                 </div>
               </div>
@@ -519,14 +614,14 @@ export default function ThingDetailModal({
             ) : (
               <div className="space-y-3">
                 {/* Completed By */}
-                {(() => {
+              {(() => {
                   const following = userProfile?.following || [];
                   const visibleCompleted = interactions.filter(i => 
                     i.state === 'completed' && (i.userId === user?.uid || following.includes(i.userId))
                   );
                   
                   return visibleCompleted.length > 0 && (
-                  <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2">
                     <CheckCircleIcon className="h-4 w-4 text-green-600 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <span className="text-sm text-gray-700">
@@ -558,10 +653,10 @@ export default function ThingDetailModal({
                           ★ {friendsAvgRating.toFixed(1)} avg
                         </span>
                       )}
+                      </div>
                     </div>
-                  </div>
-                  );
-                })()}
+                );
+              })()}
 
                 {/* Saved By */}
                 {(() => {
@@ -581,7 +676,7 @@ export default function ThingDetailModal({
                           return (
                             <span key={int.id}>
                               {idx > 0 && ', '}
-                              <button
+                    <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onUserClick?.(int.userId);
@@ -589,7 +684,7 @@ export default function ThingDetailModal({
                                 className={`hover:underline ${int.userId === currentMyInteraction?.userId ? 'font-medium text-blue-600' : 'text-gray-700'}`}
                               >
                                 {displayName}
-                              </button>
+                    </button>
                             </span>
                           );
                         })}
@@ -613,12 +708,12 @@ export default function ThingDetailModal({
                 showAllComments={true}
                 onUserClick={onUserClick}
               />
-            </div>
+              </div>
           </div>
-        </div>
+          </div>
 
-        {/* Footer Actions */}
-        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
+          {/* Footer Actions */}
+          <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
           {/* Left side - Save/Complete buttons */}
           <div className="flex items-center space-x-1">
             {/* Save Button */}
@@ -719,8 +814,8 @@ export default function ThingDetailModal({
                   </div>
                 </div>,
                 document.body
-              )}
-            </div>
+            )}
+          </div>
           )}
         </div>
       </div>

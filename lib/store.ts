@@ -42,7 +42,7 @@ interface AppState {
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   userProfile: null,
-  loading: true,
+  loading: true, // Start true to show loading screen while Clerk initializes
   setUser: (user) => set({ user }),
   setUserProfile: (userProfile) => set({ userProfile }),
   setLoading: (loading) => {
