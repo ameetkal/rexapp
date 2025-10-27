@@ -31,6 +31,17 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     };
   }, []);
 
+  const stopRecording = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    }
+  }, [isRecording]);
+
   // Timer effect
   useEffect(() => {
     if (isRecording) {
@@ -94,17 +105,6 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
       alert('Unable to access microphone. Please check permissions.');
     }
   };
-
-  const stopRecording = useCallback((e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    }
-  }, [isRecording]);
 
   const playRecording = (e?: React.MouseEvent) => {
     e?.stopPropagation();

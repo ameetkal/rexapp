@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Thing, UserThingInteraction } from '@/lib/types';
 import ThingDetailModal from './ThingDetailModal';
 
+// Google Maps is loaded dynamically, so we need to handle it carefully
+
 interface MapViewProps {
   things: Thing[];
   interactions: UserThingInteraction[];
@@ -14,8 +16,10 @@ interface MapViewProps {
 
 export default function MapView({ things, interactions, myInteractions, centerOnLocation }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const searchMarkerRef = useRef<google.maps.Marker | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapInstanceRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const searchMarkerRef = useRef<any>(null);
   const [selectedThing, setSelectedThing] = useState<Thing | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
