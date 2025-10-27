@@ -5,6 +5,7 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { followUser, unfollowUser } from '@/lib/firestore';
 import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingCard from './ThingCard';
+import MapView from './MapView';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
@@ -702,18 +703,19 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                 ))}
               </div>
             ) : (
-              /* Map View - Coming Soon */
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                  <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">Map View</h3>
-                <p className="text-gray-500 max-w-sm">
-                  Discover recommendations near you with our interactive map view. Coming soon!
-                </p>
-              </div>
+              /* Map View */
+              <MapView 
+                things={things}
+                interactions={interactions}
+                myInteractions={myInteractions}
+                onThingClick={(thing) => {
+                  // Find the thing in feedThings and open modal
+                  const feedThing = feedThings.find(ft => ft.thing.id === thing.id);
+                  if (feedThing) {
+                    // TODO: Open ThingDetailModal
+                  }
+                }}
+              />
             )}
           </>
         )}

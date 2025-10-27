@@ -27,6 +27,8 @@ export interface UniversalItem {
     // Places
     address?: string;
     placeId?: string;  // For deduplication
+    latitude?: number;  // For map display
+    longitude?: number; // For map display
     rating?: number;
     priceLevel?: 1 | 2 | 3 | 4;
     phoneNumber?: string;
@@ -167,6 +169,8 @@ export interface Thing {
     // Places
     address?: string;
     placeId?: string;  // For deduplication
+    latitude?: number;  // For map display
+    longitude?: number; // For map display
     rating?: number;
     priceLevel?: 1 | 2 | 3 | 4;
     phoneNumber?: string;

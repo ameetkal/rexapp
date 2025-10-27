@@ -780,6 +780,12 @@ export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]
       types?: string[];
       website?: string;
       formatted_phone_number?: string;
+      geometry?: {
+        location: {
+          lat: number;
+          lng: number;
+        };
+      };
     }) => {
       // Determine place type from Google's types array
       const getPlaceType = (types: string[] = []): string => {
@@ -805,6 +811,9 @@ export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]
         image: undefined, // Photos disabled for now - TODO: Create photo proxy API route
         metadata: {
           address: place.formatted_address,
+          placeId: place.place_id,
+          latitude: place.geometry?.location?.lat,
+          longitude: place.geometry?.location?.lng,
           rating: place.rating ? Math.round(place.rating * 10) / 10 : undefined,
           priceLevel: place.price_level ? (place.price_level as 1 | 2 | 3 | 4) : undefined,
           phoneNumber: place.formatted_phone_number,
