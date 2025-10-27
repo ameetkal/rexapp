@@ -23,7 +23,7 @@ type AppScreenType = 'notifications' | 'main';
 export default function MainApp() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('post');
+  const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('feed');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -32,6 +32,9 @@ export default function MainApp() {
   const [isSignupProcess, setIsSignupProcess] = useState(false);
   
   const { user, loading } = useAuthStore();
+  
+  // Track if Clerk has loaded to avoid showing Auth screen during initial load
+  const [clerkLoaded, setClerkLoaded] = useState(false);
 
   // Check for signup process after hydration to avoid SSR mismatch
   useEffect(() => {
@@ -42,6 +45,16 @@ export default function MainApp() {
     };
     
     checkSignupProcess();
+  }, []);
+  
+  // Track Clerk loaded state
+  useEffect(() => {
+    // Wait a bit for Clerk to initialize, then mark as loaded
+    const timeoutId = setTimeout(() => {
+      setClerkLoaded(true);
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, []);
 
   // Listen for invitation completion to switch to feed tab
@@ -115,7 +128,15 @@ export default function MainApp() {
     }
   }, [searchParams, user]);
 
-  if (loading) {
+
+  // Only show Auth screen if Clerk has loaded AND user is not authenticated
+  // This prevents the flash of Auth screen during initial load
+  if (!user && clerkLoaded) {
+    return <AuthScreen />;
+  }
+  
+  // If still loading or Clerk hasn't loaded, show loading screen
+  if (loading || !clerkLoaded) {
     const loadingMessage = isSignupProcess ? 'Creating your Rex account...' : 'Loading Rex...';
     
     return (
@@ -147,10 +168,6 @@ export default function MainApp() {
         </div>
       </div>
     );
-  }
-
-  if (!user) {
-    return <AuthScreen />;
   }
 
   // Reset screens when switching tabs

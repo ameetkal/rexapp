@@ -1027,6 +1027,11 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           thing={selectedThing}
           onClose={() => setSelectedThing(null)}
           onUserClick={(userId) => onUserProfileClick?.(userId)}
+          onThingCreated={(realThing) => {
+            // Update the modal to show the real thing instead of preview
+            console.log('🔄 Updating modal with real thing:', realThing.id);
+            setSelectedThing(realThing);
+          }}
         />
       )}
     </div>

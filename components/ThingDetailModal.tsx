@@ -27,13 +27,15 @@ interface ThingDetailModalProps {
   onClose: () => void;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
+  onThingCreated?: (thing: Thing) => void; // Callback when Thing is created from preview
 }
 
 export default function ThingDetailModal({
   thing,
   onClose,
   onEdit,
-  onUserClick
+  onUserClick,
+  onThingCreated
 }: ThingDetailModalProps) {
   const [loading, setLoading] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -188,16 +190,21 @@ export default function ThingDetailModal({
         commentCount: 0,
       };
       
-      addUserInteraction(newInteraction);
+        addUserInteraction(newInteraction);
         console.log('✅ Added to your bucket list');
         
-        // If this was a preview, close modal and reload to show the real thing
+        // If this was a preview, fetch the real thing and update the modal
         if (isPreview) {
-          console.log('🔄 Preview thing converted, closing modal and reloading in 1.5s');
-          setTimeout(() => {
-            console.log('🔄 Reloading page to show new thing');
-            window.location.reload();
-          }, 1500);
+          console.log('🔄 Preview thing converted, fetching real thing...');
+          
+          // Fetch the real thing data
+          const { getThing } = await import('@/lib/firestore');
+          const realThing = await getThing(targetThingId);
+          
+          if (realThing && onThingCreated) {
+            console.log('✅ Got real thing, updating modal...');
+            onThingCreated(realThing);
+          }
         }
       }
       
@@ -345,13 +352,18 @@ export default function ThingDetailModal({
         }
       }
       
-      // If this was a preview, close modal and reload to show the real thing
+      // If this was a preview, fetch the real thing and update the modal
       if (isPreview) {
-        console.log('🔄 Preview thing converted (completed), closing modal and reloading in 1.5s');
-        setTimeout(() => {
-          console.log('🔄 Reloading page to show new thing');
-          window.location.reload();
-        }, 1500);
+        console.log('🔄 Preview thing converted (completed), fetching real thing...');
+        
+        // Fetch the real thing data using the thing ID that was used
+        const { getThing } = await import('@/lib/firestore');
+        const realThing = await getThing(usedThingId);
+        
+        if (realThing && onThingCreated) {
+          console.log('✅ Got real thing, updating modal...');
+          onThingCreated(realThing);
+        }
       }
       
       setShowRatingModal(false);
