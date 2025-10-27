@@ -436,16 +436,16 @@ export const searchThings = async (searchTerm: string): Promise<Thing[]> => {
       const categoryMatch = thing.category.toLowerCase().includes(searchLower);
       
       // Search in metadata fields if they exist
-      const locationMatch = thing.metadata?.location && thing.metadata.location.toLowerCase().includes(searchLower);
+      const addressMatch = thing.metadata?.address && thing.metadata.address.toLowerCase().includes(searchLower);
       const authorMatch = thing.metadata?.author && thing.metadata.author.toLowerCase().includes(searchLower);
       
-      const matchesSearch = titleMatch || categoryMatch || locationMatch || authorMatch;
+      const matchesSearch = titleMatch || categoryMatch || addressMatch || authorMatch;
       
       if (matchesSearch) {
         console.log(`✅ Match found: "${thing.title}" (${thing.category})`, {
           title: titleMatch ? thing.title : null,
           category: categoryMatch ? thing.category : null,
-          location: locationMatch ? thing.metadata?.location : null,
+          address: addressMatch ? thing.metadata?.address : null,
           author: authorMatch ? thing.metadata?.author : null
         });
         things.push({ ...thing, id: doc.id } as Thing);
@@ -455,10 +455,14 @@ export const searchThings = async (searchTerm: string): Promise<Thing[]> => {
     // Sort by creation date, newest first
     const sortedThings = things.sort((a, b) => {
       // Handle both Timestamp objects and converted dates
-      const getTimestamp = (timestamp: Timestamp | any): number => {
+      const getTimestamp = (timestamp: Timestamp | {seconds?: number; nanoseconds?: number} | undefined): number => {
         if (!timestamp) return 0;
-        if (timestamp.toMillis) return timestamp.toMillis();
-        if (timestamp.seconds) return timestamp.seconds * 1000;
+        if (typeof timestamp === 'object' && 'toMillis' in timestamp && typeof timestamp.toMillis === 'function') {
+          return timestamp.toMillis();
+        }
+        if (typeof timestamp === 'object' && 'seconds' in timestamp && timestamp.seconds) {
+          return timestamp.seconds * 1000;
+        }
         return 0;
       };
       
@@ -814,11 +818,17 @@ export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]
     const response = await fetch(`/api/places?query=${encodeURIComponent(query)}`);
     
     if (!response.ok) {
-      console.error('Places API route error:', response.status);
+      const errorData = await response.json().catch(() => ({}));
+      console.error('Places API route error:', response.status, errorData);
       return [];
     }
     
     const data = await response.json();
+    
+    if (data.error) {
+      console.error('Places API error:', data.error);
+      return [];
+    }
     
     if (!data.results) {
       console.error('No results from Places API');

@@ -12,7 +12,7 @@ import {
   universalSearch
 } from './firestore';
 import { getUserProfile } from './auth';
-import { User, Thing, UserThingInteraction, Recommendation, Post } from './types';
+import { User, Thing, UserThingInteraction, Recommendation } from './types';
 
 /**
  * Data loading service that syncs Firestore data with Zustand store

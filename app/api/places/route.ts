@@ -17,16 +17,25 @@ export async function GET(request: NextRequest) {
     }
     
     // Use Google Places Text Search API - added geometry for map coordinates
-    const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}&fields=place_id,name,formatted_address,rating,price_level,photos,types,website,formatted_phone_number,geometry`
-    );
+    const apiUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}&fields=place_id,name,formatted_address,rating,price_level,photos,types,website,formatted_phone_number,geometry`;
+    console.log('🔍 Calling Google Places API:', apiUrl.replace(API_KEY, 'HIDDEN_KEY'));
+    
+    const response = await fetch(apiUrl);
     
     if (!response.ok) {
-      console.error('Google Places API error:', response.status);
-      return NextResponse.json({ error: 'Places API error' }, { status: response.status });
+      const errorText = await response.text();
+      console.error('Google Places API HTTP error:', response.status, errorText);
+      return NextResponse.json({ error: `Places API HTTP error: ${response.status}`, details: errorText }, { status: response.status });
     }
     
     const data = await response.json();
+    
+    // Handle different status codes
+    if (data.status === 'ZERO_RESULTS') {
+      // This is not an error - just no results found
+      console.log('📍 No places found for:', query);
+      return NextResponse.json({ results: [] });
+    }
     
     if (data.status !== 'OK') {
       console.error('Google Places API status:', data.status);
@@ -49,6 +58,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error in places API route:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 } 

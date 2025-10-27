@@ -437,7 +437,11 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
             ) : (
               filteredInteractions.map((interaction) => {
                 const thing = things.find(t => t.id === interaction.thingId);
-                if (!thing) return null;
+                if (!thing) {
+                  console.warn('⚠️ Missing Thing for interaction:', interaction.id, 'thingId:', interaction.thingId);
+                  console.log('Available things:', things.map(t => t.id));
+                  return null;
+                }
                 
                 // Convert interaction to FeedThing format
                 const feedThing: FeedThing = {

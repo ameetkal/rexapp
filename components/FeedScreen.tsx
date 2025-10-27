@@ -8,7 +8,7 @@ import ThingCard from './ThingCard';
 import ThingDetailModal from './ThingDetailModal';
 import MapView from './MapView';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon, MapIcon } from '@heroicons/react/24/outline';
-import { useFeedData, useSearch, usePlaceSearch } from '@/lib/hooks';
+import { useFeedData, useSearch, usePlaceSearch, useAPISearch } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
 
 interface FeedScreenProps {
@@ -84,9 +84,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const { things, interactions, myInteractions, loading: feedLoading } = useFeedData();
   const { searchResults, loading: searchLoading, search } = useSearch();
   const { places, loading: placesLoading, searchPlaces } = usePlaceSearch();
+  const { results: apiResults, loading: apiLoading, searchAPIs } = useAPISearch();
 
   // Define search-related variables early
-  const showingSearchResults = (searchResults.users.length > 0 || searchResults.things.length > 0 || searchLoading) && useThingFeed && searchTerm.trim().length > 0;
+  const showingSearchResults = (searchResults.users.length > 0 || searchResults.things.length > 0 || apiResults.length > 0 || searchLoading || apiLoading) && useThingFeed && searchTerm.trim().length > 0;
   const showingPlaceResults = (places.length > 0 || placesLoading) && !useThingFeed && searchTerm.trim().length > 0;
   
   // Debug logging for search results
@@ -239,13 +240,16 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const handleSearch = useCallback(() => {
     if (searchTerm.trim()) {
       if (useThingFeed) {
+        // First search database
         search(searchTerm);
+        // Then search APIs (on Enter key)
+        searchAPIs(searchTerm);
       } else {
         searchPlaces(searchTerm);
       }
       setShowAllResults(false);
     }
-  }, [searchTerm, search, searchPlaces, useThingFeed]);
+  }, [searchTerm, search, searchPlaces, useThingFeed, searchAPIs]);
 
   const clearSearch = useCallback(() => {
     setSearchTerm('');
@@ -375,7 +379,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               onFocus={() => isMobile && setIsMobileSearchOpen(true)}
-              placeholder={!useThingFeed ? "Search for places..." : "Search people, posts, places..."}
+              placeholder={!useThingFeed ? "Search for places..." : "Search people, books, places, movies..."}
               className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
               autoComplete="off"
             />
@@ -441,7 +445,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder={!useThingFeed ? "Search for places..." : "Search people, posts, places..."}
+                  placeholder={!useThingFeed ? "Search for places..." : "Search people, books, places, movies..."}
                   className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
                   autoComplete="off"
                   autoFocus
@@ -604,8 +608,39 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   </div>
                 )}
 
+                {/* API Results */}
+                {!apiLoading && apiResults.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">
+                      Results ({apiResults.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {apiResults.slice(0, 10).map((thing, index) => {
+                        const uniqueKey = thing.id || (thing as Thing & { sourceId?: string }).sourceId || `api-preview-${index}`;
+                        return (
+                        <button
+                          key={uniqueKey}
+                          onClick={() => setSelectedThing(thing)}
+                          className="w-full bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow p-4 text-left"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h5 className="font-medium text-gray-900 mb-1">{thing.title}</h5>
+                              <p className="text-sm text-gray-500 capitalize mb-2">{thing.category}</p>
+                              {thing.description && (
+                                <p className="text-sm text-gray-600 line-clamp-2">{thing.description}</p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* No Results */}
-                {!searchLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && searchTerm.trim().length >= 2 && (
+                {!searchLoading && !apiLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && apiResults.length === 0 && searchTerm.trim().length >= 2 && (
                   <div className="text-center py-12">
                     <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -767,8 +802,39 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             )}
 
+            {/* API Results */}
+            {!apiLoading && apiResults.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">
+                  Results ({apiResults.length})
+                </h4>
+                <div className="space-y-3">
+                  {apiResults.slice(0, 10).map((thing, index) => {
+                    const uniqueKey = thing.id || (thing as Thing & { sourceId?: string }).sourceId || `api-preview-${index}`;
+                    return (
+                    <button
+                      key={uniqueKey}
+                      onClick={() => setSelectedThing(thing)}
+                      className="w-full bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow p-4 text-left"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h5 className="font-medium text-gray-900 mb-1">{thing.title}</h5>
+                          <p className="text-sm text-gray-500 capitalize mb-2">{thing.category}</p>
+                          {thing.description && (
+                            <p className="text-sm text-gray-600 line-clamp-2">{thing.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* No Results */}
-            {!searchLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && searchTerm.trim().length >= 2 && (
+            {!searchLoading && !apiLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && apiResults.length === 0 && searchTerm.trim().length >= 2 && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
