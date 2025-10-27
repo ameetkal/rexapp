@@ -181,6 +181,7 @@ export interface Thing {
     album?: string;
   };
   source: 'google_books' | 'tmdb' | 'google_places' | 'spotify' | 'manual';
+  sourceId?: string; // External API ID (e.g., Google Places place_id, TMDB movie ID, Google Books book ID)
   createdAt: Timestamp;
   createdBy: string; // userId who first created this thing
   commentCount?: number; // Number of comments (denormalized)

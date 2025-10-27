@@ -7,9 +7,11 @@ import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingCard from './ThingCard';
 import ThingDetailModal from './ThingDetailModal';
 import MapView from './MapView';
+import MapPopup from './MapPopup';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon, MapIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch, usePlaceSearch, useAPISearch } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
+import { Timestamp } from 'firebase/firestore';
 
 interface FeedScreenProps {
   onUserProfileClick?: (authorId: string) => void;
@@ -25,6 +27,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [selectedPlaceLocation, setSelectedPlaceLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedThing, setSelectedThing] = useState<Thing | null>(null);
+  const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
   
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { autoOpenThingId } = useAppStore();
@@ -82,6 +85,29 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   
   // Use our new custom hooks for clean data access
   const { things, interactions, myInteractions, loading: feedLoading } = useFeedData();
+  
+  // Helper function to find an existing Thing for a place
+  const findExistingThingForPlace = useCallback((placeId: string, placeName: string): Thing | null => {
+    // First try to find by sourceId (if it exists)
+    let foundThing = things.find(
+      thing => thing.category === 'places' && thing.sourceId === placeId
+    ) || null;
+    
+    // If not found by sourceId, try matching by title (for backwards compatibility)
+    if (!foundThing) {
+      foundThing = things.find(
+        thing => thing.category === 'places' && thing.title.toLowerCase() === placeName.toLowerCase()
+      ) || null;
+    }
+    
+    if (foundThing) {
+      console.log('✅ Found existing Thing for place:', placeId, foundThing);
+    } else {
+      console.log('❌ No existing Thing found for place:', placeId, `(checked ${things.length} things)`);
+    }
+    
+    return foundThing;
+  }, [things]);
   const { searchResults, loading: searchLoading, search } = useSearch();
   const { places, loading: placesLoading, searchPlaces } = usePlaceSearch();
   const { results: apiResults, loading: apiLoading, searchAPIs } = useAPISearch();
@@ -89,6 +115,19 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   // Define search-related variables early
   const showingSearchResults = (searchResults.users.length > 0 || searchResults.things.length > 0 || apiResults.length > 0 || searchLoading || apiLoading) && useThingFeed && searchTerm.trim().length > 0;
   const showingPlaceResults = (places.length > 0 || placesLoading) && !useThingFeed && searchTerm.trim().length > 0;
+  
+  // Debug logging for place search
+  useEffect(() => {
+    if (!useThingFeed && searchTerm.trim().length > 0) {
+      console.log('🎯 Place search state:', { 
+        showingPlaceResults, 
+        placesCount: places.length, 
+        placesLoading,
+        searchTerm,
+        useThingFeed
+      });
+    }
+  }, [showingPlaceResults, places.length, placesLoading, searchTerm, useThingFeed, places]);
   
   // Debug logging for search results
   useEffect(() => {
@@ -400,14 +439,14 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
             )}
           </div>
           {useThingFeed && (
-            <button
+          <button
               onClick={() => setUseThingFeed(false)}
               className="flex-shrink-0 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
               aria-label="View Map"
               title="View Map"
             >
               <MapIcon className="w-6 h-6" />
-            </button>
+          </button>
           )}
         </div>
         
@@ -485,10 +524,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
 
           {/* Mobile Search Results */}
       <div className="px-4 py-4">
-            {showingSearchResults ? (
+            {showingSearchResults || showingPlaceResults ? (
               <div className="space-y-6 search-results">
                 {/* Loading State */}
-                {searchLoading && (
+                {(searchLoading || placesLoading) && (
                   <div className="text-center py-8">
                     <div className="inline-flex items-center space-x-2 text-gray-500">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -640,7 +679,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                 )}
 
                 {/* No Results */}
-                {!searchLoading && !apiLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && apiResults.length === 0 && searchTerm.trim().length >= 2 && (
+                {!searchLoading && !apiLoading && !placesLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && apiResults.length === 0 && places.length === 0 && searchTerm.trim().length >= 2 && (
                   <div className="text-center py-12">
                     <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -652,8 +691,137 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   </div>
                 )}
 
+                {/* Place Results for Map View */}
+                {showingPlaceResults && (
+                  <>
+                    {/* Place Loading State */}
+                    {placesLoading && (
+                      <div className="text-center py-8">
+                        <div className="inline-flex items-center space-x-2 text-gray-500">
+                          <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                          <span>Searching places...</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Place Results */}
+                    {!placesLoading && places.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-900 mb-3">
+                          📍 PLACES ({places.length})
+                        </h4>
+                        <div className="space-y-3">
+                          {places.map((place: { place_id: string; name: string; formatted_address?: string; geometry?: { location: { lat: number; lng: number } }; photos?: Array<{ photo_reference: string }>; rating?: number }) => (
+                            <div
+                              key={place.place_id}
+                              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                              onClick={() => {
+                                // Check if this place already exists as a Thing
+                                const existingThing = findExistingThingForPlace(place.place_id, place.name);
+                                const placeThing = existingThing || {
+                                  id: '', // Preview - not in DB yet
+                                  title: place.name,
+                                  category: 'places',
+                                  description: place.formatted_address || '',
+                                  image: place.photos && place.photos.length > 0 && place.photos[0].photo_reference
+                                    ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`
+                                    : undefined,
+                                  metadata: {
+                                    address: place.formatted_address,
+                                    latitude: place.geometry?.location?.lat,
+                                    longitude: place.geometry?.location?.lng,
+                                    rating: place.rating,
+                                  },
+                                  source: 'google_places',
+                                  sourceId: place.place_id,
+                                  createdAt: Timestamp.now(),
+                                  createdBy: '',
+                                };
+                                
+                                setSelectedThing(placeThing);
+                                
+                                // Position popup at center of screen
+                                setPopupPosition({
+                                  x: window.innerWidth / 2,
+                                  y: window.innerHeight / 2,
+                                });
+                                
+                                // Center map on this place
+                                if (place.geometry && place.geometry.location) {
+                                  const location = {
+                                    lat: place.geometry.location.lat,
+                                    lng: place.geometry.location.lng,
+                                  };
+                                  setSelectedPlaceLocation(location);
+                                }
+                                
+                                // Clear search after a brief delay to allow popup to position
+                                setTimeout(() => {
+                                  setSearchTerm('');
+                                  searchPlaces('');
+                                }, 100);
+                              }}
+                            >
+                              <div className="flex items-start space-x-3">
+                                {place.photos && place.photos.length > 0 && place.photos[0].photo_reference ? (
+                                  <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={`https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`}
+                                      alt={place.name}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
+                                    <span className="text-gray-400 text-xs">No photo</span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="text-base font-medium text-gray-900 truncate">
+                                    {place.name}
+                                  </h3>
+                                  {place.formatted_address && (
+                                    <p className="text-sm text-gray-500 truncate mt-1">
+                                      {place.formatted_address}
+                                    </p>
+                                  )}
+                                  <div className="flex items-center space-x-4 mt-2">
+                                    {place.rating && (
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-sm text-yellow-600">⭐</span>
+                                        <span className="text-sm text-gray-600">{place.rating.toFixed(1)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No Places Found */}
+                    {!placesLoading && places.length === 0 && searchTerm.trim().length >= 2 && (
+                      <div className="text-center py-12">
+                        <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                          No places found
+                        </h3>
+                        <p className="text-gray-500">
+                          Try different keywords or check your spelling
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+
                 {/* Empty Search State */}
-                {!searchLoading && searchTerm.trim().length === 0 && (
+                {!searchLoading && !placesLoading && searchTerm.trim().length === 0 && (
                   <div className="text-center py-12">
                     <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -846,15 +1014,15 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             )}
 
-            {/* Empty Search State */}
-            {!placesLoading && searchTerm.trim().length === 0 && (
+            {/* Empty Search State - Things View */}
+            {!searchLoading && searchTerm.trim().length === 0 && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Search for Places
+                  Discover People
                 </h3>
                 <p className="text-gray-500">
-                  Search locations, restaurants, attractions, etc.
+                  Search for friends and discover new connections
                 </p>
               </div>
             )}
@@ -880,18 +1048,50 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                     key={place.place_id}
                     className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
                     onClick={() => {
+                      // Check if this place already exists as a Thing
+                      const existingThing = findExistingThingForPlace(place.place_id, place.name);
+                      const placeThing = existingThing || {
+                        id: '', // Preview - not in DB yet
+                        title: place.name,
+                        category: 'places',
+                        description: place.formatted_address || '',
+                        image: place.photos && place.photos.length > 0 && place.photos[0].photo_reference
+                          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`
+                          : undefined,
+                        metadata: {
+                          address: place.formatted_address,
+                          latitude: place.geometry?.location?.lat,
+                          longitude: place.geometry?.location?.lng,
+                          rating: place.rating,
+                        },
+                        source: 'google_places',
+                        sourceId: place.place_id,
+                        createdAt: Timestamp.now(),
+                        createdBy: '',
+                      };
+                      
+                      setSelectedThing(placeThing);
+                      
+                      // Position popup at center of screen
+                      setPopupPosition({
+                        x: window.innerWidth / 2,
+                        y: window.innerHeight / 2,
+                      });
+                      
                       // Center map on this place
                       if (place.geometry && place.geometry.location) {
                         const location = {
                           lat: place.geometry.location.lat,
                           lng: place.geometry.location.lng,
                         };
-                        console.log('🗺️ Setting location to center:', location);
                         setSelectedPlaceLocation(location);
-                        // Clear search and return to map view
+                      }
+                      
+                      // Clear search after a brief delay to allow popup to position
+                      setTimeout(() => {
                         setSearchTerm('');
                         searchPlaces('');
-                      }
+                      }, 100);
                     }}
                   >
                     <div className="flex items-start space-x-3">
@@ -1021,8 +1221,28 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         )}
       </div>
 
-      {/* Thing Detail Modal */}
-      {selectedThing && (
+      {/* Map Popup - shown when clicking a search result */}
+      {selectedThing && popupPosition && (
+        <MapPopup
+          thing={selectedThing}
+          position={popupPosition}
+          onClose={() => {
+            setPopupPosition(null);
+            setSelectedThing(null);
+          }}
+          onSeeMore={() => {
+            // Clear popup position to switch to full modal
+            setPopupPosition(null);
+          }}
+          onThingCreated={(realThing) => {
+            console.log('🔄 MapPopup: Thing created, updating...');
+            setSelectedThing(realThing);
+          }}
+        />
+      )}
+
+      {/* Thing Detail Modal - shown when clicking "See More" or from other sources */}
+      {selectedThing && !popupPosition && (
         <ThingDetailModal
           thing={selectedThing}
           onClose={() => setSelectedThing(null)}
