@@ -189,7 +189,7 @@ export const useFeedData = () => {
   const memoizedUserId = useMemo(() => userProfile?.id, [userProfile?.id]);
 
   const loadFeedData = useCallback(async (following: string[], userId: string) => {
-    if (!following || !userId) {
+    if (!userId) {
       return;
     }
     
@@ -197,7 +197,7 @@ export const useFeedData = () => {
     setError(null);
     
     try {
-      const feedData = await dataService.loadFeedData(following, userId);
+      const feedData = await dataService.loadFeedData(following || [], userId);
       // Store feed interactions and my interactions locally
       setFeedInteractions(feedData.interactions);
       setMyInteractions(feedData.myInteractions);
@@ -220,10 +220,11 @@ export const useFeedData = () => {
     loadFeedDataRef.current = loadFeedData;
   }, [memoizedFollowing, memoizedUserId, loadFeedData]);
 
-  // Single effect to load feed data
+  // Single effect to load feed data (loads even if not following anyone - to show own items)
   useEffect(() => {
-    if (memoizedFollowing && memoizedFollowing.length > 0 && memoizedUserId) {
-      loadFeedData(memoizedFollowing, memoizedUserId);
+    if (memoizedUserId) {
+      // Load feed data with following list (even if empty - this will include your own items)
+      loadFeedData(memoizedFollowing || [], memoizedUserId);
     }
   }, [memoizedFollowing, memoizedUserId, loadFeedData]);
 
@@ -367,6 +368,56 @@ export const useSearch = () => {
     loading,
     error,
     search: performSearch,
+  };
+};
+
+/**
+ * Hook for searching places (Google Places API)
+ */
+interface GooglePlace {
+  place_id: string;
+  name: string;
+  formatted_address?: string;
+  geometry?: { location: { lat: number; lng: number } };
+  photos?: Array<{ photo_reference: string }>;
+  rating?: number;
+}
+
+export const usePlaceSearch = () => {
+  const [places, setPlaces] = useState<GooglePlace[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const searchPlaces = useCallback(async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setPlaces([]);
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/places?query=${encodeURIComponent(searchTerm)}`);
+      if (!response.ok) {
+        throw new Error('Failed to search places');
+      }
+      const data = await response.json();
+      // Google Places API returns results in data.results
+      setPlaces(data.results || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search places');
+      setPlaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return {
+    places,
+    loading,
+    error,
+    searchPlaces,
   };
 };
 

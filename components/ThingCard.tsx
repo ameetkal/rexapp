@@ -15,19 +15,32 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
 import { dataService } from '@/lib/dataService';
+import { createComment, searchUsers } from '@/lib/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
+import { MicrophoneIcon } from '@heroicons/react/24/outline';
+import VoiceRecording from './VoiceRecording';
+import VoicePlayer from './VoicePlayer';
 
 interface ThingCardProps {
   feedThing: FeedThing;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
+  autoOpen?: boolean; // If true, automatically open the detail modal
 }
 
-export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardProps) {
+export default function ThingCard({ feedThing, onEdit, onUserClick, autoOpen = false }: ThingCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [tempRating, setTempRating] = useState(0);
+  const [initialComment, setInitialComment] = useState('');
+  const [showVoiceRecording, setShowVoiceRecording] = useState(false);
+  const [recordedAudio, setRecordedAudio] = useState<{blob: Blob; duration: number} | null>(null);
+  const [showUserSuggestions, setShowUserSuggestions] = useState(false);
+  const [userSuggestions, setUserSuggestions] = useState<{id: string; name: string; username?: string}[]>([]);
+  const [taggedUsers, setTaggedUsers] = useState<{id: string; name: string; email: string}[]>([]);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<Map<string, User>>(new Map());
   const [showMenu, setShowMenu] = useState(false);
@@ -86,6 +99,16 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
     
     loadUsers();
   }, [allInteractions]);
+
+  // Auto-open modal if autoOpen prop is true
+  useEffect(() => {
+    if (autoOpen) {
+      setShowDetailModal(true);
+      // Clear the auto-open flag from the store after opening
+      const { setAutoOpenThingId } = useAppStore.getState();
+      setAutoOpenThingId(null);
+    }
+  }, [autoOpen]);
 
   const formatDate = (timestamp: Date | null) => {
     if (!timestamp) return 'No recent activity';
@@ -235,8 +258,50 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
       }
       
       console.log(`✅ Marked as completed${rating ? ` with ${rating}/5 rating` : ''}`);
+      
+      // If user provided an initial comment, create it
+      if ((initialComment.trim() || recordedAudio) && user && userProfile) {
+        try {
+          // Extract @mentions from the comment
+          const mentionRegex = /@(\w+)/g;
+          const mentions = initialComment.match(mentionRegex) || [];
+          const mentionedUsernames = mentions.map(m => m.substring(1));
+          
+          // Upload voice note if exists
+          let voiceNoteUrl: string | undefined;
+          let voiceNoteDuration: number | undefined;
+          
+          if (recordedAudio) {
+            const blob = recordedAudio.blob;
+            const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
+            const storageRef = ref(storage, `voice_notes/${user.uid}/${thing.id}/${fileName}`);
+            
+            await uploadBytes(storageRef, blob);
+            voiceNoteUrl = await getDownloadURL(storageRef);
+            voiceNoteDuration = recordedAudio.duration;
+          }
+          
+          // Create the comment
+          await createComment(
+            thing.id,
+            user.uid,
+            userProfile.name,
+            initialComment.trim() || (recordedAudio ? 'Voice note' : ''),
+            mentionedUsernames.length > 0 ? mentionedUsernames : undefined,
+            voiceNoteUrl,
+            voiceNoteDuration
+          );
+          
+          console.log('✅ Created initial comment');
+        } catch (commentError) {
+          console.error('Error creating initial comment:', commentError);
+        }
+      }
+      
       setShowRatingModal(false);
       setTempRating(0);
+      setInitialComment('');
+      setRecordedAudio(null);
       
       // Clear feed cache to ensure immediate UI update
       dataService.clearFeedCache(user.uid);
@@ -247,6 +312,104 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
     }
   };
 
+  // Handle comment input change
+  const handleCommentChange = (value: string) => {
+    setInitialComment(value);
+    
+    // Check for @ mentions
+    const atMatch = value.match(/@(\w*)$/);
+    if (atMatch) {
+      const query = atMatch[1];
+      if (query.length >= 1) {
+        searchForUsers(query);
+        setShowUserSuggestions(true);
+      } else {
+        setShowUserSuggestions(false);
+      }
+    } else {
+      setShowUserSuggestions(false);
+    }
+  };
+
+  // Search for users for tagging
+  const searchForUsers = async (queryStr: string) => {
+    try {
+      const results = await searchUsers(queryStr);
+      const following = userProfile?.following || [];
+      
+      // Separate followed users from other users
+      const followedUsers = results.filter(resultUser => 
+        following.includes(resultUser.id) && 
+        resultUser.id !== user?.uid && 
+        !taggedUsers.some(tagged => tagged.id === resultUser.id)
+      );
+      
+      const otherUsers = results.filter(resultUser => 
+        !following.includes(resultUser.id) && 
+        resultUser.id !== user?.uid && 
+        !taggedUsers.some(tagged => tagged.id === resultUser.id)
+      );
+      
+      setUserSuggestions([...followedUsers, ...otherUsers]);
+    } catch (error) {
+      console.error('Error searching users:', error);
+    }
+  };
+
+  // Select a user to tag
+  const selectUser = (selectedUser: {id: string; name: string; username?: string}) => {
+    const mention = `@${selectedUser.username || selectedUser.name}`;
+    
+    // Find the last @ and replace it with the username
+    const lastAt = initialComment.lastIndexOf('@');
+    if (lastAt !== -1) {
+      const beforeAt = initialComment.substring(0, lastAt);
+      const afterAt = initialComment.substring(lastAt);
+      const afterAtSpace = afterAt.indexOf(' ');
+      const afterAtText = afterAtSpace !== -1 ? afterAt.substring(afterAtSpace) : '';
+      const newComment = beforeAt + mention + ' ' + afterAtText;
+      setInitialComment(newComment.trim());
+    }
+    
+    setTaggedUsers([...taggedUsers, {
+      id: selectedUser.id,
+      name: selectedUser.name,
+      email: ''
+    }]);
+    
+    setShowUserSuggestions(false);
+  };
+
+  // Render comment text with @mentions highlighted
+  const renderCommentText = (text: string) => {
+    const parts = text.split(/(@\w+)/);
+    return parts.map((part, index) => {
+      if (part.startsWith('@')) {
+        return (
+          <span key={index} className="bg-blue-100 text-blue-600 px-1 rounded">
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  // Voice recording handlers
+  const handleVoiceRecordingComplete = (blob: Blob, duration: number) => {
+    setRecordedAudio({ blob, duration });
+    setShowVoiceRecording(false);
+  };
+
+  const handleVoiceRecordingCancel = () => {
+    setShowVoiceRecording(false);
+    setRecordedAudio(null);
+  };
+
+  const handleRemoveVoiceNote = () => {
+    setRecordedAudio(null);
+  };
+
   // Handle menu toggle
   const handleMenuToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -254,19 +417,19 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
   };
 
   // Handle share
-  const handleShare = async () => {
+  const handleShare = async (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling to card
     if (!user || !userProfile) return;
     
     setShowMenu(false);
     setLoading(true);
     
     try {
-      const shareUrl = `${window.location.origin}/post/${thing.id}`;
+      const shareUrl = `${window.location.origin}/share/${thing.id}?from=${user.uid}`;
       
       if (navigator.share) {
         await navigator.share({
-          title: thing.title,
-          text: `Check out "${thing.title}" on Rex!`,
+          title: `${userProfile.name} has shared ${thing.title} with you on Rex:`,
           url: shareUrl,
         });
       } else {
@@ -277,14 +440,20 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
       
       console.log('✅ Shared successfully');
     } catch (error) {
-      console.error('❌ Error sharing:', error);
+      // Handle user cancellation gracefully
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('ℹ️ Share cancelled by user');
+      } else {
+        console.error('❌ Error sharing:', error);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // Handle edit
-  const handleEdit = () => {
+  const handleEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling to card
     if (!onEdit || !currentMyInteraction) return;
     
     setShowMenu(false);
@@ -494,7 +663,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
                   <div className="py-1">
                     {/* Edit */}
                     <button
-                      onClick={handleEdit}
+                      onClick={(e) => handleEdit(e)}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
@@ -505,7 +674,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
                     
                     {/* Share */}
                     <button
-                      onClick={handleShare}
+                      onClick={(e) => handleShare(e)}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
@@ -545,16 +714,110 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
             </h3>
             
             <div className="mb-6">
-              <StarRating
-                rating={tempRating}
-                onRatingChange={setTempRating}
-                size="lg"
-              />
+              <p className="text-sm text-gray-600 mb-4">How would you rate it?</p>
+              <div className="flex justify-center">
+                <StarRating
+                  rating={tempRating}
+                  onRatingChange={setTempRating}
+                  size="lg"
+                />
+              </div>
+            </div>
+            
+            {/* Optional Comment Input */}
+            <div className="mb-6">
+              <p className="text-xs text-gray-500 mb-2">Optional: Add a comment</p>
+              <div className="relative">
+                {/* Voice Note Preview */}
+                {recordedAudio && (
+                  <div className="px-3 py-2 bg-blue-50 border-b border-gray-200 flex items-center justify-between mb-2">
+                    <VoicePlayer
+                      url={URL.createObjectURL(recordedAudio.blob)}
+                      duration={recordedAudio.duration}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemoveVoiceNote}
+                      className="text-red-500 hover:text-red-700 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                
+                <div className="border border-gray-200 rounded-lg overflow-hidden relative">
+                  {/* Highlighted text overlay - below textarea */}
+                  <div className="absolute inset-0 px-3 py-2 pointer-events-none text-sm whitespace-pre-wrap break-words overflow-hidden z-0">
+                    {renderCommentText(initialComment)}
+                  </div>
+                  {/* Textarea - on top */}
+                  <textarea
+                    value={initialComment}
+                    onChange={(e) => handleCommentChange(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Add a comment... (use @ to tag users)"
+                    className="relative w-full px-3 py-2 pr-28 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm bg-transparent z-10"
+                    rows={2}
+                    disabled={loading}
+                  />
+                  {/* Mic Button */}
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-2 z-20">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowVoiceRecording(true);
+                      }}
+                      className="p-1.5 text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                      <MicrophoneIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                
+                {/* User suggestions dropdown */}
+                {showUserSuggestions && userSuggestions.length > 0 && (
+                  <div className="absolute z-30 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {userSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          selectUser(suggestion);
+                        }}
+                        className="w-full px-3 py-2 text-left hover:bg-gray-50 focus:bg-gray-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {suggestion.username || suggestion.name}
+                            </div>
+                            {suggestion.username && (
+                              <div className="text-xs text-gray-500">
+                                {suggestion.name}
+                              </div>
+                            )}
+                          </div>
+                          {(userProfile?.following || []).includes(suggestion.id) && (
+                            <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full">
+                              Following
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             
             <div className="flex space-x-3">
               <button
-                onClick={() => handleRatingSubmit(true)}
+                onClick={() => {
+                  setInitialComment('');
+                  setRecordedAudio(null);
+                  handleRatingSubmit(true);
+                }}
                 disabled={loading}
                 className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
               >
@@ -568,6 +831,24 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
                 {loading ? 'Saving...' : 'Save Rating'}
               </button>
             </div>
+            
+            {/* Voice Recording Modal */}
+            {showVoiceRecording && (
+              <div 
+                className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999] p-4"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div 
+                  className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <VoiceRecording
+                    onRecordingComplete={handleVoiceRecordingComplete}
+                    onCancel={handleVoiceRecordingCancel}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

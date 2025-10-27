@@ -11,14 +11,19 @@ import {
   unlikeComment,
   searchUsers
 } from '@/lib/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
 import { useAuthStore } from '@/lib/store';
 import { dataService } from '@/lib/dataService';
 import { 
   HeartIcon, 
   TrashIcon,
-  PaperAirplaneIcon
+  PaperAirplaneIcon,
+  MicrophoneIcon
 } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconFilled } from '@heroicons/react/24/solid';
+import VoiceRecording from './VoiceRecording';
+import VoicePlayer from './VoicePlayer';
 
 interface CommentSectionProps {
   thingId: string;
@@ -34,6 +39,10 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
   const [submitting, setSubmitting] = useState(false);
   const [showUserSuggestions, setShowUserSuggestions] = useState(false);
   const [userSuggestions, setUserSuggestions] = useState<{id: string; name: string; username?: string}[]>([]);
+  
+  // Voice recording state
+  const [showVoiceRecording, setShowVoiceRecording] = useState(false);
+  const [recordedAudio, setRecordedAudio] = useState<{blob: Blob; duration: number} | null>(null);
   const { user, userProfile } = useAuthStore();
   const following = userProfile?.following || [];
 
@@ -123,9 +132,24 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thingId]);
 
+  // Voice recording handlers
+  const handleVoiceRecordingComplete = (audioBlob: Blob, duration: number) => {
+    setRecordedAudio({ blob: audioBlob, duration });
+    setShowVoiceRecording(false);
+  };
+
+  const handleVoiceRecordingCancel = () => {
+    setShowVoiceRecording(false);
+    setRecordedAudio(null);
+  };
+
+  const handleRemoveVoiceNote = () => {
+    setRecordedAudio(null);
+  };
+
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !userProfile || !newComment.trim()) return;
+    if (!user || !userProfile || (!newComment.trim() && !recordedAudio)) return;
 
     setSubmitting(true);
     try {
@@ -133,28 +157,56 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
       const mentionMatches = newComment.match(/@(\w+)/g);
       const mentionedUsernames = mentionMatches ? mentionMatches.map(m => m.slice(1)) : [];
 
+      // Upload voice note if exists
+      let voiceNoteUrl: string | undefined;
+      let voiceNoteDuration: number | undefined;
+      
+      if (recordedAudio) {
+        try {
+          // Convert blob to webm format if needed
+          const blob = recordedAudio.blob;
+          const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
+          const storageRef = ref(storage, `voice_notes/${user.uid}/${thingId}/${fileName}`);
+          
+          await uploadBytes(storageRef, blob);
+          voiceNoteUrl = await getDownloadURL(storageRef);
+          voiceNoteDuration = recordedAudio.duration;
+          
+          console.log('✅ Voice note uploaded:', voiceNoteUrl);
+        } catch (uploadError) {
+          console.error('Voice note upload error:', uploadError);
+          // Don't fail the comment creation if voice upload fails
+        }
+      }
+
+      // Create comment with voice note if exists
       const commentId = await createComment(
         thingId,
         user.uid,
         userProfile.name,
-        newComment.trim(),
-        mentionedUsernames // Store usernames directly
+        newComment.trim() || (recordedAudio ? 'Voice note' : ''),
+        mentionedUsernames,
+        voiceNoteUrl,
+        voiceNoteDuration
       );
-
+      
       // Add comment to local state
       const newCommentObj: Comment = {
         id: commentId,
         thingId,
         authorId: user.uid,
         authorName: userProfile.name,
-        content: newComment.trim(),
+        content: newComment.trim() || (recordedAudio ? 'Voice note' : ''),
         createdAt: Timestamp.now(),
         likedBy: [],
-        taggedUsers: mentionedUsernames, // Store usernames directly
+        taggedUsers: mentionedUsernames,
+        voiceNoteUrl,
+        voiceNoteDuration,
       };
       
       setComments(prev => [...prev, newCommentObj]);
       setNewComment('');
+      setRecordedAudio(null);
       setTaggedUsers([]); // Clear tagged users
       
       // Clear feed cache to update comment count in feed cards
@@ -327,6 +379,15 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
                           <span>{comment.likedBy.length || ''}</span>
                         </button>
                       </div>
+                      {/* Voice Note */}
+                      {comment.voiceNoteUrl && comment.voiceNoteDuration && (
+                        <div className="mt-2">
+                          <VoicePlayer 
+                            url={comment.voiceNoteUrl}
+                            duration={comment.voiceNoteDuration}
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center space-x-2 mt-0.5">
                         <span className="text-xs text-gray-500">
                           {formatDate(comment.createdAt)}
@@ -357,41 +418,74 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
               {userProfile?.name.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="flex-1">
-              <div className="relative">
-                {/* Highlighted text overlay */}
-                <div className="absolute inset-0 px-3 py-2 pointer-events-none text-sm whitespace-pre-wrap break-words overflow-hidden">
-                  {renderCurrentCommentText(newComment)}
-                </div>
-                <textarea
-                  value={newComment}
-                  onChange={(e) => handleCommentChange(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (newComment.trim() && !submitting) {
-                        const formEvent = new Event('submit') as unknown as React.FormEvent<HTMLFormElement>;
-                        handleSubmitComment(formEvent);
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                {/* Voice Note Preview */}
+                {recordedAudio && (
+                  <div className="px-3 py-2 bg-blue-50 border-b border-gray-200 flex items-center justify-between">
+                    <VoicePlayer 
+                      url={URL.createObjectURL(recordedAudio.blob)} 
+                      duration={recordedAudio.duration}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRemoveVoiceNote}
+                      className="text-red-500 hover:text-red-700 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                
+                <div className="relative">
+                  {/* Highlighted text overlay */}
+                  <div className="absolute inset-0 px-3 py-2 pointer-events-none text-sm whitespace-pre-wrap break-words overflow-hidden">
+                    {renderCurrentCommentText(newComment)}
+                  </div>
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => handleCommentChange(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (newComment.trim() && !submitting) {
+                          const formEvent = new Event('submit') as unknown as React.FormEvent<HTMLFormElement>;
+                          handleSubmitComment(formEvent);
+                        }
                       }
-                    }
-                  }}
-                  placeholder="Add a comment..."
-                  className="w-full px-3 py-2 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm bg-white relative z-10"
-                  rows={1}
-                  disabled={submitting}
-                />
-                <button
-                  type="submit"
-                  disabled={!newComment.trim() || submitting}
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed z-20"
-                >
-                  {submitting ? (
-                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
-                  ) : (
-                    <PaperAirplaneIcon className="h-3 w-3" />
-                  )}
-                </button>
+                    }}
+                    placeholder="Add a comment..."
+                    className="w-full px-3 py-2 pr-28 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm bg-white relative z-10"
+                    rows={1}
+                    disabled={submitting}
+                  />
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-2 z-20">
+                    {/* Mic Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowVoiceRecording(true);
+                      }}
+                      className="p-1.5 text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-gray-200 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                      <MicrophoneIcon className="h-4 w-4" />
+                    </button>
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={(!newComment.trim() && !recordedAudio) || submitting}
+                      onClick={(e) => e.stopPropagation()}
+                      className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                    >
+                      {submitting ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                      ) : (
+                        <PaperAirplaneIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
               
               {/* User suggestions dropdown */}
@@ -435,6 +529,24 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
         <p className="text-xs text-gray-500 text-center py-2">
           Sign in to comment
         </p>
+      )}
+
+      {/* Voice Recording Modal */}
+      {showVoiceRecording && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <VoiceRecording
+              onRecordingComplete={handleVoiceRecordingComplete}
+              onCancel={handleVoiceRecordingCancel}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

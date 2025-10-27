@@ -16,9 +16,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'API key not configured' }, { status: 500 });
     }
     
-    // Use Google Places Text Search API
+    // Use Google Places Text Search API - added geometry for map coordinates
     const response = await fetch(
-      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}&fields=place_id,name,formatted_address,rating,price_level,photos,types,website,formatted_phone_number`
+      `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}&fields=place_id,name,formatted_address,rating,price_level,photos,types,website,formatted_phone_number,geometry`
     );
     
     if (!response.ok) {

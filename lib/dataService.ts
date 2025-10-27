@@ -63,7 +63,7 @@ export class DataService {
    * Clear feed cache when following list changes
    */
   clearFeedCache(userId: string): void {
-    this.clearCachePattern(`loadFeedData_v2`);
+    this.clearCachePattern(`loadFeedData_v3`);
     console.log('🔄 DataService: Cleared feed cache for user:', userId);
     
     // Dispatch event to trigger feed reload
@@ -222,8 +222,8 @@ export class DataService {
    * Only loads interactions from followed users, not the current user
    */
   async loadFeedData(following: string[], userId: string): Promise<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }> {
-    // Force fresh load with new data structure (v2)
-    const cacheKey = this.getCacheKey('loadFeedData_v2', following.join(','), userId);
+    // Force fresh load with new data structure (v3 - includes own things)
+    const cacheKey = this.getCacheKey('loadFeedData_v3', following.join(','), userId);
     const cached = this.getCachedData<{ things: Thing[]; interactions: UserThingInteraction[]; myInteractions: UserThingInteraction[] }>(cacheKey);
     
     if (cached) {
@@ -243,8 +243,10 @@ export class DataService {
       // Get current user's interactions separately for badges
       const myInteractions = await getUserThingInteractions(userId);
       
-      // Get unique thing IDs from followed users' interactions only
-      const thingIds = [...new Set(feedInteractions.map(i => i.thingId))];
+      // Get unique thing IDs from BOTH followed users AND your own interactions
+      const followedUserThingIds = [...new Set(feedInteractions.map(i => i.thingId))];
+      const myThingIds = [...new Set(myInteractions.map(i => i.thingId))];
+      const thingIds = [...new Set([...followedUserThingIds, ...myThingIds])];
       
       // Load things in parallel (more efficient than sequential)
       const things = await Promise.all(

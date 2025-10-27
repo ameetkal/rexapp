@@ -196,6 +196,9 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
           if (inviteSuccess) {
             setInviteProcessed(true);
             
+            // Small delay to ensure Firestore writes are complete
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             // Refresh user profile to get updated following list
             console.log('🔄 Refreshing user profile after invitation processing...');
             const updatedUserDoc = await getDoc(userDocRef);

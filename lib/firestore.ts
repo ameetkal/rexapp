@@ -780,6 +780,12 @@ export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]
       types?: string[];
       website?: string;
       formatted_phone_number?: string;
+      geometry?: {
+        location: {
+          lat: number;
+          lng: number;
+        };
+      };
     }) => {
       // Determine place type from Google's types array
       const getPlaceType = (types: string[] = []): string => {
@@ -805,6 +811,9 @@ export const searchGooglePlaces = async (query: string): Promise<UniversalItem[]
         image: undefined, // Photos disabled for now - TODO: Create photo proxy API route
         metadata: {
           address: place.formatted_address,
+          placeId: place.place_id,
+          latitude: place.geometry?.location?.lat,
+          longitude: place.geometry?.location?.lng,
           rating: place.rating ? Math.round(place.rating * 10) / 10 : undefined,
           priceLevel: place.price_level ? (place.price_level as 1 | 2 | 3 | 4) : undefined,
           phoneNumber: place.formatted_phone_number,
@@ -2612,7 +2621,9 @@ export const createComment = async (
   authorId: string,
   authorName: string,
   content: string,
-  taggedUsers?: string[]
+  taggedUsers?: string[],
+  voiceNoteUrl?: string,
+  voiceNoteDuration?: number
 ): Promise<string> => {
   try {
     const commentData: Omit<Comment, 'id'> = {
@@ -2623,6 +2634,8 @@ export const createComment = async (
       createdAt: Timestamp.now(),
       likedBy: [],
       taggedUsers: taggedUsers || [],
+      ...(voiceNoteUrl && { voiceNoteUrl }),
+      ...(voiceNoteDuration && { voiceNoteDuration }),
     };
     
     const docRef = await addDoc(collection(db, 'comments'), commentData);
@@ -3121,23 +3134,22 @@ export const processInvitation = async (
     console.log('👥 Auto-following inviter:', invitation.inviterId);
     await followUser(userId, invitation.inviterId);
     
-    // 2. Save thing to bucket list
-    console.log('📌 Auto-saving thing to bucket list:', invitation.thingId);
+    // 2. Save thing as completed (not bucket list)
+    console.log('📌 Auto-saving thing as completed:', invitation.thingId);
     await createUserThingInteraction(
       userId,
       userName,
       invitation.thingId,
-      'bucketList',
-      'private', // Private by default
-      { notes: `Recommended by ${invitation.inviterName}` }
+      'completed',
+      'friends' // Visible to followers by default
     );
     
     // 3. Create recommendation record (you → inviter)
-    // The person being invited is the one who gave the recommendation
+    // The invited user recommended this thing to the inviter
     console.log('🎁 Creating recommendation record');
     await createRecommendation(
-      userId,                 // The person who gave the recommendation
-      invitation.inviterId,   // The person who received the recommendation
+      userId,                 // The person who gave the recommendation (invited user)
+      invitation.inviterId,   // The person who received the recommendation (inviter)
       invitation.thingId,
       `Via invite link`
     );

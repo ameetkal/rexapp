@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Image from 'next/image';
 import { useAuthStore } from '@/lib/store';
 import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation, createTag, createNotification, createComment } from '@/lib/firestore';
+import { dataService } from '@/lib/dataService';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
 import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
@@ -354,6 +355,12 @@ export default function PostForm({
         return;
       }
       
+      // Clear feed cache to ensure new item appears immediately
+      if (user?.uid) {
+        console.log('🔄 Clearing feed cache after creating item...');
+        dataService.clearFeedCache(user.uid);
+      }
+      
       // Only call onSuccess if no invite dialog was shown
       onSuccess();
     } catch (error) {
@@ -373,6 +380,13 @@ export default function PostForm({
       );
       setShowInviteDialog(false);
       setInviteData(null);
+      
+      // Clear feed cache to ensure new item appears immediately
+      if (user?.uid) {
+        console.log('🔄 Clearing feed cache after sending invite...');
+        dataService.clearFeedCache(user.uid);
+      }
+      
       onSuccess();
     }
   };
@@ -380,6 +394,13 @@ export default function PostForm({
   const handleSkipInvite = () => {
     setShowInviteDialog(false);
     setInviteData(null);
+    
+    // Clear feed cache to ensure new item appears immediately
+    if (user?.uid) {
+      console.log('🔄 Clearing feed cache after skipping invite...');
+      dataService.clearFeedCache(user.uid);
+    }
+    
     onSuccess();
   };
 

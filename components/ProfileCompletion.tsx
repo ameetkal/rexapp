@@ -28,19 +28,27 @@ export default function ProfileCompletion({ phoneNumber, invitationData }: Profi
   useEffect(() => {
     if (invitationData) {
       console.log('🔍 ProfileCompletion invitationData:', invitationData);
+      
       // Pre-fill the name with the recipient's name (if available)
       if (invitationData.recipientName) {
         console.log('✅ Pre-filling name with recipientName:', invitationData.recipientName);
         setName(invitationData.recipientName);
+        
+        // Generate a username from the recipient's name
+        const firstName = invitationData.recipientName.split(' ')[0].toLowerCase();
+        const randomSuffix = Math.floor(Math.random() * 10000);
+        const generatedUsername = `${firstName.replace(/[^a-z0-9]/g, '')}${randomSuffix}`;
+        console.log('✅ Generated username from recipient name:', generatedUsername);
+        setUsername(generatedUsername);
       } else {
         console.log('❌ No recipientName found in invitationData');
+        // Fallback to inviter's name if recipient name not available
+        const firstName = invitationData.inviterName.split(' ')[0].toLowerCase();
+        const randomSuffix = Math.floor(Math.random() * 10000);
+        const generatedUsername = `${firstName.replace(/[^a-z0-9]/g, '')}${randomSuffix}`;
+        console.log('⚠️ Using inviter name as fallback for username:', generatedUsername);
+        setUsername(generatedUsername);
       }
-      
-      // Generate a username from the inviter's name (as fallback)
-      const firstName = invitationData.inviterName.split(' ')[0].toLowerCase();
-      const randomSuffix = Math.floor(Math.random() * 10000);
-      const generatedUsername = `${firstName.replace(/[^a-z0-9]/g, '')}${randomSuffix}`;
-      setUsername(generatedUsername);
     }
   }, [invitationData]);
 
