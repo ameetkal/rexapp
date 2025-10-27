@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAppStore } from '@/lib/store';
 import { followUser, unfollowUser } from '@/lib/firestore';
 import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingCard from './ThingCard';
@@ -23,6 +23,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   
   const { user, userProfile, setUserProfile } = useAuthStore();
+  const { autoOpenThingId } = useAppStore();
 
   // Wrapper function to handle both user IDs and usernames
   const handleUserClick = async (userIdOrUsername: string) => {
@@ -696,6 +697,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                     feedThing={feedThing}
                     onEdit={onEditInteraction}
                     onUserClick={handleUserClick}
+                    autoOpen={autoOpenThingId === feedThing.thing.id}
                   />
                 ))}
               </div>

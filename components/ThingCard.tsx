@@ -26,9 +26,10 @@ interface ThingCardProps {
   feedThing: FeedThing;
   onEdit?: (interaction: UserThingInteraction, thing: Thing) => void;
   onUserClick?: (userId: string) => void;
+  autoOpen?: boolean; // If true, automatically open the detail modal
 }
 
-export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardProps) {
+export default function ThingCard({ feedThing, onEdit, onUserClick, autoOpen = false }: ThingCardProps) {
   const { thing, interactions, myInteraction } = feedThing;
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -98,6 +99,16 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
     
     loadUsers();
   }, [allInteractions]);
+
+  // Auto-open modal if autoOpen prop is true
+  useEffect(() => {
+    if (autoOpen) {
+      setShowDetailModal(true);
+      // Clear the auto-open flag from the store after opening
+      const { setAutoOpenThingId } = useAppStore.getState();
+      setAutoOpenThingId(null);
+    }
+  }, [autoOpen]);
 
   const formatDate = (timestamp: Date | null) => {
     if (!timestamp) return 'No recent activity';
@@ -406,19 +417,19 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
   };
 
   // Handle share
-  const handleShare = async () => {
+  const handleShare = async (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling to card
     if (!user || !userProfile) return;
     
     setShowMenu(false);
     setLoading(true);
     
     try {
-      const shareUrl = `${window.location.origin}/post/${thing.id}`;
+      const shareUrl = `${window.location.origin}/share/${thing.id}?from=${user.uid}`;
       
       if (navigator.share) {
         await navigator.share({
-          title: thing.title,
-          text: `Check out "${thing.title}" on Rex!`,
+          title: `${userProfile.name} has shared ${thing.title} with you on Rex:`,
           url: shareUrl,
         });
       } else {
@@ -429,14 +440,20 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
       
       console.log('✅ Shared successfully');
     } catch (error) {
-      console.error('❌ Error sharing:', error);
+      // Handle user cancellation gracefully
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('ℹ️ Share cancelled by user');
+      } else {
+        console.error('❌ Error sharing:', error);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // Handle edit
-  const handleEdit = () => {
+  const handleEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling to card
     if (!onEdit || !currentMyInteraction) return;
     
     setShowMenu(false);
@@ -646,7 +663,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
                   <div className="py-1">
                     {/* Edit */}
                     <button
-                      onClick={handleEdit}
+                      onClick={(e) => handleEdit(e)}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
@@ -657,7 +674,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick }: ThingCardP
                     
                     {/* Share */}
                     <button
-                      onClick={handleShare}
+                      onClick={(e) => handleShare(e)}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
                     >

@@ -400,7 +400,8 @@ export default function ThingDetailModal({
   };
 
   // Handle share
-  const handleShare = async () => {
+  const handleShare = async (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling
     console.log('Share clicked');
     if (!user || !userProfile) return;
     
@@ -408,12 +409,11 @@ export default function ThingDetailModal({
     setLoading(true);
     
     try {
-      const shareUrl = `${window.location.origin}/post/${thing.id}`;
+      const shareUrl = `${window.location.origin}/share/${thing.id}?from=${user.uid}`;
       
       if (navigator.share) {
         await navigator.share({
-          title: thing.title,
-          text: `Check out "${thing.title}" on Rex!`,
+          title: `${userProfile.name} has shared ${thing.title} with you on Rex:`,
           url: shareUrl,
         });
         console.log('✅ Shared successfully');
@@ -436,7 +436,8 @@ export default function ThingDetailModal({
   };
 
   // Handle edit
-  const handleEdit = () => {
+  const handleEdit = (e?: React.MouseEvent) => {
+    e?.stopPropagation(); // Prevent event from bubbling
     console.log('Edit clicked', { onEdit: !!onEdit, currentMyInteraction: !!currentMyInteraction });
     if (!onEdit || !currentMyInteraction) return;
     
@@ -693,7 +694,7 @@ export default function ThingDetailModal({
                       onClick={(e) => {
                         console.log('Edit button clicked in portal');
                         e.stopPropagation();
-                        handleEdit();
+                        handleEdit(e);
                       }}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -708,7 +709,7 @@ export default function ThingDetailModal({
                       onClick={(e) => {
                         console.log('Share button clicked in portal');
                         e.stopPropagation();
-                        handleShare();
+                        handleShare(e);
                       }}
                       disabled={loading}
                       className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center gap-2"

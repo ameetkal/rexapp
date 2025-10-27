@@ -19,10 +19,12 @@ interface AppState {
   things: Thing[];
   userInteractions: UserThingInteraction[];
   recommendations: Recommendation[];
+  autoOpenThingId: string | null;
   
   setThings: (things: Thing[]) => void;
   setUserInteractions: (interactions: UserThingInteraction[]) => void;
   setRecommendations: (recommendations: Recommendation[]) => void;
+  setAutoOpenThingId: (thingId: string | null) => void;
   addThing: (thing: Thing) => void;
   addUserInteraction: (interaction: UserThingInteraction) => void;
   addRecommendation: (recommendation: Recommendation) => void;
@@ -53,10 +55,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   things: [],
   userInteractions: [],
   recommendations: [],
+  autoOpenThingId: null,
   
   setThings: (things) => set({ things }),
   setUserInteractions: (userInteractions) => set({ userInteractions }),
   setRecommendations: (recommendations) => set({ recommendations }),
+  setAutoOpenThingId: (thingId) => set({ autoOpenThingId: thingId }),
   addThing: (thing) => set((state) => ({ things: [thing, ...state.things] })),
   addUserInteraction: (interaction) => set((state) => ({ userInteractions: [interaction, ...state.userInteractions] })),
   addRecommendation: (recommendation) => set((state) => ({ recommendations: [recommendation, ...state.recommendations] })),
