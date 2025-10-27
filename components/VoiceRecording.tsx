@@ -15,11 +15,21 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
   const [isPlaying, setIsPlaying] = useState(false);
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const MAX_DURATION = 30; // 30 seconds max
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   // Timer effect
   useEffect(() => {
@@ -49,9 +59,12 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const startRecording = async () => {
+  const startRecording = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: 'audio/webm'
       });
@@ -82,7 +95,8 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -92,7 +106,8 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     }
   };
 
-  const playRecording = () => {
+  const playRecording = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (audioBlob) {
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
@@ -113,7 +128,8 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     }
   };
 
-  const stopPlayback = () => {
+  const stopPlayback = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -121,13 +137,15 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     }
   };
 
-  const handleSend = () => {
+  const handleSend = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (audioBlob) {
       onRecordingComplete(audioBlob, elapsedTime);
     }
   };
 
-  const handleRetry = () => {
+  const handleRetry = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setAudioBlob(null);
     setElapsedTime(0);
     setIsPlaying(false);
@@ -135,6 +153,19 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
       audioRef.current.pause();
       audioRef.current = null;
     }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const handleCancel = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    onCancel();
   };
 
   return (
@@ -196,7 +227,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
       {/* Action Buttons */}
       <div className="flex space-x-3">
         <button
-          onClick={audioBlob ? handleRetry : onCancel}
+          onClick={audioBlob ? handleRetry : handleCancel}
           className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
         >
           {audioBlob ? 'Re-record' : 'Cancel'}
