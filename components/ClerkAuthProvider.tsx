@@ -141,6 +141,11 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
           
           if (pendingProfileData) {
             // User has completed profile - create Firestore document
+            console.log('👤 Creating new user profile with data:', {
+              name: pendingProfileData.name,
+              username: pendingProfileData.username,
+              email: pendingProfileData.email
+            });
             
             const userName = pendingProfileData.name;
             const userUsername = pendingProfileData.username;
@@ -157,12 +162,17 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
               createdAt: Timestamp.now(),
             };
 
+            console.log('💾 Saving new user profile to Firestore...');
             await setDoc(userDocRef, newUserProfile);
+            console.log('✅ New user profile saved to Firestore');
+            
+            console.log('📝 Setting user profile in Zustand store:', newUserProfile.name);
             setUserProfile(newUserProfile);
             userProfileData = newUserProfile;
             
             // Clean up localStorage after successful user creation
             localStorage.removeItem('pendingProfileData');
+            console.log('🧹 Cleaned up pendingProfileData from localStorage');
           } else {
             // User hasn't completed profile yet - redirect to profile completion
             if (!isOnProfilePage) {
@@ -181,7 +191,8 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             userId,
             userName: userProfileData.name,
             isNewUser: !userDoc.exists(),
-            userProfileData
+            userProfileData,
+            existingFollowingCount: userProfileData.following?.length || 0
           });
           
           const inviteSuccess = await processInvitation(
@@ -197,6 +208,7 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             setInviteProcessed(true);
             
             // Small delay to ensure Firestore writes are complete
+            console.log('⏳ Waiting 500ms for Firestore writes to complete...');
             await new Promise(resolve => setTimeout(resolve, 500));
             
             // Refresh user profile to get updated following list
@@ -204,6 +216,11 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             const updatedUserDoc = await getDoc(userDocRef);
             if (updatedUserDoc.exists()) {
               const updatedProfile = updatedUserDoc.data() as User;
+              console.log('📊 Profile comparison:', {
+                before: userProfileData.following?.length || 0,
+                after: updatedProfile.following?.length || 0,
+                newFollowingList: updatedProfile.following
+              });
               setUserProfile(updatedProfile);
               console.log('✅ User profile refreshed with following:', updatedProfile.following);
               
@@ -229,7 +246,11 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
                   window.dispatchEvent(new CustomEvent('switchToFeed'));
                 }
               }, 1000); // Small delay to ensure profile is updated
+            } else {
+              console.error('❌ Updated user profile not found in Firestore');
             }
+          } else {
+            console.error('❌ Invitation processing returned false');
           }
         }
 

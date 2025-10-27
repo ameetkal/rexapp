@@ -419,23 +419,78 @@ export const searchPosts = async (searchTerm: string): Promise<Post[]> => {
   }
 };
 
+export const searchThings = async (searchTerm: string): Promise<Thing[]> => {
+  try {
+    const thingsRef = collection(db, 'things');
+    const querySnapshot = await getDocs(thingsRef);
+    const things: Thing[] = [];
+    
+    console.log(`🔍 Searching ${querySnapshot.size} things for: "${searchTerm}"`);
+    
+    querySnapshot.forEach((doc) => {
+      const thing = doc.data() as Thing;
+      const searchLower = searchTerm.toLowerCase();
+      
+      // Search across title, category
+      const titleMatch = thing.title.toLowerCase().includes(searchLower);
+      const categoryMatch = thing.category.toLowerCase().includes(searchLower);
+      
+      // Search in metadata fields if they exist
+      const locationMatch = thing.metadata?.location && thing.metadata.location.toLowerCase().includes(searchLower);
+      const authorMatch = thing.metadata?.author && thing.metadata.author.toLowerCase().includes(searchLower);
+      
+      const matchesSearch = titleMatch || categoryMatch || locationMatch || authorMatch;
+      
+      if (matchesSearch) {
+        console.log(`✅ Match found: "${thing.title}" (${thing.category})`, {
+          title: titleMatch ? thing.title : null,
+          category: categoryMatch ? thing.category : null,
+          location: locationMatch ? thing.metadata?.location : null,
+          author: authorMatch ? thing.metadata?.author : null
+        });
+        things.push({ ...thing, id: doc.id } as Thing);
+      }
+    });
+    
+    // Sort by creation date, newest first
+    const sortedThings = things.sort((a, b) => {
+      // Handle both Timestamp objects and converted dates
+      const getTimestamp = (timestamp: Timestamp | any): number => {
+        if (!timestamp) return 0;
+        if (timestamp.toMillis) return timestamp.toMillis();
+        if (timestamp.seconds) return timestamp.seconds * 1000;
+        return 0;
+      };
+      
+      const aTime = getTimestamp(a.createdAt);
+      const bTime = getTimestamp(b.createdAt);
+      return bTime - aTime;
+    });
+    console.log(`🎯 Found ${sortedThings.length} matching things`);
+    return sortedThings;
+  } catch (error) {
+    console.error('Error searching things:', error);
+    return [];
+  }
+};
+
 export const universalSearch = async (searchTerm: string): Promise<{
-  posts: Post[];
+  things: Thing[];
   users: User[];
 }> => {
   try {
-    const [posts, users] = await Promise.all([
-      searchPosts(searchTerm),
+    const [things, users] = await Promise.all([
+      searchThings(searchTerm),
       searchUsers(searchTerm)
     ]);
     
     return {
-      posts: posts.slice(0, 10), // Limit to top 10 posts
+      things: things.slice(0, 10), // Limit to top 10 things
       users: users.slice(0, 5)   // Limit to top 5 users
     };
   } catch (error) {
     console.error('Error in universal search:', error);
-    return { posts: [], users: [] };
+    return { things: [], users: [] };
   }
 };
 
@@ -3121,7 +3176,12 @@ export const processInvitation = async (
   isNewUser: boolean
 ): Promise<boolean> => {
   try {
-    console.log('🎁 Processing invitation:', inviteCode, 'for user:', userId);
+    console.log('🎁 processInvitation START:', { 
+      inviteCode, 
+      userId, 
+      userName, 
+      isNewUser 
+    });
     
     const invitation = await getInvitation(inviteCode);
     
@@ -3130,55 +3190,93 @@ export const processInvitation = async (
       return false;
     }
     
+    console.log('📋 Invitation details:', {
+      inviterId: invitation.inviterId,
+      thingId: invitation.thingId,
+      thingTitle: invitation.thingTitle
+    });
+    
     // 1. Follow the inviter
-    console.log('👥 Auto-following inviter:', invitation.inviterId);
-    await followUser(userId, invitation.inviterId);
+    console.log('👥 Starting auto-follow for inviter:', invitation.inviterId);
+    try {
+      await followUser(userId, invitation.inviterId);
+      console.log('✅ Successfully followed inviter');
+    } catch (followError) {
+      console.error('❌ Error in followUser:', followError);
+      throw followError;
+    }
     
     // 2. Save thing as completed (not bucket list)
-    console.log('📌 Auto-saving thing as completed:', invitation.thingId);
-    await createUserThingInteraction(
-      userId,
-      userName,
-      invitation.thingId,
-      'completed',
-      'friends' // Visible to followers by default
-    );
+    console.log('📌 Starting auto-save thing as completed:', invitation.thingId);
+    try {
+      await createUserThingInteraction(
+        userId,
+        userName,
+        invitation.thingId,
+        'completed',
+        'friends' // Visible to followers by default
+      );
+      console.log('✅ Successfully created completed interaction');
+    } catch (interactionError) {
+      console.error('❌ Error creating interaction:', interactionError);
+      throw interactionError;
+    }
     
     // 3. Create recommendation record (you → inviter)
     // The invited user recommended this thing to the inviter
     console.log('🎁 Creating recommendation record');
-    await createRecommendation(
-      userId,                 // The person who gave the recommendation (invited user)
-      invitation.inviterId,   // The person who received the recommendation (inviter)
-      invitation.thingId,
-      `Via invite link`
-    );
+    try {
+      await createRecommendation(
+        userId,                 // The person who gave the recommendation (invited user)
+        invitation.inviterId,   // The person who received the recommendation (inviter)
+        invitation.thingId,
+        `Via invite link`
+      );
+      console.log('✅ Successfully created recommendation');
+    } catch (recommendationError) {
+      console.error('❌ Error creating recommendation:', recommendationError);
+      throw recommendationError;
+    }
     
     // 4. Mark invitation as used
-    const inviteRef = doc(db, 'invitations', inviteCode);
-    await updateDoc(inviteRef, {
-      usedBy: arrayUnion(userId),
-      ...(isNewUser && { convertedUsers: arrayUnion(userId) })
-    });
+    console.log('📝 Marking invitation as used');
+    try {
+      const inviteRef = doc(db, 'invitations', inviteCode);
+      await updateDoc(inviteRef, {
+        usedBy: arrayUnion(userId),
+        ...(isNewUser && { convertedUsers: arrayUnion(userId) })
+      });
+      console.log('✅ Successfully marked invitation as used');
+    } catch (updateError) {
+      console.error('❌ Error updating invitation:', updateError);
+      throw updateError;
+    }
     
     // 5. Notify inviter (optional - new user joined)
     if (isNewUser) {
-      await createNotification(
-        invitation.inviterId,
-        'followed',
-        `${userName} joined Rex!`,
-        `${userName} joined Rex via your invite and is now following you.`,
-        {
-          fromUserId: userId,
-          fromUserName: userName,
-        }
-      );
+      console.log('📬 Creating notification for inviter');
+      try {
+        await createNotification(
+          invitation.inviterId,
+          'followed',
+          `${userName} joined Rex!`,
+          `${userName} joined Rex via your invite and is now following you.`,
+          {
+            fromUserId: userId,
+            fromUserName: userName,
+          }
+        );
+        console.log('✅ Successfully created notification');
+      } catch (notificationError) {
+        console.error('❌ Error creating notification:', notificationError);
+        // Don't throw - notification failures shouldn't break the invite flow
+      }
     }
     
-    console.log('✅ Invitation processed successfully');
+    console.log('✅ processInvitation SUCCESS');
     return true;
   } catch (error) {
-    console.error('❌ Error processing invitation:', error);
+    console.error('❌ processInvitation ERROR:', error);
     return false;
   }
 };

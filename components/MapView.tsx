@@ -119,6 +119,7 @@ export default function MapView({ things, interactions, myInteractions, centerOn
       const map = new google.maps.Map(mapRef.current!, {
         center,
         zoom: completedPlaces.length > 0 ? 10 : (userLocation ? 12 : 3),
+        gestureHandling: 'cooperative', // Allow one-finger panning
       });
       
       // Store map instance

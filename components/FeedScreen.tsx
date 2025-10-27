@@ -5,6 +5,7 @@ import { useAuthStore, useAppStore } from '@/lib/store';
 import { followUser, unfollowUser } from '@/lib/firestore';
 import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingCard from './ThingCard';
+import ThingDetailModal from './ThingDetailModal';
 import MapView from './MapView';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon, MapIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch, usePlaceSearch } from '@/lib/hooks';
@@ -23,6 +24,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [showAllResults, setShowAllResults] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [selectedPlaceLocation, setSelectedPlaceLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [selectedThing, setSelectedThing] = useState<Thing | null>(null);
   
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { autoOpenThingId } = useAppStore();
@@ -84,8 +86,19 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const { places, loading: placesLoading, searchPlaces } = usePlaceSearch();
 
   // Define search-related variables early
-  const showingSearchResults = (searchResults.users.length > 0 || searchLoading) && useThingFeed && searchTerm.trim().length > 0;
+  const showingSearchResults = (searchResults.users.length > 0 || searchResults.things.length > 0 || searchLoading) && useThingFeed && searchTerm.trim().length > 0;
   const showingPlaceResults = (places.length > 0 || placesLoading) && !useThingFeed && searchTerm.trim().length > 0;
+  
+  // Debug logging for search results
+  useEffect(() => {
+    if (useThingFeed && searchTerm.trim().length > 0) {
+      console.log('🔍 Search results:', {
+        usersCount: searchResults.users.length,
+        thingsCount: searchResults.things.length,
+        searchLoading
+      });
+    }
+  }, [searchResults, searchLoading, useThingFeed, searchTerm]);
   
   // Debug logging
   useEffect(() => {
@@ -210,9 +223,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     const timeoutId = setTimeout(() => {
       if (searchTerm.trim().length >= 2) {
         console.log('🔍 Calling searchPlaces with:', searchTerm.trim());
-        searchPlaces(searchTerm.trim()).then(() => {
-          console.log('✅ searchPlaces completed, places count:', places.length);
-        });
+        searchPlaces(searchTerm.trim());
         setShowAllResults(false); // Reset "show all" when new search
       } else if (searchTerm.trim().length === 0) {
         // Clear results when search is empty
@@ -223,7 +234,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, searchPlaces, useThingFeed, places.length]);
+  }, [searchTerm, searchPlaces, useThingFeed]);
 
   const handleSearch = useCallback(() => {
     if (searchTerm.trim()) {
@@ -565,8 +576,36 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   </div>
                 )}
 
+                {/* Things Results */}
+                {!searchLoading && searchResults.things.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">
+                      📦 THINGS ({searchResults.things.length})
+                    </h4>
+                    <div className="space-y-3">
+                      {searchResults.things.slice(0, 10).map((thing) => (
+                        <button
+                          key={thing.id}
+                          onClick={() => setSelectedThing(thing)}
+                          className="w-full bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow p-4 text-left"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h5 className="font-medium text-gray-900 mb-1">{thing.title}</h5>
+                              <p className="text-sm text-gray-500 capitalize mb-2">{thing.category}</p>
+                              {thing.description && (
+                                <p className="text-sm text-gray-600 line-clamp-2">{thing.description}</p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* No Results */}
-                {!searchLoading && searchResults.users.length === 0 && searchTerm.trim().length >= 2 && (
+                {!searchLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && searchTerm.trim().length >= 2 && (
                   <div className="text-center py-12">
                     <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -700,8 +739,36 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             )}
 
+            {/* Things Results */}
+            {!searchLoading && searchResults.things.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">
+                  📦 THINGS ({searchResults.things.length})
+                </h4>
+                <div className="space-y-3">
+                  {searchResults.things.slice(0, 10).map((thing) => (
+                    <button
+                      key={thing.id}
+                      onClick={() => setSelectedThing(thing)}
+                      className="w-full bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow p-4 text-left"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h5 className="font-medium text-gray-900 mb-1">{thing.title}</h5>
+                          <p className="text-sm text-gray-500 capitalize mb-2">{thing.category}</p>
+                          {thing.description && (
+                            <p className="text-sm text-gray-600 line-clamp-2">{thing.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* No Results */}
-            {!searchLoading && searchResults.users.length === 0 && searchTerm.trim().length >= 2 && (
+            {!searchLoading && searchResults.users.length === 0 && searchResults.things.length === 0 && searchTerm.trim().length >= 2 && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -887,6 +954,15 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           </>
         )}
       </div>
+
+      {/* Thing Detail Modal */}
+      {selectedThing && (
+        <ThingDetailModal
+          thing={selectedThing}
+          onClose={() => setSelectedThing(null)}
+          onUserClick={(userId) => onUserProfileClick?.(userId)}
+        />
+      )}
     </div>
   );
 } 

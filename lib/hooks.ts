@@ -340,13 +340,13 @@ export const useAnyUserProfile = (userId: string) => {
  * Hook for performing searches
  */
 export const useSearch = () => {
-  const [searchResults, setSearchResults] = useState<{ users: User[]; posts: Post[] }>({ users: [], posts: [] });
+  const [searchResults, setSearchResults] = useState<{ users: User[]; things: Thing[] }>({ users: [], things: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const performSearch = useCallback(async (searchTerm: string) => {
     if (!searchTerm.trim()) {
-      setSearchResults({ users: [], posts: [] });
+      setSearchResults({ users: [], things: [] });
       return;
     }
     

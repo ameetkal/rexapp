@@ -321,7 +321,7 @@ export class DataService {
   /**
    * Perform universal search
    */
-  async performSearch(searchTerm: string): Promise<{ users: User[]; posts: Post[] }> {
+  async performSearch(searchTerm: string): Promise<{ users: User[]; things: Thing[] }> {
     try {
       // Perform search
       const results = await universalSearch(searchTerm);
