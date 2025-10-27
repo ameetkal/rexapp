@@ -15,7 +15,7 @@ function SharePageContent() {
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { setAutoOpenThingId } = useAppStore();
   
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   const thingId = params.thingId as string;
@@ -80,7 +80,7 @@ function SharePageContent() {
           console.log('🔗 Auto-saving thing:', thing.title);
           
           // Create interaction (saved state)
-          const interactionId = await createUserThingInteraction(
+          await createUserThingInteraction(
             user.uid,
             userProfile.name,
             thingId,
@@ -116,7 +116,7 @@ function SharePageContent() {
     };
     
     processShare();
-  }, [user, userProfile, thingId, senderId, router, setAutoOpenThingId]);
+  }, [user, userProfile, thingId, senderId, router, setAutoOpenThingId, setUserProfile]);
   
   if (error) {
     return (

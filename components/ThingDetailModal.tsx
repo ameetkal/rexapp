@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { Thing, UserThingInteraction, User } from '@/lib/types';
-import { createUserThingInteraction, getUserThingInteractions, deleteUserThingInteraction } from '@/lib/firestore';
+import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { dataService } from '@/lib/dataService';
@@ -18,7 +18,7 @@ import { db } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
 import { createComment, searchUsers } from '@/lib/firestore';
-import { PaperAirplaneIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
+import { MicrophoneIcon } from '@heroicons/react/24/outline';
 import VoiceRecording from './VoiceRecording';
 import VoicePlayer from './VoicePlayer';
 

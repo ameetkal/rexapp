@@ -9,14 +9,17 @@ interface MapViewProps {
   interactions: UserThingInteraction[];
   myInteractions: UserThingInteraction[];
   onThingClick: (thing: Thing) => void;
+  centerOnLocation?: { lat: number; lng: number } | null;
 }
 
-export default function MapView({ things, interactions, myInteractions, onThingClick }: MapViewProps) {
+export default function MapView({ things, interactions, myInteractions, centerOnLocation }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const searchMarkerRef = useRef<google.maps.Marker | null>(null);
   const [selectedThing, setSelectedThing] = useState<Thing | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const hasCenteredOnPlace = useRef(false);
 
   // Filter for completed Places with coordinates
   const completedPlaces = things.filter(thing => {
@@ -144,17 +147,60 @@ export default function MapView({ things, interactions, myInteractions, onThingC
 
   // Re-center map when user location becomes available
   useEffect(() => {
-    if (mapLoaded && userLocation && mapInstanceRef.current) {
+    // Don't re-center to user location if we just centered on a searched place
+    if (mapLoaded && userLocation && mapInstanceRef.current && !hasCenteredOnPlace.current) {
       console.log('🎯 Re-centering map to user location:', userLocation);
       mapInstanceRef.current.setCenter(userLocation);
       mapInstanceRef.current.setZoom(12);
     }
   }, [userLocation, mapLoaded]);
 
+  // Center map on selected place location from search
+  useEffect(() => {
+    console.log('🗺️ MapView useEffect triggered:', { 
+      mapLoaded, 
+      centerOnLocation, 
+      hasMapInstance: !!mapInstanceRef.current 
+    });
+    
+    if (mapLoaded && centerOnLocation && mapInstanceRef.current) {
+      console.log('📍 Centering map on selected place:', centerOnLocation);
+      mapInstanceRef.current.setCenter(centerOnLocation);
+      mapInstanceRef.current.setZoom(15); // Zoom closer for selected places
+      hasCenteredOnPlace.current = true;
+      
+      // Remove previous search marker if exists
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.setMap(null);
+      }
+      
+      // Add a marker at the searched location
+      searchMarkerRef.current = new google.maps.Marker({
+        position: centerOnLocation,
+        map: mapInstanceRef.current,
+        title: 'Searched location',
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: '#4285F4',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+      });
+      console.log('✅ Map centered and marker added');
+    } else if (!centerOnLocation && searchMarkerRef.current) {
+      // Remove marker when location is cleared
+      searchMarkerRef.current.setMap(null);
+      searchMarkerRef.current = null;
+      hasCenteredOnPlace.current = false;
+    }
+  }, [centerOnLocation, mapLoaded]);
+
   return (
-    <div className="relative w-full h-full">
+    <div className="relative -mx-4 -mb-4" style={{ width: 'calc(100% + 2rem)', height: 'calc(100vh - 240px)', minHeight: '500px' }}>
       {/* Map Container */}
-      <div ref={mapRef} className="w-full h-full min-h-[500px]" />
+      <div ref={mapRef} className="w-full h-full" />
 
       {/* Selected Thing Modal */}
       {selectedThing && (

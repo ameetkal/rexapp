@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { MicrophoneIcon, StopIcon, PlayIcon } from '@heroicons/react/24/outline';
 
 interface VoiceRecordingProps {
@@ -50,7 +50,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
         clearInterval(timerRef.current);
       }
     };
-  }, [isRecording]);
+  }, [isRecording, stopRecording]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -95,7 +95,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
     }
   };
 
-  const stopRecording = (e?: React.MouseEvent) => {
+  const stopRecording = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -104,7 +104,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
         clearInterval(timerRef.current);
       }
     }
-  };
+  }, [isRecording]);
 
   const playRecording = (e?: React.MouseEvent) => {
     e?.stopPropagation();

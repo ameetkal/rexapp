@@ -18,7 +18,7 @@ import { dataService } from '@/lib/dataService';
 import { createComment, searchUsers } from '@/lib/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
-import { PaperAirplaneIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
+import { MicrophoneIcon } from '@heroicons/react/24/outline';
 import VoiceRecording from './VoiceRecording';
 import VoicePlayer from './VoicePlayer';
 

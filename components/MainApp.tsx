@@ -168,6 +168,11 @@ export default function MainApp() {
     }
     setAppScreen('main'); // Always reset to main app screen
     setActiveTab(tab);
+    
+    // Dispatch event to reset to Things feed when clicking Discover tab
+    if (tab === 'feed' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('switchToThingsFeed'));
+    }
   };
 
   // Navigation handlers for notifications and settings

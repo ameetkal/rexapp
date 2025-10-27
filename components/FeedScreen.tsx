@@ -6,8 +6,8 @@ import { followUser, unfollowUser } from '@/lib/firestore';
 import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
 import ThingCard from './ThingCard';
 import MapView from './MapView';
-import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon } from '@heroicons/react/24/outline';
-import { useFeedData, useSearch } from '@/lib/hooks';
+import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon, MapIcon } from '@heroicons/react/24/outline';
+import { useFeedData, useSearch, usePlaceSearch } from '@/lib/hooks';
 import { dataService } from '@/lib/dataService';
 
 interface FeedScreenProps {
@@ -22,9 +22,33 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
   const [showAllResults, setShowAllResults] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [selectedPlaceLocation, setSelectedPlaceLocation] = useState<{ lat: number; lng: number } | null>(null);
   
   const { user, userProfile, setUserProfile } = useAuthStore();
   const { autoOpenThingId } = useAppStore();
+
+  // Listen for switchToThingsFeed event
+  useEffect(() => {
+    const handleSwitchToThingsFeed = () => {
+      setUseThingFeed(true);
+    };
+
+    window.addEventListener('switchToThingsFeed', handleSwitchToThingsFeed);
+    return () => {
+      window.removeEventListener('switchToThingsFeed', handleSwitchToThingsFeed);
+    };
+  }, []);
+
+  // Reset selectedPlaceLocation after a short delay to allow map to center
+  useEffect(() => {
+    if (selectedPlaceLocation) {
+      const timer = setTimeout(() => {
+        console.log('🗺️ Clearing selectedPlaceLocation after centering');
+        setSelectedPlaceLocation(null);
+      }, 3000); // Give map 3 seconds to load and center
+      return () => clearTimeout(timer);
+    }
+  }, [selectedPlaceLocation]);
 
   // Wrapper function to handle both user IDs and usernames
   const handleUserClick = async (userIdOrUsername: string) => {
@@ -57,9 +81,23 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   // Use our new custom hooks for clean data access
   const { things, interactions, myInteractions, loading: feedLoading } = useFeedData();
   const { searchResults, loading: searchLoading, search } = useSearch();
+  const { places, loading: placesLoading, searchPlaces } = usePlaceSearch();
 
   // Define search-related variables early
-  const showingSearchResults = searchResults.users.length > 0 || searchLoading;
+  const showingSearchResults = (searchResults.users.length > 0 || searchLoading) && useThingFeed && searchTerm.trim().length > 0;
+  const showingPlaceResults = (places.length > 0 || placesLoading) && !useThingFeed && searchTerm.trim().length > 0;
+  
+  // Debug logging
+  useEffect(() => {
+    if (!useThingFeed) {
+      console.log('🗺️ Map view state:', {
+        searchTerm: searchTerm.trim(),
+        placesCount: places.length,
+        placesLoading,
+        showingPlaceResults,
+      });
+    }
+  }, [searchTerm, places.length, placesLoading, showingPlaceResults, useThingFeed]);
   const INITIAL_RESULT_LIMIT = 5;
   const displayedUsers = showAllResults 
     ? searchResults.users 
@@ -145,8 +183,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
       return bTime - aTime;
     });
 
-  // Auto-search with debouncing (300ms delay)
+  // Auto-search with debouncing (300ms delay) - Things view
   useEffect(() => {
+    if (!useThingFeed) return; // Only run for Things view
+    
     const timeoutId = setTimeout(() => {
       if (searchTerm.trim().length >= 2) {
         search(searchTerm.trim());
@@ -159,21 +199,54 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, search]);
+  }, [searchTerm, search, useThingFeed]);
+
+  // Auto-search with debouncing (300ms delay) - Map view
+  useEffect(() => {
+    if (useThingFeed) return; // Only run for Map view
+    
+    console.log('🗺️ Map auto-search triggered with term:', searchTerm);
+    
+    const timeoutId = setTimeout(() => {
+      if (searchTerm.trim().length >= 2) {
+        console.log('🔍 Calling searchPlaces with:', searchTerm.trim());
+        searchPlaces(searchTerm.trim()).then(() => {
+          console.log('✅ searchPlaces completed, places count:', places.length);
+        });
+        setShowAllResults(false); // Reset "show all" when new search
+      } else if (searchTerm.trim().length === 0) {
+        // Clear results when search is empty
+        console.log('🗑️ Clearing search results');
+        searchPlaces('');
+        setShowAllResults(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchTerm, searchPlaces, useThingFeed, places.length]);
 
   const handleSearch = useCallback(() => {
     if (searchTerm.trim()) {
-      search(searchTerm);
+      if (useThingFeed) {
+        search(searchTerm);
+      } else {
+        searchPlaces(searchTerm);
+      }
       setShowAllResults(false);
     }
-  }, [searchTerm, search]);
+  }, [searchTerm, search, searchPlaces, useThingFeed]);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchTerm('');
     setShowAllResults(false);
     setIsMobileSearchOpen(false);
-    // The useEffect will handle clearing results when searchTerm becomes empty
-  };
+    // Manually clear search results
+    if (useThingFeed) {
+      search('');
+    } else {
+      searchPlaces('');
+    }
+  }, [useThingFeed, search, searchPlaces]);
 
   // Detect mobile screen size
   const [isMobile, setIsMobile] = useState(false);
@@ -198,7 +271,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showingSearchResults]);
+  }, [showingSearchResults, clearSearch]);
 
   // Handle click outside to close search results
   useEffect(() => {
@@ -216,7 +289,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showingSearchResults]);
+  }, [showingSearchResults, clearSearch]);
 
   const handleFollow = async (targetUserId: string) => {
     if (!user || !userProfile) return;
@@ -291,7 +364,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               onFocus={() => isMobile && setIsMobileSearchOpen(true)}
-              placeholder="Search people, posts, places..."
+              placeholder={!useThingFeed ? "Search for places..." : "Search people, posts, places..."}
               className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
               autoComplete="off"
             />
@@ -311,6 +384,16 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             )}
           </div>
+          {useThingFeed && (
+            <button
+              onClick={() => setUseThingFeed(false)}
+              className="flex-shrink-0 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
+              aria-label="View Map"
+              title="View Map"
+            >
+              <MapIcon className="w-6 h-6" />
+            </button>
+          )}
         </div>
         
         {showingSearchResults && !isMobileSearchOpen && (
@@ -347,7 +430,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder="Search people, posts, places..."
+                  placeholder={!useThingFeed ? "Search for places..." : "Search people, posts, places..."}
                   className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
                   autoComplete="off"
                   autoFocus
@@ -386,7 +469,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
           </div>
 
           {/* Mobile Search Results */}
-          <div className="px-4 py-4">
+      <div className="px-4 py-4">
             {showingSearchResults ? (
               <div className="space-y-6 search-results">
                 {/* Loading State */}
@@ -500,10 +583,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   <div className="text-center py-12">
                     <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Discover People
+                      {useThingFeed ? 'Discover People' : 'Search for Places'}
                     </h3>
                     <p className="text-gray-500">
-                      Search for friends and discover new connections
+                      {useThingFeed ? 'Search for friends and discover new connections' : 'Search locations, restaurants, attractions, etc.'}
                     </p>
                   </div>
                 )}
@@ -512,10 +595,10 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Discover People
+                  {useThingFeed ? 'Discover People' : 'Search for Places'}
                 </h3>
                 <p className="text-gray-500">
-                  Search for friends and discover new connections
+                  {useThingFeed ? 'Search for friends and discover new connections' : 'Search locations, restaurants, attractions, etc.'}
                 </p>
               </div>
             )}
@@ -523,7 +606,7 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         </div>
       )}
 
-      <div className="px-4 py-4">
+      <div className={!showingSearchResults && !useThingFeed ? 'pb-4' : 'px-4 py-4'}>
         {showingSearchResults ? (
           /* Search Results */
           <div className="space-y-6 search-results">
@@ -631,14 +714,118 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
             )}
 
             {/* Empty Search State */}
-            {!searchLoading && searchTerm.trim().length === 0 && (
+            {!placesLoading && searchTerm.trim().length === 0 && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Discover People
+                  Search for Places
                 </h3>
                 <p className="text-gray-500">
-                  Search for friends and discover new connections
+                  Search locations, restaurants, attractions, etc.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : showingPlaceResults ? (
+          /* Place Search Results */
+          <div className="space-y-4">
+            {/* Loading State */}
+            {placesLoading && (
+              <div className="text-center py-8">
+                <div className="inline-flex items-center space-x-2 text-gray-500">
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Searching places...</span>
+                </div>
+              </div>
+            )}
+
+            {/* Place Results */}
+            {!placesLoading && places.length > 0 && (
+              <div className="space-y-3">
+                {places.map((place: { place_id: string; name: string; formatted_address?: string; geometry?: { location: { lat: number; lng: number } }; photos?: Array<{ photo_reference: string }>; rating?: number }) => (
+                  <div
+                    key={place.place_id}
+                    className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => {
+                      // Center map on this place
+                      if (place.geometry && place.geometry.location) {
+                        const location = {
+                          lat: place.geometry.location.lat,
+                          lng: place.geometry.location.lng,
+                        };
+                        console.log('🗺️ Setting location to center:', location);
+                        setSelectedPlaceLocation(location);
+                        // Clear search and return to map view
+                        setSearchTerm('');
+                        searchPlaces('');
+                      }
+                    }}
+                  >
+                    <div className="flex items-start space-x-3">
+                      {place.photos && place.photos.length > 0 && place.photos[0].photo_reference ? (
+                        <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${place.photos[0].photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}`}
+                            alt={place.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Hide broken images
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center">
+                          <span className="text-gray-400 text-xs">No photo</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-medium text-gray-900 truncate">
+                          {place.name}
+                        </h3>
+                        {place.formatted_address && (
+                          <p className="text-sm text-gray-500 truncate mt-1">
+                            {place.formatted_address}
+                          </p>
+                        )}
+                        <div className="flex items-center space-x-4 mt-2">
+                          {place.rating && (
+                            <div className="flex items-center space-x-1">
+                              <span className="text-sm text-yellow-600">⭐</span>
+                              <span className="text-sm text-gray-600">{place.rating.toFixed(1)}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* No Results */}
+            {!placesLoading && places.length === 0 && searchTerm.trim().length >= 2 && (
+              <div className="text-center py-12">
+                <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No places found
+                </h3>
+                <p className="text-gray-500">
+                  Try different keywords or check your spelling
+                </p>
+              </div>
+            )}
+
+            {/* Empty Search State */}
+            {!placesLoading && searchTerm.trim().length === 0 && (
+              <div className="text-center py-12">
+                <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  Search for Places
+                </h3>
+                <p className="text-gray-500">
+                  Search locations, restaurants, attractions, etc.
                 </p>
               </div>
             )}
@@ -646,32 +833,6 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
         ) : (
           /* Regular Feed */
           <>
-            {/* Feed Mode Toggle Header */}
-            <div className="flex items-center justify-start mb-6">
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setUseThingFeed(true)}
-                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
-                    useThingFeed 
-                      ? 'bg-white text-blue-600 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Things
-                </button>
-                <button
-                  onClick={() => setUseThingFeed(false)}
-                  className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
-                    !useThingFeed 
-                      ? 'bg-white text-blue-600 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Map
-                </button>
-              </div>
-            </div>
-
             {useThingFeed && feedThings.length === 0 ? (
               <div className="text-center py-12">
                 <UserPlusIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -704,18 +865,24 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             ) : (
               /* Map View */
-              <MapView 
-                things={things}
-                interactions={interactions}
-                myInteractions={myInteractions}
-                onThingClick={(thing) => {
-                  // Find the thing in feedThings and open modal
-                  const feedThing = feedThings.find(ft => ft.thing.id === thing.id);
-                  if (feedThing) {
-                    // TODO: Open ThingDetailModal
-                  }
-                }}
-              />
+              (() => {
+                console.log('🗺️ Rendering MapView with centerOnLocation:', selectedPlaceLocation);
+                return (
+                  <MapView 
+                    things={things}
+                    interactions={interactions}
+                    myInteractions={myInteractions}
+                    centerOnLocation={selectedPlaceLocation}
+                    onThingClick={(thing) => {
+                      // Find the thing in feedThings and open modal
+                      const feedThing = feedThings.find(ft => ft.thing.id === thing.id);
+                      if (feedThing) {
+                        // TODO: Open ThingDetailModal
+                      }
+                    }}
+                  />
+                );
+              })()
             )}
           </>
         )}

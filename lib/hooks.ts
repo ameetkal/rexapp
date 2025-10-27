@@ -372,6 +372,56 @@ export const useSearch = () => {
 };
 
 /**
+ * Hook for searching places (Google Places API)
+ */
+interface GooglePlace {
+  place_id: string;
+  name: string;
+  formatted_address?: string;
+  geometry?: { location: { lat: number; lng: number } };
+  photos?: Array<{ photo_reference: string }>;
+  rating?: number;
+}
+
+export const usePlaceSearch = () => {
+  const [places, setPlaces] = useState<GooglePlace[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const searchPlaces = useCallback(async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setPlaces([]);
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/places?query=${encodeURIComponent(searchTerm)}`);
+      if (!response.ok) {
+        throw new Error('Failed to search places');
+      }
+      const data = await response.json();
+      // Google Places API returns results in data.results
+      setPlaces(data.results || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search places');
+      setPlaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return {
+    places,
+    loading,
+    error,
+    searchPlaces,
+  };
+};
+
+/**
  * Hook for filtered user interactions (bucket list, completed, etc.)
  */
 export const useFilteredInteractions = (userId?: string, filter?: 'bucketList' | 'completed' | 'inProgress' | 'all') => {
