@@ -121,16 +121,23 @@ export default function MapView({ things, interactions, myInteractions, centerOn
       const map = new google.maps.Map(mapRef.current!, {
         center,
         zoom: completedPlaces.length > 0 ? 10 : (userLocation ? 12 : 3),
-        gestureHandling: 'cooperative', // Allow one-finger panning
-        clickableIcons: true, // Enable to detect POI clicks (we'll intercept them)
+        gestureHandling: 'greedy', // Allow one-finger panning without two-finger requirement
+        clickableIcons: true, // Enable to detect POI clicks
       });
       
       // Store map instance
       mapInstanceRef.current = map;
 
-      // Listen for map clicks
+      // Listen for map clicks and close any InfoWindows that Google creates
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       map.addListener('click', async (e: any) => {
         console.log('🗺️ Map click event:', { placeId: e.placeId, latLng: e.latLng });
+        
+        // If this is a POI click, close any InfoWindows immediately
+        if (e.placeId) {
+          // Close any open InfoWindows to prevent the default one from showing
+          google.maps.event.trigger(map, 'closeclick');
+        }
         
         if (!e.latLng || !mapRef.current) return;
         
@@ -138,12 +145,15 @@ export default function MapView({ things, interactions, myInteractions, centerOn
         const lat = latLng.lat();
         const lng = latLng.lng();
         
-        // Recenter map slightly to bring clicked location into better view
-        map.panTo({ lat: lat - 0.002, lng: lng });
-        
         // Helper function to show popup
-        const showPlacePopup = async (placeId: string) => {
+        const showPlacePopup = async (placeId: string, targetLat: number, targetLng: number) => {
           try {
+            // Recenter map to bring the clicked location into center of screen
+            map.panTo({ lat: targetLat - 0.004, lng: targetLng });
+            
+            // Wait a moment for pan to complete
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
             const detailsResponse = await fetch(`/api/places/details?place_id=${placeId}`);
             
             if (detailsResponse.ok) {
@@ -175,7 +185,7 @@ export default function MapView({ things, interactions, myInteractions, centerOn
                   createdBy: '',
                 };
                 
-                // Position popup at click location
+                // Position popup at centered location (after pan)
                 const overlay = new google.maps.OverlayView();
                 overlay.onAdd = function() {};
                 overlay.onRemove = function() {};
@@ -185,13 +195,15 @@ export default function MapView({ things, interactions, myInteractions, centerOn
                   if (!projection) return;
                   
                   try {
-                    const point = projection.fromLatLngToContainerPixel(new google.maps.LatLng(lat, lng));
+                    // Use the panned-to location for popup positioning
+                    const point = projection.fromLatLngToContainerPixel(new google.maps.LatLng(targetLat - 0.004, targetLng));
                     
                     if (point && mapRef.current) {
                       const mapRect = mapRef.current.getBoundingClientRect();
+                      // Position popup near top of screen but with some margin
                       setPopupPosition({
-                        x: mapRect.left + point.x,
-                        y: mapRect.top + point.y - 20,
+                        x: window.innerWidth / 2,
+                        y: Math.max(100, point.y + mapRect.top - 10), // At least 100px from top
                       });
                     }
                   } catch (err) {
@@ -208,15 +220,17 @@ export default function MapView({ things, interactions, myInteractions, centerOn
           }
         };
         
-        // Check if it's a POI click
+        // Check if it's a POI click (most accurate)
         if (e.placeId) {
           console.log('📍 POI clicked:', e.placeId);
-          await showPlacePopup(e.placeId);
+          // Stop the default POI info window from appearing
+          if (e.stop) e.stop();
+          await showPlacePopup(e.placeId, lat, lng);
           return;
         }
         
-        // Not a POI click - do nearby search
-        console.log('🗺️ Regular map click, doing nearby search');
+        // Not a POI - do nearby search as fallback
+        console.log('🗺️ Regular map click, searching for nearby places');
         
         try {
           const response = await fetch(`/api/places/nearby?lat=${lat}&lng=${lng}`);
@@ -227,6 +241,7 @@ export default function MapView({ things, interactions, myInteractions, centerOn
             
             if (data.results && data.results.length > 0) {
               // Sort results - prioritize establishments over generic places
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const sortedResults = data.results.sort((a: any, b: any) => {
                 const aScore = a.types?.includes('establishment') ? 1 : 0;
                 const bScore = b.types?.includes('establishment') ? 1 : 0;
@@ -242,12 +257,26 @@ export default function MapView({ things, interactions, myInteractions, centerOn
                 return;
               }
               
-              await showPlacePopup(place.place_id);
+              await showPlacePopup(place.place_id, lat, lng);
             }
           }
         } catch (error) {
           console.error('Error in nearby search:', error);
         }
+      });
+      
+      // Also listen for when InfoWindows might open and close them
+      map.addListener('click', () => {
+        setTimeout(() => {
+          // Find and close any InfoWindows
+          const infoWindows = Array.from(document.querySelectorAll('.gm-style-iw-d'));
+          infoWindows.forEach((node) => {
+            const closeBtn = node.parentElement?.querySelector('.gm-ui-hover-effect');
+            if (closeBtn instanceof HTMLElement) {
+              closeBtn.click();
+            }
+          });
+        }, 100);
       });
 
       // Add markers for each completed place
