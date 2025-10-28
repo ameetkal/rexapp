@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useUser, useAuth } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/store';
@@ -21,6 +21,8 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
   const { setUser, setUserProfile, setLoading } = useAuthStore();
   const [firebaseSignedIn, setFirebaseSignedIn] = useState(false);
   const [inviteProcessed, setInviteProcessed] = useState(false);
+  // Use ref for synchronous lock to prevent race conditions (state updates are async)
+  const inviteProcessingRef = useRef(false);
   
   // Get invite code from URL
   const inviteCode = searchParams.get('i') || searchParams.get('invite');
@@ -185,8 +187,10 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
         }
         
         // Process invitation if present (for both new and existing users)
-        if (inviteCode && !inviteProcessed) {
-          // Set flag IMMEDIATELY to prevent duplicate processing (race condition fix)
+        // Use ref check for synchronous lock (state updates are async and can cause race conditions)
+        if (inviteCode && !inviteProcessed && !inviteProcessingRef.current) {
+          // Set ref IMMEDIATELY for synchronous lock (prevents race condition)
+          inviteProcessingRef.current = true;
           setInviteProcessed(true);
           
           console.log('🎁 ClerkAuthProvider: Processing invitation...', {

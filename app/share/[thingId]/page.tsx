@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { getUserProfile } from '@/lib/auth';
@@ -17,18 +17,27 @@ function SharePageContent() {
   
   const [, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Use ref for synchronous lock to prevent duplicate processing
+  const processingRef = useRef(false);
   
   const thingId = params.thingId as string;
   const senderId = searchParams.get('from');
   
   useEffect(() => {
     const processShare = async () => {
+      // Prevent duplicate processing with synchronous lock
+      if (processingRef.current) {
+        return;
+      }
+      
+      processingRef.current = true;
       try {
         // Check if user is authenticated
         if (!user || !userProfile) {
           // Redirect to signup with return URL
           const returnUrl = encodeURIComponent(window.location.href);
           router.push(`/?signup=true&returnUrl=${returnUrl}`);
+          processingRef.current = false; // Reset since we're waiting for auth
           return;
         }
         
@@ -36,6 +45,7 @@ function SharePageContent() {
         if (!senderId) {
           setError('Invalid share link');
           setLoading(false);
+          processingRef.current = false; // Reset on error
           return;
         }
         
@@ -43,6 +53,7 @@ function SharePageContent() {
         if (!senderProfile) {
           setError('Sender not found');
           setLoading(false);
+          processingRef.current = false; // Reset on error
           return;
         }
         
@@ -69,6 +80,7 @@ function SharePageContent() {
         if (!thing) {
           setError('Thing not found');
           setLoading(false);
+          processingRef.current = false; // Reset on error
           return;
         }
         
@@ -112,10 +124,12 @@ function SharePageContent() {
         console.error('Error processing share:', err);
         setError('Failed to process share link');
         setLoading(false);
+        processingRef.current = false; // Reset on error so user can retry
       }
     };
     
     processShare();
+    // Note: We don't reset processingRef on success because we're navigating away
   }, [user, userProfile, thingId, senderId, router, setAutoOpenThingId, setUserProfile]);
   
   if (error) {

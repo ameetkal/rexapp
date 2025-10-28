@@ -2972,6 +2972,12 @@ export const acceptTag = async (
       return false;
     }
     
+    // Check if tag is already accepted (idempotency check)
+    if (tag.status === 'accepted') {
+      console.log('⚠️ Tag already accepted:', tagId);
+      return true; // Return true since the desired state is already achieved
+    }
+    
     // Create user's own interaction mirroring the tagger's state
     await createUserThingInteraction(
       userId,
@@ -3012,6 +3018,12 @@ export const declineTag = async (tagId: string, userId: string): Promise<boolean
     if (tag.taggedUserId !== userId) {
       console.error('User mismatch for tag decline');
       return false;
+    }
+    
+    // Check if tag is already declined (idempotency check)
+    if (tag.status === 'declined') {
+      console.log('⚠️ Tag already declined:', tagId);
+      return true; // Return true since the desired state is already achieved
     }
     
     // Update tag status

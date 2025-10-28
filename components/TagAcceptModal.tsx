@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { acceptTag, declineTag, getTag } from '@/lib/firestore';
 import { Tag } from '@/lib/types';
@@ -17,9 +17,11 @@ export default function TagAcceptModal({ tagId, onClose, onAccepted }: TagAccept
   const [tag, setTag] = useState<Tag | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // Use ref for synchronous lock to prevent duplicate processing
+  const processingRef = useRef(false);
 
   // Load tag details
-  useState(() => {
+  useEffect(() => {
     const loadTag = async () => {
       try {
         const tagData = await getTag(tagId);
@@ -31,11 +33,21 @@ export default function TagAcceptModal({ tagId, onClose, onAccepted }: TagAccept
       }
     };
     loadTag();
-  });
+  }, [tagId]);
 
   const handleAccept = async () => {
     if (!user || !userProfile || !tag) return;
+    
+    // Prevent duplicate processing with synchronous lock
+    if (processingRef.current || submitting) return;
+    
+    // Check if tag is already accepted
+    if (tag.status === 'accepted') {
+      onClose();
+      return;
+    }
 
+    processingRef.current = true;
     setSubmitting(true);
     try {
       const success = await acceptTag(tag.id, user.uid, userProfile.name);
@@ -47,12 +59,23 @@ export default function TagAcceptModal({ tagId, onClose, onAccepted }: TagAccept
       console.error('Error accepting tag:', error);
     } finally {
       setSubmitting(false);
+      processingRef.current = false;
     }
   };
 
   const handleDecline = async () => {
     if (!user || !tag) return;
+    
+    // Prevent duplicate processing with synchronous lock
+    if (processingRef.current || submitting) return;
+    
+    // Check if tag is already declined
+    if (tag.status === 'declined') {
+      onClose();
+      return;
+    }
 
+    processingRef.current = true;
     setSubmitting(true);
     try {
       const success = await declineTag(tag.id, user.uid);
@@ -63,6 +86,7 @@ export default function TagAcceptModal({ tagId, onClose, onAccepted }: TagAccept
       console.error('Error declining tag:', error);
     } finally {
       setSubmitting(false);
+      processingRef.current = false;
     }
   };
 
