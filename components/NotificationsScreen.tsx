@@ -467,10 +467,10 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
         ) : (
           <div className="space-y-2">
             {groupNotifications(notifications).map((group, index) => (
-              <button
+              <div
                 key={`group-${index}`}
                 onClick={() => handleGroupClick(group)}
-                className={`w-full p-4 rounded-lg border text-left transition-colors ${
+                className={`w-full p-4 rounded-lg border text-left transition-colors cursor-pointer ${
                   group.unreadCount > 0
                     ? 'bg-blue-50 border-blue-200 hover:bg-blue-100'
                     : 'bg-white border-gray-200 hover:bg-gray-50'
@@ -514,7 +514,7 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}

@@ -6,6 +6,9 @@ import { useAuthStore } from '@/lib/store';
 import { createOrGetThing, createUserThingInteraction, createRecommendation, updateInteractionContent, createInvitation, createTag, createNotification, createComment } from '@/lib/firestore';
 import { dataService } from '@/lib/dataService';
 import { uploadPhotos, MAX_PHOTOS, validatePhotoFile } from '@/lib/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
+import CommentInput from './CommentInput';
 import { Category, PersonalItemStatus, UniversalItem, Thing, UserThingInteraction } from '@/lib/types';
 import { sendSMSInvite, shouldOfferSMSInvite } from '@/lib/utils';
 import { BookOpenIcon, FilmIcon, MapPinIcon, ChevronDownIcon, ChevronUpIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -44,6 +47,7 @@ export default function PostForm({
     editMode ? editMode.interaction.visibility === 'friends' : true
   );
   const [description, setDescription] = useState(editMode?.interaction.content || '');
+  const [commentVoiceNote, setCommentVoiceNote] = useState<{blob: Blob; duration: number} | null>(null);
   const [recommendedByUser, setRecommendedByUser] = useState<{id: string; name: string; email: string} | null>(null);
   const [recommendedByText, setRecommendedByText] = useState('');
   const [experiencedWithUsers, setExperiencedWithUsers] = useState<{id: string; name: string; email: string}[]>([]);
@@ -144,15 +148,37 @@ export default function PostForm({
           photos: allPhotoUrls.length > 0 ? allPhotoUrls : undefined,
         });
         
-        // If description provided, create or update comment
-        if (description.trim()) {
-          // For now, we'll create a new comment each time
-          // TODO: In the future, we could update existing comments
+        // If description or voice note provided, create or update comment
+        if (description.trim() || commentVoiceNote) {
+          let voiceNoteUrl: string | undefined;
+          let voiceNoteDuration: number | undefined;
+          
+          if (commentVoiceNote) {
+            try {
+              const blob = commentVoiceNote.blob;
+              const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
+              const storageRef = ref(storage, `voice_notes/${user.uid}/${editMode.thing.id}/${fileName}`);
+              
+              await uploadBytes(storageRef, blob);
+              voiceNoteUrl = await getDownloadURL(storageRef);
+              voiceNoteDuration = commentVoiceNote.duration;
+            } catch (uploadError) {
+              console.error('Voice note upload error:', uploadError);
+            }
+          }
+
+          // Extract @mentions from comment text
+          const mentionMatches = description.match(/@(\w+)/g);
+          const mentionedUsernames = mentionMatches ? mentionMatches.map(m => m.slice(1)) : [];
+
           await createComment(
             editMode.thing.id,
             user.uid,
             userProfile.name,
-            description.trim()
+            description.trim() || (commentVoiceNote ? 'Voice note' : ''),
+            mentionedUsernames.length > 0 ? mentionedUsernames : undefined,
+            voiceNoteUrl,
+            voiceNoteDuration
           );
         }
         
@@ -227,15 +253,59 @@ export default function PostForm({
         );
       console.log('✅ User interaction created:', interactionId);
       
-      // 3. Create comment if description provided
-      if (description.trim()) {
+      // 3. Create comment if description or voice note provided
+      console.log('🔍 Checking for comment:', { 
+        hasDescription: !!description.trim(), 
+        hasVoiceNote: !!commentVoiceNote,
+        description: description,
+        voiceNoteDuration: commentVoiceNote?.duration 
+      });
+      
+      if (description.trim() || commentVoiceNote) {
+        let voiceNoteUrl: string | undefined;
+        let voiceNoteDuration: number | undefined;
+        
+        if (commentVoiceNote) {
+          try {
+            console.log('🎤 Uploading voice note...', commentVoiceNote);
+            const blob = commentVoiceNote.blob;
+            const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(7)}.webm`;
+            const storageRef = ref(storage, `voice_notes/${user.uid}/${thingId}/${fileName}`);
+            
+            await uploadBytes(storageRef, blob);
+            voiceNoteUrl = await getDownloadURL(storageRef);
+            voiceNoteDuration = commentVoiceNote.duration;
+            console.log('✅ Voice note uploaded:', voiceNoteUrl, 'Duration:', voiceNoteDuration);
+          } catch (uploadError) {
+            console.error('❌ Voice note upload error:', uploadError);
+          }
+        }
+
+        // Extract @mentions from comment text
+        const mentionMatches = description.match(/@(\w+)/g);
+        const mentionedUsernames = mentionMatches ? mentionMatches.map(m => m.slice(1)) : [];
+
+        const commentText = description.trim() || (commentVoiceNote ? 'Voice note' : '');
+        console.log('💬 Creating comment:', { 
+          thingId, 
+          commentText, 
+          voiceNoteUrl, 
+          voiceNoteDuration,
+          mentionedUsernames 
+        });
+
         await createComment(
           thingId,
           user.uid,
           userProfile.name,
-          description.trim()
+          commentText,
+          mentionedUsernames.length > 0 ? mentionedUsernames : undefined,
+          voiceNoteUrl,
+          voiceNoteDuration
         );
-        console.log('✅ Comment created');
+        console.log('✅ Comment created successfully');
+      } else {
+        console.log('⏭️ Skipping comment creation - no description or voice note');
       }
       
       // 4. Create recommendation if applicable
@@ -354,6 +424,10 @@ export default function PostForm({
         setShowInviteDialog(true);
         return;
       }
+      
+      // Clear comment state after successful submission
+      setDescription('');
+      setCommentVoiceNote(null);
       
       // Clear feed cache to ensure new item appears immediately
       if (user?.uid) {
@@ -615,12 +689,15 @@ export default function PostForm({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               💬 Comments <span className="text-gray-400 font-normal">(optional)</span>
             </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What did you think? Any tips for others?"
-              className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-white"
+            <CommentInput
+              onTextChange={setDescription}
+              onVoiceNoteChange={setCommentVoiceNote}
+              initialValue={description}
+              initialVoiceNote={commentVoiceNote}
+              placeholder="What did you think? Any tips for others? (use @ to tag users)"
               rows={3}
+              disabled={submitting}
+              submitOnEnter={false}
             />
           </div>
 

@@ -2385,9 +2385,11 @@ export const createComment = async (
 export const getCommentsForThing = async (
   thingId: string,
   currentUserId: string,
-  following: string[] = []
+  following?: string[] // undefined means show all comments
 ): Promise<Comment[]> => {
   try {
+    console.log(`🔍 getCommentsForThing called for thingId: ${thingId}, currentUserId: ${currentUserId}, showAll: ${following === undefined}`);
+    
     const q = query(
       collection(db, 'comments'),
       where('thingId', '==', thingId),
@@ -2398,10 +2400,18 @@ export const getCommentsForThing = async (
     const allComments: Comment[] = [];
     
     querySnapshot.forEach((doc) => {
-      allComments.push({ id: doc.id, ...doc.data() } as Comment);
+      const commentData = { id: doc.id, ...doc.data() } as Comment;
+      allComments.push(commentData);
+      console.log(`  📝 Found comment: ${doc.id} by ${commentData.authorId} (currentUser: ${currentUserId}, match: ${commentData.authorId === currentUserId})`);
     });
     
-    // Filter comments based on following
+    // If following is undefined, return all comments (for profile/detail views)
+    if (following === undefined) {
+      console.log(`✅ Loaded ${allComments.length} comments (all) for thing ${thingId}`);
+      return allComments;
+    }
+    
+    // Filter comments based on following (for feed views)
     const visibleComments = allComments.filter(comment => {
       // Always show your own comments
       if (comment.authorId === currentUserId) return true;
@@ -2416,7 +2426,16 @@ export const getCommentsForThing = async (
     console.log(`✅ Loaded ${visibleComments.length} visible comments (${allComments.length} total) for thing ${thingId}`);
     return visibleComments;
   } catch (error) {
-    console.error('Error getting comments:', error);
+    console.error(`❌ Error getting comments for thing ${thingId}:`, error);
+    // Log more details about the error
+    if (error instanceof Error) {
+      const errorWithCode = error as Error & { code?: string };
+      console.error('Error details:', {
+        message: error.message,
+        code: errorWithCode.code,
+        stack: error.stack
+      });
+    }
     return [];
   }
 };
