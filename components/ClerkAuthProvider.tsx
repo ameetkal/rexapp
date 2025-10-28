@@ -186,6 +186,9 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
         
         // Process invitation if present (for both new and existing users)
         if (inviteCode && !inviteProcessed) {
+          // Set flag IMMEDIATELY to prevent duplicate processing (race condition fix)
+          setInviteProcessed(true);
+          
           console.log('🎁 ClerkAuthProvider: Processing invitation...', {
             inviteCode,
             userId,
@@ -205,7 +208,6 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
           console.log('🎁 ClerkAuthProvider: Invitation processing result:', inviteSuccess);
           
           if (inviteSuccess) {
-            setInviteProcessed(true);
             
             // Small delay to ensure Firestore writes are complete
             console.log('⏳ Waiting 500ms for Firestore writes to complete...');
