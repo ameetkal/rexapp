@@ -176,6 +176,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
           {!isRecording ? (
             <>
               <button
+                type="button"
                 onClick={startRecording}
                 className="flex items-center justify-center w-20 h-20 rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               >
@@ -187,6 +188,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
             <>
               <div className="flex items-center space-x-4">
                 <button
+                  type="button"
                   onClick={stopRecording}
                   className="flex items-center justify-center w-20 h-20 rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors"
                 >
@@ -207,6 +209,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
         <div className="flex flex-col items-center space-y-4">
           {!isPlaying ? (
             <button
+              type="button"
               onClick={playRecording}
               className="flex items-center justify-center w-20 h-20 rounded-full bg-green-600 hover:bg-green-700 text-white transition-colors"
             >
@@ -214,6 +217,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
             </button>
           ) : (
             <button
+              type="button"
               onClick={stopPlayback}
               className="flex items-center justify-center w-20 h-20 rounded-full bg-gray-600 hover:bg-gray-700 text-white transition-colors"
             >
@@ -227,6 +231,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
       {/* Action Buttons */}
       <div className="flex space-x-3">
         <button
+          type="button"
           onClick={audioBlob ? handleRetry : handleCancel}
           className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
         >
@@ -234,6 +239,7 @@ export default function VoiceRecording({ onRecordingComplete, onCancel }: VoiceR
         </button>
         {audioBlob && (
           <button
+            type="button"
             onClick={handleSend}
             className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
