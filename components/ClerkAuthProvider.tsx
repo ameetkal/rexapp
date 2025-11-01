@@ -127,6 +127,13 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
           // User exists in Firestore - load their profile
           userProfileData = userDoc.data() as User;
           setUserProfile(userProfileData);
+          // Update lastActiveAt on app load (non-blocking)
+          try {
+            const { updateDoc, serverTimestamp } = await import('firebase/firestore');
+            await updateDoc(userDocRef, { lastActiveAt: serverTimestamp() });
+          } catch (e) {
+            console.warn('lastActiveAt update failed:', e);
+          }
         } else {
           // New user - check if they have completed profile setup
           
@@ -171,6 +178,13 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
             console.log('📝 Setting user profile in Zustand store:', newUserProfile.name);
             setUserProfile(newUserProfile);
             userProfileData = newUserProfile;
+            // Initialize lastActiveAt
+            try {
+              const { updateDoc, serverTimestamp } = await import('firebase/firestore');
+              await updateDoc(userDocRef, { lastActiveAt: serverTimestamp() });
+            } catch (e) {
+              console.warn('lastActiveAt init failed:', e);
+            }
             
             // Clean up localStorage after successful user creation
             localStorage.removeItem('pendingProfileData');

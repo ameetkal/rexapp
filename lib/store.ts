@@ -22,6 +22,7 @@ interface AppState {
   autoOpenThingId: string | null;
   
   setThings: (things: Thing[]) => void;
+  updateThing: (thingId: string, updates: Partial<Thing>) => void;
   setUserInteractions: (interactions: UserThingInteraction[]) => void;
   setRecommendations: (recommendations: Recommendation[]) => void;
   setAutoOpenThingId: (thingId: string | null) => void;
@@ -58,6 +59,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoOpenThingId: null,
   
   setThings: (things) => set({ things }),
+  updateThing: (thingId, updates) => set((state) => ({
+    things: state.things.map((thing) =>
+      thing.id === thingId ? { ...thing, ...updates } : thing
+    ),
+  })),
   setUserInteractions: (userInteractions) => set({ userInteractions }),
   setRecommendations: (recommendations) => set({ recommendations }),
   setAutoOpenThingId: (thingId) => set({ autoOpenThingId: thingId }),

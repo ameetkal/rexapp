@@ -7,7 +7,6 @@ import { Thing, UserThingInteraction, User } from '@/lib/types';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { dataService } from '@/lib/dataService';
 import { CATEGORIES } from '@/lib/types';
 import { XMarkIcon, BookmarkIcon, CheckCircleIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
@@ -202,8 +201,7 @@ export default function ThingDetailModal({
         }
       }
       
-      // Clear feed cache to ensure immediate UI update
-      dataService.clearFeedCache(user.uid);
+      // Optimistic local updates already applied; avoid disruptive global refetch
     } catch (error) {
       console.error('Error toggling save:', error);
     } finally {
@@ -365,8 +363,7 @@ export default function ThingDetailModal({
       setInitialComment('');
       setRecordedAudio(null);
       
-      // Clear feed cache to ensure immediate UI update
-      dataService.clearFeedCache(user.uid);
+      // Optimistic local updates already applied; avoid disruptive global refetch
     } catch (error) {
       console.error('Error marking as completed:', error);
     } finally {

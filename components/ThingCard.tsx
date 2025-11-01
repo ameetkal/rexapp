@@ -14,7 +14,6 @@ import { Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
-import { dataService } from '@/lib/dataService';
 import { createComment } from '@/lib/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
@@ -177,8 +176,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick, autoOpen = f
         console.log('✅ Added to your bucket list');
       }
       
-      // Clear feed cache to ensure immediate UI update
-      dataService.clearFeedCache(user.uid);
+      // Optimistic local updates already applied; avoid disruptive global refetch
     } catch (error) {
       console.error('Error toggling save:', error);
     } finally {
@@ -297,8 +295,7 @@ export default function ThingCard({ feedThing, onEdit, onUserClick, autoOpen = f
       setInitialComment('');
       setRecordedAudio(null);
       
-      // Clear feed cache to ensure immediate UI update
-      dataService.clearFeedCache(user.uid);
+      // Optimistic local updates already applied; avoid disruptive global refetch
     } catch (error) {
       console.error('Error marking as completed:', error);
     } finally {

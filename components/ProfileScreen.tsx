@@ -66,7 +66,16 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
   const { interactions: ownInteractions, loading: ownInteractionsLoading } = useFilteredInteractions(displayedUserId || '', 'all');
   const { interactions: otherInteractions, loading: otherInteractionsLoading } = useAnyFilteredInteractions(displayedUserId || '', 'all');
   
-  const allInteractions = isOwnProfile ? ownInteractions : otherInteractions;
+  // Ensure interactions are unique by id to avoid duplicate keys/render issues
+  const allInteractionsRaw = isOwnProfile ? ownInteractions : otherInteractions;
+  const allInteractions = useMemo(() => {
+    const seen = new Set<string>();
+    return allInteractionsRaw.filter((i) => {
+      if (seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [allInteractionsRaw]);
   const interactionsLoading = isOwnProfile ? ownInteractionsLoading : otherInteractionsLoading;
   
   // Filter interactions locally instead of loading again
@@ -190,13 +199,29 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
     return true;
   });
   
-  // Helper to get count for each state (memoized to prevent unnecessary recalculations)
+  // Extra safety: dedupe filtered list as well (in case of transient duplicates)
+  const uniqueFilteredInteractions = useMemo(() => {
+    const seen = new Set<string>();
+    return filteredInteractions.filter((i) => {
+      if (seen.has(i.id)) return false;
+      seen.add(i.id);
+      return true;
+    });
+  }, [filteredInteractions]);
+  
+  // Helper to get count for each state, respecting current category selection (memoized)
   const getStateCount = useCallback((state: 'all' | 'bucketList' | 'completed') => {
-    // For state counts in tabs, we want to show total counts across all categories
-    // Use allInteractions (unfiltered) for accurate counting
-    if (state === 'all') return allInteractions.length;
-    return allInteractions.filter((i: UserThingInteraction) => i.state === state).length;
-  }, [allInteractions]);
+    const stateFiltered = state === 'all'
+      ? allInteractions
+      : allInteractions.filter((i: UserThingInteraction) => i.state === state);
+
+    if (selectedCategory === 'all') return stateFiltered.length;
+
+    return stateFiltered.filter((interaction: UserThingInteraction) => {
+      const thing = things.find(t => t.id === interaction.thingId);
+      return thing?.category === selectedCategory;
+    }).length;
+  }, [allInteractions, things, selectedCategory]);
   
   // Helper to get count for each category within current state filter (memoized)
   const getCategoryCount = useCallback((category: Category | 'all') => {
@@ -435,7 +460,7 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
                 </p>
               </div>
             ) : (
-              filteredInteractions.map((interaction) => {
+              uniqueFilteredInteractions.map((interaction) => {
                 const thing = things.find(t => t.id === interaction.thingId);
                 if (!thing) {
                   console.warn('⚠️ Missing Thing for interaction:', interaction.id, 'thingId:', interaction.thingId);

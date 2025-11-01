@@ -12,8 +12,7 @@ import {
 } from '@/lib/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
-import { useAuthStore } from '@/lib/store';
-import { dataService } from '@/lib/dataService';
+import { useAuthStore, useAppStore } from '@/lib/store';
 import { 
   HeartIcon, 
   TrashIcon
@@ -110,9 +109,18 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
       };
       
       setComments(prev => [...prev, newCommentObj]);
-      
-      // Clear feed cache to update comment count in feed cards
-      dataService.clearFeedCache(user.uid);
+
+      // Optimistically bump Thing.commentCount in store to reflect UI without global refresh
+      try {
+        const { updateThing, getThingById } = useAppStore.getState();
+        const currentThing = getThingById(thingId);
+        if (currentThing) {
+          const currentCount = currentThing.commentCount ?? 0;
+          updateThing(thingId, { commentCount: currentCount + 1 });
+        }
+      } catch {
+        // non-fatal
+      }
     } catch (error) {
       console.error('Error creating comment:', error);
       throw error; // Re-throw so CommentInput can handle it
@@ -125,10 +133,17 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
     try {
       await deleteComment(commentId, thingId);
       setComments(prev => prev.filter(c => c.id !== commentId));
-      
-      // Clear feed cache to update comment count in feed cards
-      if (user) {
-        dataService.clearFeedCache(user.uid);
+
+      // Optimistically decrement Thing.commentCount in store
+      try {
+        const { updateThing, getThingById } = useAppStore.getState();
+        const currentThing = getThingById(thingId);
+        if (currentThing) {
+          const currentCount = currentThing.commentCount ?? 0;
+          updateThing(thingId, { commentCount: Math.max(0, currentCount - 1) });
+        }
+      } catch {
+        // non-fatal
       }
     } catch (error) {
       console.error('Error deleting comment:', error);
@@ -280,7 +295,7 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
                   </div>
                   {isAuthor && (
                     <button
-                      onClick={() => handleDeleteComment(comment.id)}
+                      onClick={(e) => { e.stopPropagation(); handleDeleteComment(comment.id); }}
                       className="p-1 hover:bg-red-100 rounded-full transition-colors ml-2 flex-shrink-0"
                     >
                       <TrashIcon className="h-3 w-3 text-gray-400 hover:text-red-500" />
