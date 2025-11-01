@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import AuthScreen from './AuthScreen';
 import Navigation from './Navigation';
@@ -22,7 +22,6 @@ type AppScreenType = 'notifications' | 'main';
 
 export default function MainApp() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('feed');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');

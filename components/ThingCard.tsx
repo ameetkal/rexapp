@@ -14,7 +14,6 @@ import { Timestamp, doc, updateDoc } from 'firebase/firestore';
 import { useAuthStore, useAppStore } from '@/lib/store';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { db } from '@/lib/firebase';
-import { dataService } from '@/lib/dataService';
 import { createComment } from '@/lib/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';

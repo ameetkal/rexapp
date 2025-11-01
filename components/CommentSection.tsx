@@ -13,7 +13,6 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { dataService } from '@/lib/dataService';
 import { 
   HeartIcon, 
   TrashIcon
@@ -119,7 +118,7 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
           const currentCount = currentThing.commentCount ?? 0;
           updateThing(thingId, { commentCount: currentCount + 1 });
         }
-      } catch (e) {
+      } catch {
         // non-fatal
       }
     } catch (error) {
@@ -143,7 +142,7 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
           const currentCount = currentThing.commentCount ?? 0;
           updateThing(thingId, { commentCount: Math.max(0, currentCount - 1) });
         }
-      } catch (e) {
+      } catch {
         // non-fatal
       }
     } catch (error) {

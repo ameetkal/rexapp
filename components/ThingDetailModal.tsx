@@ -7,7 +7,6 @@ import { Thing, UserThingInteraction, User } from '@/lib/types';
 import { createUserThingInteraction, deleteUserThingInteraction } from '@/lib/firestore';
 import { getUserProfile } from '@/lib/auth';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { dataService } from '@/lib/dataService';
 import { CATEGORIES } from '@/lib/types';
 import { XMarkIcon, BookmarkIcon, CheckCircleIcon, EllipsisVerticalIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkIconSolid, CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
