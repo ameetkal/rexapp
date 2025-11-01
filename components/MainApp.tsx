@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useAppStore } from '@/lib/store';
 import AuthScreen from './AuthScreen';
 import Navigation from './Navigation';
 import FeedScreen from './FeedScreen';
@@ -29,9 +29,11 @@ export default function MainApp() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
   const [editingInteraction, setEditingInteraction] = useState<{interaction: UserThingInteraction; thing: Thing} | null>(null);
+  const [returnTabAfterPost, setReturnTabAfterPost] = useState<'feed' | 'profile'>('feed');
   const [isSignupProcess, setIsSignupProcess] = useState(false);
   
   const { user, loading } = useAuthStore();
+  const { setAutoOpenThingId } = useAppStore();
   
   // Track if Clerk has loaded to avoid showing Auth screen during initial load
   const [clerkLoaded, setClerkLoaded] = useState(false);
@@ -209,9 +211,17 @@ export default function MainApp() {
     setProfileScreen('main');
   };
 
-  // Post navigation handler
-  const handlePostClick = (postId: string) => {
-    router.push(`/post/${postId}?from=notifications`);
+  // Post navigation handler (open Thing modal in feed)
+  const handlePostClick = (thingId: string) => {
+    // Ensure we're on the main app and feed tab
+    setAppScreen('main');
+    setActiveTab('feed');
+    // Signal feed view (not map/search overlay)
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('switchToThingsFeed'));
+    }
+    // Ask feed to auto-open this thing's modal
+    setAutoOpenThingId(thingId);
   };
 
   // Navigation handlers for profile screens
@@ -287,6 +297,7 @@ export default function MainApp() {
             onNavigateToAdd={() => setActiveTab('post')}
             onEditInteraction={(interaction, thing) => {
               setEditingInteraction({ interaction, thing });
+              setReturnTabAfterPost('feed');
               setActiveTab('post');
             }}
           />
@@ -297,7 +308,7 @@ export default function MainApp() {
             editMode={editingInteraction || undefined}
             onEditComplete={() => {
               setEditingInteraction(null);
-              setActiveTab('profile');
+              setActiveTab(returnTabAfterPost);
             }}
           />
         );
@@ -317,6 +328,7 @@ export default function MainApp() {
                 onBack={handleBackFromPublicProfile}
                 onEditInteraction={(interaction, thing) => {
                   setEditingInteraction({ interaction, thing });
+                  setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
               />
@@ -326,6 +338,7 @@ export default function MainApp() {
                 onSettingsClick={handleSettingsClick}
                 onEditInteraction={(interaction, thing) => {
                   setEditingInteraction({ interaction, thing });
+                  setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
               />
@@ -339,6 +352,7 @@ export default function MainApp() {
                 onSettingsClick={handleSettingsClick}
                 onEditInteraction={(interaction, thing) => {
                   setEditingInteraction({ interaction, thing });
+                  setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
               />

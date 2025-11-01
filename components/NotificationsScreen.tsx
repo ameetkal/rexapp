@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeftIcon, BellIcon, UserPlusIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { CheckIcon } from '@heroicons/react/24/solid';
 import { useAuthStore } from '@/lib/store';
+import { dataService } from '@/lib/dataService';
 import { getUserNotifications, markNotificationAsRead, markAllNotificationsAsRead, followUser } from '@/lib/firestore';
 import { Notification } from '@/lib/types';
 import TagAcceptModal from './TagAcceptModal';
@@ -13,13 +15,14 @@ interface NotificationsScreenProps {
 }
 
 export default function NotificationsScreen({ onBack, onPostClick }: NotificationsScreenProps) {
-  const { user } = useAuthStore();
+  const { user, userProfile, setUserProfile } = useAuthStore();
   const [notifications, setNotifications] = useState<(Notification & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [loadingFollowIds, setLoadingFollowIds] = useState<Set<string>>(new Set());
   
   // Pull-to-refresh state
   const [pullDistance, setPullDistance] = useState(0);
@@ -130,14 +133,41 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     loadNotifications();
   }, [user]);
 
-  const handleFollowAction = async (userId: string, userName: string, event: React.MouseEvent) => {
+  const handleFollowAction = async (
+    userId: string,
+    userName: string,
+    group: { notifications: (Notification & { id: string })[]; mostRecent: Notification & { id: string }; unreadCount: number; totalCount: number },
+    event: React.MouseEvent
+  ) => {
     event.stopPropagation(); // Prevent notification click
     triggerHaptic('light');
     
-    if (!user) return;
+    if (!user || !userProfile || loadingFollowIds.has(userId)) return;
     
     try {
+      setLoadingFollowIds(prev => new Set(prev).add(userId));
       await followUser(user.uid, userId);
+      // Optimistically update following list
+      if (!userProfile.following.includes(userId)) {
+        setUserProfile({
+          ...userProfile,
+          following: [...userProfile.following, userId]
+        });
+      }
+      // Clear feed cache to refresh downstream views
+      dataService.clearFeedCache(user.uid);
+      // Mark this group's notifications as read locally and in Firestore
+      const unreadInGroup = group.notifications.filter(n => !n.read);
+      if (unreadInGroup.length > 0) {
+        try {
+          await Promise.all(unreadInGroup.map(n => markNotificationAsRead(n.id)));
+          setNotifications(prev => 
+            prev.map(n => unreadInGroup.some(u => u.id === n.id) ? { ...n, read: true } : n)
+          );
+        } catch (err) {
+          console.error('Error marking follow notifications as read:', err);
+        }
+      }
       // Show success feedback
       console.log(`✅ Started following ${userName}`);
       triggerHaptic('medium'); // Success haptic
@@ -145,17 +175,36 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     } catch (error) {
       console.error('Error following user:', error);
       triggerHaptic('heavy'); // Error haptic
+    } finally {
+      setLoadingFollowIds(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
     }
   };
 
-  const handleViewAction = async (thingId: string, event: React.MouseEvent) => {
+  const handleViewAction = async (
+    thingId: string,
+    group: { notifications: (Notification & { id: string })[]; mostRecent: Notification & { id: string }; unreadCount: number; totalCount: number },
+    event: React.MouseEvent
+  ) => {
     event.stopPropagation(); // Prevent notification click
     triggerHaptic('light');
     
-    // Navigate to the thing/post
-    if (onPostClick) {
-      onPostClick(thingId);
+    // Mark group as read optimistically
+    const unreadInGroup = group.notifications.filter(n => !n.read);
+    if (unreadInGroup.length > 0) {
+      setNotifications(prev => prev.map(n => unreadInGroup.some(u => u.id === n.id) ? { ...n, read: true } : n));
+      try {
+        await Promise.all(unreadInGroup.map(n => markNotificationAsRead(n.id)));
+      } catch (err) {
+        console.error('Error marking view notifications as read:', err);
+      }
     }
+    
+    // Navigate to the thing/modal
+    onPostClick?.(thingId);
   };
 
   const getActionButtons = (group: { notifications: (Notification & { id: string })[]; mostRecent: Notification & { id: string }; unreadCount: number; totalCount: number }) => {
@@ -163,22 +212,39 @@ export default function NotificationsScreen({ onBack, onPostClick }: Notificatio
     
     switch (mostRecent.type) {
       case 'followed':
-        return (
-          <button
-            onClick={(e) => handleFollowAction(mostRecent.data.fromUserId!, mostRecent.data.fromUserName!, e)}
-            className="flex items-center space-x-1 px-3 py-1.5 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors text-sm font-medium"
-          >
-            <UserPlusIcon className="h-4 w-4" />
-            <span>Follow back</span>
-          </button>
-        );
+        {
+          const targetId = mostRecent.data.fromUserId!;
+          const isFollowing = !!userProfile?.following.includes(targetId);
+          const isLoading = loadingFollowIds.has(targetId);
+          return (
+            <button
+              onClick={(e) => handleFollowAction(targetId, mostRecent.data.fromUserName!, group, e)}
+              disabled={isFollowing || isLoading}
+              aria-disabled={isFollowing || isLoading}
+              className={`flex items-center space-x-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                isFollowing
+                  ? 'bg-gray-100 text-gray-600 cursor-default'
+                  : 'bg-blue-500 text-white hover:bg-blue-600'
+              }`}
+            >
+              {isLoading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              ) : isFollowing ? (
+                <CheckIcon className="h-4 w-4" />
+              ) : (
+                <UserPlusIcon className="h-4 w-4" />
+              )}
+              <span>{isFollowing ? 'Following' : isLoading ? 'Following…' : 'Follow back'}</span>
+            </button>
+          );
+        }
       
       case 'rec_given':
       case 'comment':
       case 'tagged':
         return (
           <button
-            onClick={(e) => handleViewAction(mostRecent.data.thingId!, e)}
+            onClick={(e) => handleViewAction(mostRecent.data.thingId!, group, e)}
             className="flex items-center space-x-1 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors text-sm font-medium"
           >
             <EyeIcon className="h-4 w-4" />
