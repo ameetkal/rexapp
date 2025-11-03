@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '@/lib/store';
 import { searchUsers } from '@/lib/firestore';
 import { 
@@ -44,6 +44,8 @@ export default function CommentInput({
   const [showVoiceRecording, setShowVoiceRecording] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState<{blob: Blob; duration: number} | null>(initialVoiceNote);
   const [submitting, setSubmitting] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   
   const { user, userProfile } = useAuthStore();
   const following = userProfile?.following || [];
@@ -57,6 +59,26 @@ export default function CommentInput({
   useEffect(() => {
     setRecordedAudio(initialVoiceNote);
   }, [initialVoiceNote]);
+
+  // Sync overlay scroll with textarea scroll when using multi-row overlay
+  useEffect(() => {
+    if (rows > 1 && textareaRef.current && overlayRef.current) {
+      const syncScroll = () => {
+        if (overlayRef.current && textareaRef.current) {
+          overlayRef.current.scrollTop = textareaRef.current.scrollTop;
+          overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
+        }
+      };
+      
+      const textarea = textareaRef.current;
+      textarea.addEventListener('scroll', syncScroll);
+      syncScroll(); // Initial sync
+      
+      return () => {
+        textarea.removeEventListener('scroll', syncScroll);
+      };
+    }
+  }, [rows, comment]);
 
   // Handle comment text change and @ mentions
   const handleCommentChange = (value: string) => {
@@ -193,6 +215,7 @@ export default function CommentInput({
 
   // Render comment text with @mentions highlighted (for overlay)
   const renderCommentText = (text: string) => {
+    if (!text) return null;
     const parts = text.split(/(@\w+)/g);
     return parts.map((part, index) => {
       if (part.startsWith('@')) {
@@ -205,7 +228,8 @@ export default function CommentInput({
           </span>
         );
       }
-      return part;
+      // Wrap plain text in span to ensure consistent rendering
+      return <span key={index}>{part}</span>;
     });
   };
 
@@ -249,12 +273,27 @@ export default function CommentInput({
               <div className="relative">
                 {/* Highlighted text overlay for @mentions */}
                 {rows > 1 && (
-                  <div className="absolute inset-0 px-3 py-2 pointer-events-none text-sm whitespace-pre-wrap break-words overflow-hidden z-0">
+                  <div 
+                    ref={overlayRef}
+                    className="absolute inset-0 px-3 py-2 pointer-events-none text-sm whitespace-pre-wrap break-words z-0"
+                    style={{
+                      fontFamily: 'inherit',
+                      fontSize: '0.875rem',
+                      lineHeight: '1.25rem',
+                      paddingTop: '0.5rem',
+                      paddingBottom: '0.5rem',
+                      paddingLeft: '0.75rem',
+                      paddingRight: showSubmitButton ? '7rem' : '3.5rem',
+                      color: '#111827', // text-gray-900
+                      overflow: 'hidden', // Hide scrollbars on overlay
+                    }}
+                  >
                     {renderCommentText(comment)}
                   </div>
                 )}
                 {/* Textarea */}
                 <textarea
+                  ref={textareaRef}
                   value={comment}
                   onChange={(e) => handleCommentChange(e.target.value)}
                   onClick={(e) => e.stopPropagation()}
@@ -268,9 +307,19 @@ export default function CommentInput({
                     }
                   }}
                   placeholder={placeholder}
-                  className={`w-full px-3 py-2 ${showSubmitButton ? 'pr-28' : 'pr-14'} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm ${rows > 1 ? 'bg-transparent relative z-10' : 'bg-white'} relative ${rows > 1 ? 'z-10' : ''}`}
+                  spellCheck={false}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  data-comment-input-multirow={rows > 1 ? 'true' : undefined}
+                  className={`w-full px-3 py-2 ${showSubmitButton ? 'pr-28' : 'pr-14'} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm leading-5 ${rows > 1 ? 'bg-transparent relative z-10 text-transparent' : 'bg-white'} relative ${rows > 1 ? 'z-10' : ''}`}
                   rows={rows}
                   disabled={disabled || submitting}
+                  style={rows > 1 ? { 
+                    caretColor: '#3b82f6', // Keep caret visible even when text is transparent
+                    color: comment.trim() ? 'transparent' : '#9ca3af', // Show placeholder color when empty, transparent when typing
+                    WebkitTextFillColor: comment.trim() ? 'transparent' : '#9ca3af', // Safari support
+                  } : undefined}
                 />
                 <div className={`absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center space-x-2 z-20`}>
                   {/* Mic Button */}

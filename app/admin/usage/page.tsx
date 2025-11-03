@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { isAdminEmail, isAdminFromEmails } from '@/lib/admin';
 import { db } from '@/lib/firebase';
@@ -51,9 +51,21 @@ export default function UsageDashboardPage() {
   const { user, isLoaded } = useUser();
   const { userProfile } = useAuthStore();
   const clerkPrimary = user?.primaryEmailAddress?.emailAddress || null;
-  const clerkAll = user?.emailAddresses?.map(e => e.emailAddress) || [];
+  const clerkAll = useMemo(() => user?.emailAddresses?.map(e => e.emailAddress) || [], [user?.emailAddresses]);
   const profileEmail = userProfile?.email || null;
-  const isAdmin = isAdminEmail(clerkPrimary) || isAdminFromEmails([...clerkAll, profileEmail]);
+  
+  // Debug logging for production
+  useEffect(() => {
+    if (isLoaded && user) {
+      console.log('🔍 Admin check debug:', {
+        clerkPrimary,
+        clerkAll,
+        profileEmail,
+        userId: user.id,
+        hasUserProfile: !!userProfile,
+      });
+    }
+  }, [isLoaded, user, clerkPrimary, clerkAll, profileEmail, userProfile]);
 
   // Avoid SSR/client hydration mismatch by rendering a stable loading state
   const [hasMounted, setHasMounted] = useState(false);
@@ -74,7 +86,13 @@ export default function UsageDashboardPage() {
 
   useEffect(() => {
     const load = async () => {
-      if (!isAdmin) return;
+      // Re-check admin status with latest values
+      const checkClerkPrimary = user?.primaryEmailAddress?.emailAddress || null;
+      const checkClerkAll = user?.emailAddresses?.map(e => e.emailAddress) || [];
+      const checkProfileEmail = userProfile?.email || null;
+      const checkIsAdmin = isAdminEmail(checkClerkPrimary) || isAdminFromEmails([...checkClerkAll, checkProfileEmail]);
+      
+      if (!checkIsAdmin) return;
       setLoading(true);
       setError(null);
       try {
@@ -176,7 +194,7 @@ export default function UsageDashboardPage() {
       }
     };
     load();
-  }, [isAdmin]);
+  }, [user, userProfile]);
 
   const sortedUsers = (() => {
     const arr = [...usersList];
@@ -216,7 +234,26 @@ export default function UsageDashboardPage() {
     }
   };
 
-  if (!hasMounted || !isLoaded) {
+  // Wait for mount, Clerk to load, and userProfile to populate
+  // In production, userProfile might load slower from Firestore
+  const [userProfileLoaded, setUserProfileLoaded] = useState(false);
+  useEffect(() => {
+    if (isLoaded && user) {
+      // If we have userProfile, we're ready
+      if (userProfile) {
+        setUserProfileLoaded(true);
+      } else {
+        // Give userProfile time to load from Firestore (ClerkAuthProvider)
+        // But also set a max timeout so we don't wait forever
+        const timeout = setTimeout(() => {
+          setUserProfileLoaded(true);
+        }, 2000);
+        return () => clearTimeout(timeout);
+      }
+    }
+  }, [userProfile, isLoaded, user]);
+
+  if (!hasMounted || !isLoaded || !userProfileLoaded) {
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold text-gray-900">Loading…</h1>
@@ -225,7 +262,19 @@ export default function UsageDashboardPage() {
     );
   }
 
-  if (!isAdmin) {
+  // Re-check admin status after userProfile has loaded
+  const finalClerkPrimary = user?.primaryEmailAddress?.emailAddress || null;
+  const finalClerkAll = user?.emailAddresses?.map(e => e.emailAddress) || [];
+  const finalProfileEmail = userProfile?.email || null;
+  const finalIsAdmin = isAdminEmail(finalClerkPrimary) || isAdminFromEmails([...finalClerkAll, finalProfileEmail]);
+
+  if (!finalIsAdmin) {
+    console.warn('🚫 Admin access denied:', {
+      finalClerkPrimary,
+      finalClerkAll,
+      finalProfileEmail,
+      adminEmails: Array.from(['ameetk96@gmail.com', 'ameet@glammatic.com']),
+    });
     return (
       <div className="p-6">
         <h1 className="text-xl font-semibold text-gray-900">Not Found</h1>

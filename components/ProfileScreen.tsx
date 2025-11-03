@@ -15,9 +15,10 @@ interface ProfileScreenProps {
   onSettingsClick?: () => void;
   onEditInteraction?: (interaction: UserThingInteraction, thing: Thing) => void;
   onBack?: () => void; // For going back when viewing other's profile
+  onShowFollowers?: () => void; // Callback to show followers list
 }
 
-export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsClick, onEditInteraction, onBack }: ProfileScreenProps) {
+export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsClick, onEditInteraction, onBack, onShowFollowers }: ProfileScreenProps) {
   const [activitySearchTerm, setActivitySearchTerm] = useState('');
   const [recsGivenCount, setRecsGivenCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);
@@ -86,12 +87,22 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
   
   const { userProfile: viewingUserProfile, loading: profileLoading } = useAnyUserProfile(viewingUserId || '');
   
+  // Track optimistic followers count update
+  const [optimisticFollowersCount, setOptimisticFollowersCount] = useState<number | null>(null);
+  
   // Get things for the interactions
   const thingIds = useMemo(() => interactions.map(i => i.thingId), [interactions]);
   const { things, loading: thingsLoading } = useThings(thingIds);
   
   // Determine which profile to display
   const displayedProfile = isOwnProfile ? userProfile : (viewingUserId ? viewingUserProfile : null);
+  
+  // Reset optimistic count when viewingUserProfile changes
+  useEffect(() => {
+    if (viewingUserProfile) {
+      setOptimisticFollowersCount(null);
+    }
+  }, [viewingUserProfile]);
   
   // Load recs given count
   const loadRecsGivenCount = useCallback(async () => {
@@ -135,6 +146,10 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
       const isFollowing = userProfile.following.includes(viewingUserProfile.id);
       
       if (isFollowing) {
+        // Optimistically decrement followers count
+        const currentCount = viewingUserProfile.followers?.length || 0;
+        setOptimisticFollowersCount(Math.max(0, currentCount - 1));
+        
         await unfollowUser(user.uid, viewingUserProfile.id);
         
         // Clear feed cache to force fresh data load
@@ -145,6 +160,10 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
           following: userProfile.following.filter(id => id !== viewingUserProfile.id)
         });
       } else {
+        // Optimistically increment followers count
+        const currentCount = viewingUserProfile.followers?.length || 0;
+        setOptimisticFollowersCount(currentCount + 1);
+        
         await followUser(user.uid, viewingUserProfile.id);
         
         // Clear feed cache to force fresh data load
@@ -157,6 +176,8 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
       }
     } catch (error) {
       console.error('Error toggling follow:', error);
+      // Reset optimistic count on error
+      setOptimisticFollowersCount(null);
     } finally {
       setFollowLoading(false);
     }
@@ -306,10 +327,28 @@ export default function ProfileScreen({ viewingUserId, onUserClick, onSettingsCl
               <div className="text-lg font-semibold text-gray-900">{recsGivenCount}</div>
               <div className="text-sm text-gray-500">Recs Given</div>
             </div>
-            <div className="text-center">
-              <div className="text-lg font-semibold text-gray-900">{displayedProfile?.followers?.length || 0}</div>
-              <div className="text-sm text-gray-500">Followers</div>
-            </div>
+            {onShowFollowers ? (
+              <button
+                onClick={onShowFollowers}
+                className="text-center hover:opacity-75 transition-opacity cursor-pointer"
+              >
+                <div className="text-lg font-semibold text-gray-900">
+                  {optimisticFollowersCount !== null 
+                    ? optimisticFollowersCount 
+                    : displayedProfile?.followers?.length || 0}
+                </div>
+                <div className="text-sm text-gray-500">Followers</div>
+              </button>
+            ) : (
+              <div className="text-center">
+                <div className="text-lg font-semibold text-gray-900">
+                  {optimisticFollowersCount !== null 
+                    ? optimisticFollowersCount 
+                    : displayedProfile?.followers?.length || 0}
+                </div>
+                <div className="text-sm text-gray-500">Followers</div>
+              </div>
+            )}
           </div>
 
           {/* Follow Button (for other users) */}

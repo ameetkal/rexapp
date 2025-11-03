@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import { followUser, unfollowUser } from '@/lib/firestore';
-import { Thing, UserThingInteraction, FeedThing } from '@/lib/types';
+import { followUser, unfollowUser, getSuggestedUsers } from '@/lib/firestore';
+import { Thing, UserThingInteraction, FeedThing, User } from '@/lib/types';
 import ThingCard from './ThingCard';
 import ThingDetailModal from './ThingDetailModal';
 import MapView from './MapView';
 import MapPopup from './MapPopup';
 import { UserPlusIcon, MagnifyingGlassIcon, UserMinusIcon, MapIcon } from '@heroicons/react/24/outline';
 import { useFeedData, useSearch, usePlaceSearch, useAPISearch } from '@/lib/hooks';
-import { dataService } from '@/lib/dataService';
 import { Timestamp } from 'firebase/firestore';
 
 interface FeedScreenProps {
@@ -25,6 +24,17 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const [useThingFeed, setUseThingFeed] = useState(true); // Toggle between Things and Map
   const [showAllResults, setShowAllResults] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  // Track locally followed users to avoid triggering feed reload
+  const [locallyFollowed, setLocallyFollowed] = useState<Set<string>>(new Set());
+  // Detect mobile screen size
+  const [isMobile, setIsMobile] = useState(false);
+  // Track if mobile overlay transition is happening to prevent focus clearing
+  const mobileOverlayOpeningRef = useRef(false);
+  // Track if suggestions were visible when follow action started (to maintain longer delay)
+  const suggestionsWereVisibleRef = useRef(false);
   const [selectedPlaceLocation, setSelectedPlaceLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [selectedThing, setSelectedThing] = useState<Thing | null>(null);
   const [popupPosition, setPopupPosition] = useState<{ x: number; y: number } | null>(null);
@@ -290,10 +300,216 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
     }
   }, [searchTerm, search, searchPlaces, useThingFeed, searchAPIs]);
 
+  // Debounced batch update of userProfile to prevent multiple feed reloads
+  // Track both follows and unfollows: Set contains user IDs
+  // For unfollows, we check if the user is already in following list when applying
+  const pendingFollowsRef = useRef<Set<string>>(new Set());
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pendingFollowsCount, setPendingFollowsCount] = useState(0);
+  // Track which pending actions are unfollows
+  const pendingUnfollowsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    // Clean up locallyFollowed when userProfile actually updates
+    if (userProfile?.following) {
+      setLocallyFollowed(prev => {
+        const next = new Set(prev);
+        // Remove any IDs that are now in the actual following list
+        userProfile.following.forEach(id => {
+          if (next.has(id)) {
+            next.delete(id);
+            pendingFollowsRef.current.delete(id);
+            pendingUnfollowsRef.current.delete(id);
+            setPendingFollowsCount(prevCount => Math.max(0, prevCount - 1));
+          }
+        });
+        return next;
+      });
+    }
+  }, [userProfile?.following]);
+
+  // Batch update userProfile after debounce period
+  // Delay longer if suggestions are visible to avoid disrupting the UI
+  useEffect(() => {
+    if (pendingFollowsCount === 0) return;
+
+    console.log('🟡 FeedScreen: Batch update effect triggered', { 
+      pendingFollowsCount, 
+      pendingFollowsSize: pendingFollowsRef.current.size,
+      pendingUnfollowsSize: pendingUnfollowsRef.current.size,
+      pendingFollows: Array.from(pendingFollowsRef.current),
+      pendingUnfollows: Array.from(pendingUnfollowsRef.current),
+      isSearchFocused,
+      showingSuggestions: isSearchFocused && suggestedUsers.length > 0
+    });
+
+    // Clear existing timeout
+    if (updateTimeoutRef.current) {
+      console.log('🟡 FeedScreen: Clearing existing timeout');
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    // Use longer delay if suggestions were visible when follow started (even if blur occurred)
+    // Check both current state and ref (in case click caused blur)
+    const suggestionsVisible = (isSearchFocused && suggestedUsers.length > 0) || suggestionsWereVisibleRef.current;
+    const delay = suggestionsVisible ? 5000 : 1000;
+
+    // Set new timeout to batch update
+    console.log('🟡 FeedScreen: Setting debounce timeout', { delay, ms: `${delay}ms` });
+    updateTimeoutRef.current = setTimeout(() => {
+      console.log('🟢 FeedScreen: Debounce timeout fired, updating userProfile', {
+        pendingSize: pendingFollowsRef.current.size,
+        currentFollowingCount: userProfile?.following.length,
+        isSearchFocused
+      });
+      if (userProfile && (pendingFollowsRef.current.size > 0 || pendingUnfollowsRef.current.size > 0)) {
+        // Handle both follows and unfollows in the pending batch
+        const currentFollowing = [...userProfile.following];
+        const updatedFollowing = [...currentFollowing];
+        
+        // Process unfollows first (remove from list)
+        pendingUnfollowsRef.current.forEach(userId => {
+          const index = updatedFollowing.indexOf(userId);
+          if (index > -1) {
+            updatedFollowing.splice(index, 1);
+          }
+        });
+        
+        // Then process follows (add to list if not already there)
+        pendingFollowsRef.current.forEach(userId => {
+          if (!updatedFollowing.includes(userId)) {
+            updatedFollowing.push(userId);
+          }
+        });
+        
+        const updatedProfile = {
+          ...userProfile,
+          following: updatedFollowing,
+        };
+        console.log('🟢 FeedScreen: Calling setUserProfile', {
+          oldCount: userProfile.following.length,
+          newCount: updatedProfile.following.length,
+          pendingFollows: Array.from(pendingFollowsRef.current),
+          pendingUnfollows: Array.from(pendingUnfollowsRef.current)
+        });
+        setUserProfile(updatedProfile);
+        pendingFollowsRef.current.clear();
+        pendingUnfollowsRef.current.clear();
+        setPendingFollowsCount(0);
+        console.log('🟢 FeedScreen: userProfile updated, pending cleared');
+        // Reset the flag after updating
+        suggestionsWereVisibleRef.current = false;
+      }
+    }, delay); // Longer delay when suggestions are visible to avoid disrupting UI
+
+    return () => {
+      if (updateTimeoutRef.current) {
+        console.log('🟡 FeedScreen: Cleanup - clearing timeout');
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, [pendingFollowsCount, userProfile, setUserProfile, isSearchFocused, suggestedUsers.length]);
+
+  // Ensure isSearchFocused is true when mobile overlay opens and prevent it from being cleared
+  useEffect(() => {
+    if (isMobileSearchOpen && isMobile) {
+      console.log('🔍 FeedScreen: Mobile overlay opened, ensuring focus state');
+      mobileOverlayOpeningRef.current = true;
+      setIsSearchFocused(true);
+      // Reset the flag after a delay to allow mobile input to take focus
+      setTimeout(() => {
+        mobileOverlayOpeningRef.current = false;
+      }, 300);
+    } else {
+      mobileOverlayOpeningRef.current = false;
+    }
+  }, [isMobileSearchOpen, isMobile]);
+
+  // Update userProfile immediately when suggestions view closes (if there are pending follows/unfollows)
+  useEffect(() => {
+    // If we were showing suggestions and now we're not, update userProfile immediately
+    // But only if we haven't already set a timeout (avoid double updates)
+    const hasPendingActions = pendingFollowsRef.current.size > 0 || pendingUnfollowsRef.current.size > 0;
+    if (!isSearchFocused && hasPendingActions && userProfile && !updateTimeoutRef.current) {
+      console.log('🟢 FeedScreen: Suggestions closed, updating userProfile immediately', {
+        pendingFollowsSize: pendingFollowsRef.current.size,
+        pendingUnfollowsSize: pendingUnfollowsRef.current.size
+      });
+      
+      // Apply both follows and unfollows
+      const currentFollowing = [...userProfile.following];
+      const updatedFollowing = [...currentFollowing];
+      
+      // Process unfollows first
+      pendingUnfollowsRef.current.forEach(userId => {
+        const index = updatedFollowing.indexOf(userId);
+        if (index > -1) {
+          updatedFollowing.splice(index, 1);
+        }
+      });
+      
+      // Then process follows
+      pendingFollowsRef.current.forEach(userId => {
+        if (!updatedFollowing.includes(userId)) {
+          updatedFollowing.push(userId);
+        }
+      });
+      
+      const updatedProfile = {
+        ...userProfile,
+        following: updatedFollowing,
+      };
+      setUserProfile(updatedProfile);
+      pendingFollowsRef.current.clear();
+      pendingUnfollowsRef.current.clear();
+      setPendingFollowsCount(0);
+      suggestionsWereVisibleRef.current = false;
+    }
+  }, [isSearchFocused, userProfile, setUserProfile]);
+
+  // Load suggested users when search is focused and empty
+  useEffect(() => {
+    const loadSuggestions = async () => {
+      console.log('🔍 FeedScreen: loadSuggestions effect running', {
+        useThingFeed,
+        hasUser: !!user,
+        hasUserProfile: !!userProfile,
+        isSearchFocused,
+        searchTermLength: searchTerm.trim().length
+      });
+      
+      if (!useThingFeed || !user || !userProfile) {
+        console.log('🔍 FeedScreen: Skipping suggestions - missing requirements');
+        return;
+      }
+      if (!isSearchFocused || searchTerm.trim().length > 0) {
+        console.log('🔍 FeedScreen: Clearing suggestions - not focused or has search term');
+        setSuggestedUsers([]);
+        return;
+      }
+      
+      console.log('🔍 FeedScreen: Loading suggested users...');
+      setLoadingSuggestions(true);
+      try {
+        const suggestions = await getSuggestedUsers(user.uid, userProfile.following || [], 8);
+        console.log('🔍 FeedScreen: Loaded suggested users', { count: suggestions.length });
+        setSuggestedUsers(suggestions);
+      } catch (error) {
+        console.error('🔍 FeedScreen: Error loading suggested users:', error);
+        setSuggestedUsers([]);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    };
+    
+    loadSuggestions();
+  }, [isSearchFocused, searchTerm, user, userProfile, useThingFeed]);
+
   const clearSearch = useCallback(() => {
     setSearchTerm('');
     setShowAllResults(false);
     setIsMobileSearchOpen(false);
+    setIsSearchFocused(false);
     // Manually clear search results
     if (useThingFeed) {
       search('');
@@ -301,9 +517,6 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
       searchPlaces('');
     }
   }, [useThingFeed, search, searchPlaces]);
-
-  // Detect mobile screen size
-  const [isMobile, setIsMobile] = useState(false);
   
   useEffect(() => {
     const checkMobile = () => {
@@ -348,21 +561,61 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const handleFollow = async (targetUserId: string) => {
     if (!user || !userProfile) return;
     
+    // Use the ref that was set in onMouseDown (captures state before blur)
+    const wereSuggestionsVisible = suggestionsWereVisibleRef.current;
+    
+    console.log('🔵 FeedScreen: handleFollow called', { 
+      targetUserId, 
+      currentFollowing: userProfile.following.length,
+      wereSuggestionsVisible,
+      isSearchFocused,
+      suggestedUsersCount: suggestedUsers.length
+    });
+    
     setLoadingFollow(targetUserId);
+    
+    // Track locally for suggestions (avoids triggering feed reload)
+    setLocallyFollowed(prev => {
+      const next = new Set(prev).add(targetUserId);
+      console.log('🔵 FeedScreen: locallyFollowed updated', { size: next.size, ids: Array.from(next) });
+      return next;
+    });
+    
+    // Remove from suggested users list immediately (smooth UX)
+    setSuggestedUsers(prev => prev.filter(u => u.id !== targetUserId));
+    
     try {
+      console.log('🔵 FeedScreen: Calling followUser...');
       await followUser(user.uid, targetUserId);
+      console.log('🔵 FeedScreen: followUser completed successfully');
       
-      // Clear feed cache to force fresh data load
-      dataService.clearFeedCache(user.uid);
-      
-      // Update local profile
-      const updatedProfile = {
-        ...userProfile,
-        following: [...userProfile.following, targetUserId],
-      };
-      setUserProfile(updatedProfile);
+      // Add to pending follows batch (will update userProfile after debounce)
+      pendingFollowsRef.current.add(targetUserId);
+      // Remove from pending unfollows if it was there (user unfollowed then followed quickly)
+      pendingUnfollowsRef.current.delete(targetUserId);
+      const newCount = pendingFollowsRef.current.size + pendingUnfollowsRef.current.size;
+      setPendingFollowsCount(newCount);
+      console.log('🔵 FeedScreen: Added to pending batch', { 
+        targetUserId, 
+        pendingCount: newCount,
+        pendingFollows: Array.from(pendingFollowsRef.current),
+        pendingUnfollows: Array.from(pendingUnfollowsRef.current),
+        suggestionsWereVisible: wereSuggestionsVisible
+      });
+      // This triggers the batch update effect after debounce
     } catch (error) {
-      console.error('Error following user:', error);
+      console.error('🔴 FeedScreen: Error following user:', error);
+      // Rollback on error
+      setLocallyFollowed(prev => {
+        const next = new Set(prev);
+        next.delete(targetUserId);
+        console.log('🔴 FeedScreen: Rolled back locallyFollowed', { size: next.size });
+        return next;
+      });
+      pendingFollowsRef.current.delete(targetUserId);
+      pendingUnfollowsRef.current.delete(targetUserId);
+      setPendingFollowsCount(prev => Math.max(0, prev - 1));
+      suggestionsWereVisibleRef.current = false;
     } finally {
       setLoadingFollow(null);
     }
@@ -371,28 +624,77 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
   const handleUnfollow = async (targetUserId: string) => {
     if (!user || !userProfile) return;
     
+    // Use the ref that was set in onMouseDown (captures state before blur)
+    const wereSuggestionsVisible = suggestionsWereVisibleRef.current;
+    
+    console.log('🔵 FeedScreen: handleUnfollow called', { 
+      targetUserId, 
+      currentFollowing: userProfile.following.length,
+      wereSuggestionsVisible,
+      isSearchFocused,
+      suggestedUsersCount: suggestedUsers.length
+    });
+    
     setLoadingFollow(targetUserId);
+    
+    // Track locally for search results (avoids triggering feed reload immediately)
+    setLocallyFollowed(prev => {
+      const next = new Set(prev);
+      next.delete(targetUserId);
+      console.log('🔵 FeedScreen: locallyFollowed updated (unfollow)', { size: next.size, ids: Array.from(next) });
+      return next;
+    });
+    
     try {
       await unfollowUser(user.uid, targetUserId);
       
-      // Clear feed cache to force fresh data load
-      dataService.clearFeedCache(user.uid);
-      
-      // Update local profile
-      const updatedProfile = {
-        ...userProfile,
-        following: userProfile.following.filter(id => id !== targetUserId),
-      };
-      setUserProfile(updatedProfile);
+      // Add to pending unfollows batch (will update userProfile after debounce)
+      pendingUnfollowsRef.current.add(targetUserId);
+      // Remove from pending follows if it was there
+      pendingFollowsRef.current.delete(targetUserId);
+      const newCount = pendingFollowsRef.current.size + pendingUnfollowsRef.current.size;
+      setPendingFollowsCount(newCount);
+      console.log('🔵 FeedScreen: Added to pending batch (unfollow)', { 
+        targetUserId, 
+        pendingCount: newCount,
+        pendingFollows: Array.from(pendingFollowsRef.current),
+        pendingUnfollows: Array.from(pendingUnfollowsRef.current),
+        suggestionsWereVisible: wereSuggestionsVisible
+      });
+      // This triggers the batch update effect after debounce
     } catch (error) {
-      console.error('Error unfollowing user:', error);
+      console.error('🔴 FeedScreen: Error unfollowing user:', error);
+      // Rollback on error
+      setLocallyFollowed(prev => {
+        const next = new Set(prev);
+        next.add(targetUserId);
+        console.log('🔴 FeedScreen: Rolled back locallyFollowed (unfollow)', { size: next.size });
+        return next;
+      });
+      pendingFollowsRef.current.delete(targetUserId);
+      pendingUnfollowsRef.current.delete(targetUserId);
+      setPendingFollowsCount(prev => Math.max(0, prev - 1));
+      suggestionsWereVisibleRef.current = false;
     } finally {
       setLoadingFollow(null);
     }
   };
 
   const isFollowing = (userId: string) => {
-    return userProfile?.following.includes(userId) || false;
+    // Check actual following list and locally tracked state
+    const inFollowing = userProfile?.following.includes(userId) || false;
+    
+    // Optimistic updates:
+    // - If in locallyFollowed, we're optimistically following
+    // - If in pendingUnfollows, we're optimistically NOT following (even if in following list)
+    // - Otherwise, use the actual following list state
+    if (pendingUnfollowsRef.current.has(userId)) {
+      return false; // Optimistically unfollowed
+    }
+    if (locallyFollowed.has(userId)) {
+      return true; // Optimistically following
+    }
+    return inFollowing;
   };
 
   if (feedLoading) {
@@ -417,7 +719,29 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              onFocus={() => isMobile && setIsMobileSearchOpen(true)}
+              onFocus={() => {
+                console.log('🔍 FeedScreen: Search input focused (desktop/main)');
+                setIsSearchFocused(true);
+                if (isMobile) {
+                  // Set mobile overlay open first, then ensure focus stays
+                  setIsMobileSearchOpen(true);
+                  // Use a longer delay to ensure mobile input gets focus before clearing
+                  setTimeout(() => setIsSearchFocused(true), 100);
+                }
+              }}
+              onBlur={() => {
+                // Don't clear focus if mobile overlay is opening (will be handled by mobile input)
+                // Check if overlay is open or opening
+                if (isMobile && (isMobileSearchOpen || mobileOverlayOpeningRef.current)) {
+                  console.log('🔍 FeedScreen: Desktop input blur - ignoring because mobile overlay is opening');
+                  return; // Don't clear focus, mobile overlay will handle it
+                }
+                
+                // Desktop: normal blur handling
+                if (!isMobile) {
+                  setTimeout(() => setIsSearchFocused(false), 200);
+                }
+              }}
               placeholder={!useThingFeed ? "Search for places..." : "Search people, books, places, movies..."}
               className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
               autoComplete="off"
@@ -467,12 +791,24 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
 
       {/* Mobile Search Overlay */}
       {isMobileSearchOpen && isMobile && (
-        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-white z-50 overflow-y-auto"
+          onFocus={() => {
+            // Ensure focus state is set when overlay is mounted
+            if (!isSearchFocused) {
+              console.log('🔍 FeedScreen: Mobile overlay mounted, setting focus state');
+              setIsSearchFocused(true);
+            }
+          }}
+        >
           {/* Mobile Search Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3">
             <div className="flex items-center space-x-3">
               <button
-                onClick={() => setIsMobileSearchOpen(false)}
+                onClick={() => {
+                  setIsMobileSearchOpen(false);
+                  setIsSearchFocused(false);
+                }}
                 className="text-gray-600 hover:text-gray-800"
                 aria-label="Close search"
               >
@@ -484,6 +820,19 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  onFocus={() => {
+                    console.log('🔍 FeedScreen: Search input focused (mobile overlay)');
+                    setIsSearchFocused(true);
+                  }}
+                  onBlur={() => {
+                    // Delay to allow click events on suggestions to fire
+                    // Only clear if overlay is still open (not closing)
+                    setTimeout(() => {
+                      if (isMobileSearchOpen) {
+                        setIsSearchFocused(false);
+                      }
+                    }, 200);
+                  }}
                   placeholder={!useThingFeed ? "Search for places..." : "Search people, books, places, movies..."}
                   className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-500 bg-white text-base"
                   autoComplete="off"
@@ -522,9 +871,94 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
             )}
           </div>
 
-          {/* Mobile Search Results */}
-      <div className="px-4 py-4">
-            {showingSearchResults || showingPlaceResults ? (
+          {/* Suggested Users (when search is focused and empty) */}
+          {isSearchFocused && !searchTerm.trim() && useThingFeed && !showingSearchResults && (
+            <div className="px-4 py-4">
+              {loadingSuggestions ? (
+                <div className="text-center py-8">
+                  <div className="inline-flex items-center space-x-2 text-gray-500">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Loading suggestions...</span>
+                  </div>
+                </div>
+              ) : suggestedUsers.length > 0 ? (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-900 mb-3">
+                      👥 People you might want to follow
+                    </h4>
+                    <div className="space-y-3">
+                      {suggestedUsers.map((suggestedUser) => (
+                        <div key={suggestedUser.id} className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+                          <div className="flex items-center justify-between p-3">
+                            <button
+                              onClick={() => {
+                                onUserProfileClick?.(suggestedUser.id);
+                                setIsMobileSearchOpen(false);
+                              }}
+                              className="flex items-center space-x-3 flex-1 text-left hover:opacity-75 transition-opacity"
+                            >
+                              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                                {suggestedUser.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900">{suggestedUser.name}</p>
+                                <div className="flex items-center space-x-2">
+                                  <p className="text-sm text-gray-500">
+                                    {suggestedUser.username ? `@${suggestedUser.username}` : 'Rex user'}
+                                  </p>
+                                  {suggestedUser.followers && suggestedUser.followers.length > 0 && (
+                                    <span className="text-xs text-gray-400">
+                                      • {suggestedUser.followers.length} {suggestedUser.followers.length === 1 ? 'follower' : 'followers'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </button>
+                            <button
+                              onMouseDown={(e) => {
+                                // Capture suggestions visibility before blur happens
+                                suggestionsWereVisibleRef.current = isSearchFocused && suggestedUsers.length > 0;
+                                e.preventDefault(); // Prevent input blur
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFollow(suggestedUser.id);
+                              }}
+                              disabled={loadingFollow === suggestedUser.id || isFollowing(suggestedUser.id)}
+                              className={`ml-3 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-1 ${
+                                isFollowing(suggestedUser.id)
+                                  ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                                  : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                              } disabled:opacity-50`}
+                            >
+                              {loadingFollow === suggestedUser.id ? (
+                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <UserPlusIcon className="h-4 w-4" />
+                              )}
+                              <span>{isFollowing(suggestedUser.id) ? 'Following' : 'Follow'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 text-sm">
+                    All caught up! Try searching for more users.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mobile Search Results - only show if there are actual results */}
+          {(showingSearchResults || showingPlaceResults) && (
+            <div className="px-4 py-4">
               <div className="space-y-6 search-results">
                 {/* Loading State */}
                 {(searchLoading || placesLoading) && (
@@ -564,6 +998,12 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                               </div>
                             </button>
                             <button
+                              onMouseDown={(e) => {
+                                // Capture suggestions visibility before blur happens
+                                suggestionsWereVisibleRef.current = isSearchFocused && suggestedUsers.length > 0;
+                                e.preventDefault(); // Prevent input blur
+                                e.stopPropagation();
+                              }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isFollowing(searchUser.id)) {
@@ -820,31 +1260,106 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                   </>
                 )}
 
-                {/* Empty Search State */}
-                {!searchLoading && !placesLoading && searchTerm.trim().length === 0 && (
-                  <div className="text-center py-12">
-                    <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      {useThingFeed ? 'Discover People' : 'Search for Places'}
-                    </h3>
-                    <p className="text-gray-500">
-                      {useThingFeed ? 'Search for friends and discover new connections' : 'Search locations, restaurants, attractions, etc.'}
-                    </p>
-                  </div>
-                )}
               </div>
-            ) : (
+            </div>
+          )}
+            
+          {/* Empty Search State - only show if no results and not focused (suggestions will show when focused and empty) */}
+          {!showingSearchResults && !showingPlaceResults && !isSearchFocused && (
+            <div className="px-4 py-4">
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  {useThingFeed ? 'Discover People' : 'Search for Places'}
+                  {useThingFeed ? 'Discover' : 'Search for Places'}
                 </h3>
                 <p className="text-gray-500">
-                  {useThingFeed ? 'Search for friends and discover new connections' : 'Search locations, restaurants, attractions, etc.'}
+                  {useThingFeed ? 'Search for people, books, places, movies, and more' : 'Search locations, restaurants, attractions, etc.'}
                 </p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Suggested Users (Desktop - when search is focused and empty) */}
+      {isSearchFocused && !searchTerm.trim() && useThingFeed && !showingSearchResults && !isMobileSearchOpen && (
+        <div className="px-4 py-4">
+          {loadingSuggestions ? (
+            <div className="text-center py-8">
+              <div className="inline-flex items-center space-x-2 text-gray-500">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span>Loading suggestions...</span>
+              </div>
+            </div>
+          ) : suggestedUsers.length > 0 ? (
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">
+                  👥 People you might want to follow
+                </h4>
+                <div className="space-y-3">
+                  {suggestedUsers.map((suggestedUser) => (
+                    <div key={suggestedUser.id} className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between p-3">
+                        <button
+                          onClick={() => onUserProfileClick?.(suggestedUser.id)}
+                          className="flex items-center space-x-3 flex-1 text-left hover:opacity-75 transition-opacity"
+                        >
+                          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            {suggestedUser.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{suggestedUser.name}</p>
+                            <div className="flex items-center space-x-2">
+                              <p className="text-sm text-gray-500">
+                                {suggestedUser.username ? `@${suggestedUser.username}` : 'Rex user'}
+                              </p>
+                              {suggestedUser.followers && suggestedUser.followers.length > 0 && (
+                                <span className="text-xs text-gray-400">
+                                  • {suggestedUser.followers.length} {suggestedUser.followers.length === 1 ? 'follower' : 'followers'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          onMouseDown={(e) => {
+                            // Capture suggestions visibility before blur happens
+                            suggestionsWereVisibleRef.current = isSearchFocused && suggestedUsers.length > 0;
+                            e.preventDefault(); // Prevent input blur
+                            e.stopPropagation();
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleFollow(suggestedUser.id);
+                          }}
+                          disabled={loadingFollow === suggestedUser.id || isFollowing(suggestedUser.id)}
+                          className={`ml-3 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-1 ${
+                            isFollowing(suggestedUser.id)
+                              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                              : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                          } disabled:opacity-50`}
+                        >
+                          {loadingFollow === suggestedUser.id ? (
+                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <UserPlusIcon className="h-4 w-4" />
+                          )}
+                          <span>{isFollowing(suggestedUser.id) ? 'Following' : 'Follow'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500 text-sm">
+                All caught up! Try searching for more users.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -887,6 +1402,12 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
                           </div>
                         </button>
                         <button
+                          onMouseDown={(e) => {
+                            // Capture suggestions visibility before blur happens
+                            suggestionsWereVisibleRef.current = isSearchFocused && suggestedUsers.length > 0;
+                            e.preventDefault(); // Prevent input blur
+                            e.stopPropagation();
+                          }}
                           onClick={(e) => {
                             e.stopPropagation();
                             if (isFollowing(searchUser.id)) {
@@ -1014,15 +1535,15 @@ export default function FeedScreen({ onUserProfileClick, onNavigateToAdd, onEdit
               </div>
             )}
 
-            {/* Empty Search State - Things View */}
-            {!searchLoading && searchTerm.trim().length === 0 && (
+            {/* Empty Search State - Things View - only show if not focused */}
+            {!searchLoading && searchTerm.trim().length === 0 && !isSearchFocused && (
               <div className="text-center py-12">
                 <MagnifyingGlassIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Discover People
+                  Discover
                 </h3>
                 <p className="text-gray-500">
-                  Search for friends and discover new connections
+                  Search for people, books, places, movies, and more
                 </p>
               </div>
             )}
