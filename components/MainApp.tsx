@@ -9,6 +9,7 @@ import FeedScreen from './FeedScreen';
 import PostScreen from './PostScreen';
 import ProfileScreen from './ProfileScreen';
 import FollowingListScreen from './FollowingListScreen';
+import FollowersListScreen from './FollowersListScreen';
 import NotificationsScreen from './NotificationsScreen';
 import SettingsScreen from './SettingsScreen';
 import { User, Thing, UserThingInteraction } from '@/lib/types';
@@ -17,7 +18,7 @@ import { PlusIcon } from '@heroicons/react/24/outline';
 import { cleanupDuplicateInteractions, migrateInProgressToBucketList } from '@/lib/firestore';
 import Image from 'next/image';
 
-type ProfileScreenType = 'main' | 'following' | 'public' | 'settings';
+type ProfileScreenType = 'main' | 'following' | 'followers' | 'public' | 'settings';
 type AppScreenType = 'notifications' | 'main';
 
 export default function MainApp() {
@@ -26,7 +27,7 @@ export default function MainApp() {
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
   const [appScreen, setAppScreen] = useState<AppScreenType>('main');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'direct'>('feed');
+  const [profileNavigationSource, setProfileNavigationSource] = useState<'feed' | 'following' | 'followers' | 'direct'>('feed');
   const [editingInteraction, setEditingInteraction] = useState<{interaction: UserThingInteraction; thing: Thing} | null>(null);
   const [returnTabAfterPost, setReturnTabAfterPost] = useState<'feed' | 'profile'>('feed');
   const [isSignupProcess, setIsSignupProcess] = useState(false);
@@ -243,6 +244,10 @@ export default function MainApp() {
       // Go back to following list
       setProfileScreen('following');
       setSelectedUser(null);
+    } else if (profileNavigationSource === 'followers') {
+      // Go back to followers list
+      setProfileScreen('followers');
+      setSelectedUser(null);
     } else {
       // Go back to feed (for 'feed' or 'direct' sources)
       setActiveTab('feed');
@@ -250,6 +255,14 @@ export default function MainApp() {
       setSelectedUser(null);
     }
     setProfileNavigationSource('feed'); // Reset for next time
+  };
+
+  const handleShowFollowers = () => {
+    const userIdToShow = selectedUser?.id || user?.uid;
+    if (userIdToShow) {
+      setProfileScreen('followers');
+      setProfileNavigationSource('feed');
+    }
   };
 
   // Handler for clicking on user profiles from feed
@@ -320,6 +333,14 @@ export default function MainApp() {
                 onUserClick={handleShowPublicProfile}
               />
             );
+          case 'followers':
+            return (
+              <FollowersListScreen 
+                viewingUserId={selectedUser?.id || user?.uid || ''}
+                onBack={handleBackToProfile}
+                onUserClick={handleShowPublicProfile}
+              />
+            );
           case 'public':
             return selectedUser ? (
               <ProfileScreen 
@@ -330,6 +351,7 @@ export default function MainApp() {
                   setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
+                onShowFollowers={handleShowFollowers}
               />
             ) : (
               <ProfileScreen 
@@ -340,6 +362,7 @@ export default function MainApp() {
                   setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
+                onShowFollowers={handleShowFollowers}
               />
             );
           case 'settings':
@@ -354,6 +377,7 @@ export default function MainApp() {
                   setReturnTabAfterPost('profile');
                   setActiveTab('post');
                 }}
+                onShowFollowers={handleShowFollowers}
               />
             );
         }

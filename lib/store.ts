@@ -45,7 +45,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   userProfile: null,
   loading: true, // Start true to show loading screen while Clerk initializes
   setUser: (user) => set({ user }),
-  setUserProfile: (userProfile) => set({ userProfile }),
+  setUserProfile: (userProfile) => {
+    console.log('📝 Zustand setUserProfile called', {
+      userId: userProfile?.id,
+      followingCount: userProfile?.following?.length || 0,
+      following: userProfile?.following,
+      stack: new Error().stack
+    });
+    set({ userProfile });
+  },
   setLoading: (loading) => {
     console.log('🔄 Zustand setLoading called with:', loading);
     set({ loading });

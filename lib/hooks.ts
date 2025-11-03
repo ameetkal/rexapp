@@ -225,6 +225,11 @@ export const useFeedData = () => {
   // Single effect to load feed data (loads even if not following anyone - to show own items)
   useEffect(() => {
     if (memoizedUserId) {
+      console.log('🔄 useFeedData: Effect triggered - reloading feed', {
+        userId: memoizedUserId,
+        followingCount: memoizedFollowing?.length || 0,
+        following: memoizedFollowing
+      });
       // Load feed data with following list (even if empty - this will include your own items)
       loadFeedData(memoizedFollowing || [], memoizedUserId);
     }

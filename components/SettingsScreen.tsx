@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ArrowLeftIcon, BellIcon, ArrowRightOnRectangleIcon, UserIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useMemo } from 'react';
+import { ArrowLeftIcon, BellIcon, ArrowRightOnRectangleIcon, UserIcon, ChartBarIcon } from '@heroicons/react/24/outline';
 import { useAuthStore } from '@/lib/store';
 import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { useClerk } from '@clerk/nextjs';
+import { useClerk, useUser } from '@clerk/nextjs';
 import { NotificationPreferences } from '@/lib/types';
 import { updateUserWithUsername, checkUsernameAvailability } from '@/lib/firestore';
+import { isAdminEmail, isAdminFromEmails } from '@/lib/admin';
+import AdminAnalytics from './AdminAnalytics';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -15,8 +17,15 @@ interface SettingsScreenProps {
 
 export default function SettingsScreen({ onBack }: SettingsScreenProps) {
   const { user, userProfile, setUserProfile } = useAuthStore();
+  const { user: clerkUser } = useUser();
   const { signOut } = useClerk();
-  const [activeTab, setActiveTab] = useState<'profile' | 'notifications'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'analytics'>('profile');
+  
+  // Check if user is admin
+  const clerkPrimary = clerkUser?.primaryEmailAddress?.emailAddress || null;
+  const clerkAll = useMemo(() => clerkUser?.emailAddresses?.map(e => e.emailAddress) || [], [clerkUser?.emailAddresses]);
+  const profileEmail = userProfile?.email || null;
+  const isAdmin = isAdminEmail(clerkPrimary) || isAdminFromEmails([...clerkAll, profileEmail]);
   
   // Profile edit state
   const [name, setName] = useState(userProfile?.name || '');
@@ -175,6 +184,11 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
       name: 'Notifications',
       icon: BellIcon,
     },
+    ...(isAdmin ? [{
+      id: 'analytics' as const,
+      name: 'Analytics',
+      icon: ChartBarIcon,
+    }] : []),
   ];
 
   return (
@@ -417,6 +431,10 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps) {
               </div>
             </div>
           </div>
+        )}
+
+        {activeTab === 'analytics' && isAdmin && (
+          <AdminAnalytics />
         )}
         </div>
       </div>

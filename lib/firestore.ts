@@ -251,9 +251,16 @@ export const getPersonalItemByPostId = async (
 
 export const followUser = async (currentUserId: string, targetUserId: string) => {
   try {
+    // Update current user's following list
     const userRef = doc(db, 'users', currentUserId);
     await updateDoc(userRef, {
       following: arrayUnion(targetUserId),
+    });
+
+    // Update target user's followers list
+    const targetUserRef = doc(db, 'users', targetUserId);
+    await updateDoc(targetUserRef, {
+      followers: arrayUnion(currentUserId),
     });
 
     // Create notification for the followed user
@@ -289,9 +296,16 @@ export const followUser = async (currentUserId: string, targetUserId: string) =>
 
 export const unfollowUser = async (currentUserId: string, targetUserId: string) => {
   try {
+    // Remove from current user's following list
     const userRef = doc(db, 'users', currentUserId);
     await updateDoc(userRef, {
       following: arrayRemove(targetUserId),
+    });
+
+    // Remove from target user's followers list
+    const targetUserRef = doc(db, 'users', targetUserId);
+    await updateDoc(targetUserRef, {
+      followers: arrayRemove(currentUserId),
     });
   } catch (error) {
     console.error('Error unfollowing user:', error);
@@ -325,6 +339,53 @@ export const getUsersByIds = async (userIds: string[]): Promise<User[]> => {
     return batchResults.flat();
   } catch (error) {
     console.error('Error getting users by IDs:', error);
+    return [];
+  }
+};
+
+export const getSuggestedUsers = async (currentUserId: string, following: string[], limit: number = 8): Promise<User[]> => {
+  try {
+    // Get users created in the last 30 days
+    const thirtyDaysAgo = Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+    
+    const usersRef = collection(db, 'users');
+    const recentUsersQuery = query(
+      usersRef,
+      where('createdAt', '>=', thirtyDaysAgo),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(recentUsersQuery);
+    const allRecentUsers: User[] = [];
+    
+    querySnapshot.forEach((doc) => {
+      const userData = doc.data() as User;
+      // Filter out current user and users already being followed
+      if (userData.id !== currentUserId && !following.includes(userData.id)) {
+        allRecentUsers.push(userData);
+      }
+    });
+    
+    // Sort by network strength (followers count descending, then by mutual connections if we have that data)
+    const sortedUsers = allRecentUsers.sort((a, b) => {
+      const aFollowers = a.followers?.length || 0;
+      const bFollowers = b.followers?.length || 0;
+      
+      // Primary sort: followers count (descending)
+      if (bFollowers !== aFollowers) {
+        return bFollowers - aFollowers;
+      }
+      
+      // Secondary sort: following count (more active users first)
+      const aFollowing = a.following?.length || 0;
+      const bFollowing = b.following?.length || 0;
+      return bFollowing - aFollowing;
+    });
+    
+    // Return top N users
+    return sortedUsers.slice(0, limit);
+  } catch (error) {
+    console.error('Error getting suggested users:', error);
     return [];
   }
 };

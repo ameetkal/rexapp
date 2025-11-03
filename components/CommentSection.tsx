@@ -247,14 +247,32 @@ export default function CommentSection({ thingId, showAllComments = false, onUse
               <div key={comment.id} className="bg-gray-50 rounded-lg p-2">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-2 flex-1 min-w-0">
-                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onUserClick) {
+                          onUserClick(comment.authorId);
+                        }
+                      }}
+                      className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold text-xs flex-shrink-0 hover:bg-blue-200 transition-colors cursor-pointer"
+                    >
                       {comment.authorName.charAt(0).toUpperCase()}
-                    </div>
+                    </button>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs font-medium text-gray-900">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onUserClick) {
+                              onUserClick(comment.authorId);
+                            }
+                          }}
+                          className="text-xs font-medium text-gray-900 hover:text-blue-600 hover:underline cursor-pointer"
+                        >
                           {comment.authorName}
-                        </span>
+                        </button>
                         <span className="text-xs text-gray-700 flex-1 truncate">
                           {renderCommentText(comment.content, comment.taggedUsers || [])}
                         </span>
