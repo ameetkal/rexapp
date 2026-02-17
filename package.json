@@ -15,7 +15,7 @@
     "clsx": "^2.1.1",
     "firebase": "^11.9.1",
     "firebase-admin": "^13.5.0",
-    "next": "15.3.4",
+    "next": "15.5.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.3.0",
@@ -30,7 +30,7 @@
     "@types/react-dom": "^19",
     "@types/webpack": "^5.28.5",
     "eslint": "^9",
-    "eslint-config-next": "15.3.4",
+    "eslint-config-next": "^15.5.9",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
