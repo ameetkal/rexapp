@@ -15,7 +15,7 @@ export default function MarketingPage() {
             </div>
             <div className="flex items-center gap-4">
               <Link
-                href="/sign-in"
+                href="/auth"
                 className="text-gray-700 hover:text-gray-900 px-4 py-2 text-sm font-medium transition-colors"
               >
                 Login

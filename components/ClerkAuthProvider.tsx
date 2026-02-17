@@ -192,7 +192,7 @@ export default function ClerkAuthProvider({ children }: ClerkAuthProviderProps) 
           } else {
             // User hasn't completed profile yet - redirect to profile completion
             if (!isOnProfilePage) {
-              window.location.href = '/?step=profile';
+              window.location.href = '/app?step=profile';
               return; // Don't set loading false here, let the redirect handle it
             }
             setLoading(false);

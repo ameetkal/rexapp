@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuthStore, useAppStore } from '@/lib/store';
-import AuthScreen from './AuthScreen';
 import Navigation from './Navigation';
 import FeedScreen from './FeedScreen';
 import PostScreen from './PostScreen';
@@ -22,6 +21,7 @@ type ProfileScreenType = 'main' | 'following' | 'followers' | 'public' | 'settin
 type AppScreenType = 'notifications' | 'main';
 
 export default function MainApp() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'feed' | 'post' | 'profile'>('feed');
   const [profileScreen, setProfileScreen] = useState<ProfileScreenType>('main');
@@ -131,10 +131,16 @@ export default function MainApp() {
   }, [searchParams, user]);
 
 
-  // Only show Auth screen if Clerk has loaded AND user is not authenticated
-  // This prevents the flash of Auth screen during initial load
+  // Redirect to /auth if not authenticated
+  useEffect(() => {
+    if (!user && clerkLoaded) {
+      router.push('/auth');
+    }
+  }, [user, clerkLoaded, router]);
+  
+  // Show nothing while redirecting
   if (!user && clerkLoaded) {
-    return <AuthScreen />;
+    return null;
   }
   
   // If still loading or Clerk hasn't loaded, show loading screen

@@ -123,12 +123,10 @@ export default function ProfileCompletion({ phoneNumber, invitationData }: Profi
         const inviteCode = urlParams.get('i') || urlParams.get('invite');
         
         // Build redirect URL - preserve invitation code if it exists
-        const redirectUrl = inviteCode ? `/?i=${inviteCode}` : '/';
+        const redirectUrl = inviteCode ? `/app?i=${inviteCode}` : '/app';
         
         // Redirect - ClerkAuthProvider will handle Firestore user creation and invitation processing
-        // Use replaceState to avoid back button issues
-        window.history.replaceState({}, '', redirectUrl);
-        window.location.reload();
+        window.location.href = redirectUrl;
       }, 1500);
       
     } catch (err) {

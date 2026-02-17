@@ -9,10 +9,22 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Rex - Share & Save Recommendations",
-  description: "The social platform where friends share and save trusted recommendations for movies, restaurants, books, music, and travel.",
-  keywords: ["recommendations", "social", "friends", "movies", "restaurants", "books", "music", "travel"],
+  title: "Rex - A calm place to remember what you do",
+  description: "Log books, places, movies, and moments. See patterns. Turn 'want to' into 'did.' Private by default. No likes. No performative feed.",
+  keywords: ["life ledger", "recommendations", "personal tracking", "books", "movies", "places", "social", "privacy"],
   authors: [{ name: "Rex Team" }],
+  openGraph: {
+    title: "Rex - A calm place to remember what you do",
+    description: "Log books, places, movies, and moments. See patterns. Turn 'want to' into 'did.'",
+    type: "website",
+    url: "https://tryrex.app",
+    siteName: "Rex",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Rex - A calm place to remember what you do",
+    description: "Log books, places, movies, and moments. See patterns. Turn 'want to' into 'did.'",
+  },
 };
 
 export const viewport = {
